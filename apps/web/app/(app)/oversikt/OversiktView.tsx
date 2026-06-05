@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { TrendingUp, TrendingDown, Bell, FileText, Trophy } from "lucide-react";
+import { TrendingUp, TrendingDown, Bell, FileText, Trophy, Briefcase } from "lucide-react";
 import { useScreener } from "@/hooks/useScreener";
+import { usePortfolio } from "@/hooks/usePortfolio";
+import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
 import {
   formatPctChange, formatPrice, signalLabel, signalClass, scoreColorClass, formatScore, changeClass,
 } from "@/lib/format";
@@ -15,6 +17,12 @@ export function OversiktView() {
     score_min: 70,
     limit: 5,
   });
+  const { data: portfolio } = usePortfolio();
+
+  const holdings = portfolio?.holdings ?? [];
+  const totalValue = holdings.reduce((s, h) => s + (h.price ?? 0) * h.shares, 0);
+  const totalCost = holdings.reduce((s, h) => s + (h.cost_basis ?? 0) * h.shares, 0);
+  const totalReturn = totalCost > 0 ? (totalValue - totalCost) / totalCost : null;
 
   const date = new Date().toLocaleDateString("sv-SE", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -38,6 +46,48 @@ export function OversiktView() {
           </div>
         </div>
       </div>
+
+      {/* Portfolio summary — plan §9: "Portföljvärde + mini-area-graf" */}
+      {holdings.length > 0 && (
+        <div className="rounded-xl p-5 border"
+             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Briefcase size={14} strokeWidth={1.5} style={{ color: "var(--color-text-muted)" }} />
+                <span className="text-xs text-[var(--color-text-secondary)]">Portföljvärde</span>
+              </div>
+              <div className="text-2xl font-bold font-mono tabular text-[var(--color-text-primary)]">
+                {formatPrice(totalValue)}
+              </div>
+              {totalReturn != null && (
+                <div className={cn("text-sm font-mono tabular mt-0.5", changeClass(totalReturn))}>
+                  {formatPctChange(totalReturn)} total avkastning
+                </div>
+              )}
+              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                {holdings.slice(0, 4).map((h) => (
+                  <div key={h.ticker} className="text-xs text-[var(--color-text-muted)]">
+                    <span className="font-mono">{h.ticker}</span>
+                    {h.change_pct != null && (
+                      <span className={cn("ml-1 font-mono tabular", changeClass(h.change_pct))}>
+                        {formatPctChange(h.change_pct)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {holdings.length > 4 && (
+                  <span className="text-xs text-[var(--color-text-muted)]">+{holdings.length - 4} till</span>
+                )}
+              </div>
+            </div>
+            <Link href="/portfolj"
+                  className="text-xs text-[var(--color-accent)] hover:underline shrink-0">
+              Visa portfölj →
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

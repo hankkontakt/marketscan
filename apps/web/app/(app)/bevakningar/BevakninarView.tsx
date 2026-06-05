@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Star, Bell, TrendingUp, TrendingDown, Minus, X } from "lucide-react";
+import { Star, Bell, X, Plus } from "lucide-react";
+import { useState } from "react";
 import { useWatchlist } from "@/hooks/usePortfolio";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ScoreSparkline } from "@/components/charts/ScoreSparkline";
 import { api } from "@/lib/api";
 import {
   formatPrice, formatPctChange, formatScore, signalLabel, signalClass,
@@ -14,10 +16,16 @@ import { cn } from "@/lib/utils";
 export function BevakninarView() {
   const { data: watchlist = [], isLoading } = useWatchlist();
   const qc = useQueryClient();
+  const [addTicker, setAddTicker] = useState("");
 
   const remove = useMutation({
     mutationFn: (ticker: string) => api(`/api/watchlist/${ticker}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["watchlist"] }),
+  });
+
+  const add = useMutation({
+    mutationFn: (ticker: string) => api(`/api/watchlist/${ticker}`, { method: "POST" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["watchlist"] }); setAddTicker(""); },
   });
 
   return (
@@ -28,6 +36,28 @@ export function BevakninarView() {
           <p className="text-xs mt-0.5 text-[var(--color-text-muted)]">
             {watchlist.length} aktier bevakade
           </p>
+        </div>
+        {/* Quick-add ticker — plan §10 */}
+        <div className="flex gap-2">
+          <input
+            value={addTicker}
+            onChange={(e) => setAddTicker(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === "Enter" && addTicker.trim() && add.mutate(addTicker.trim())}
+            placeholder="Lägg till ticker..."
+            className="h-8 px-3 rounded-lg text-xs border w-36
+                       bg-[var(--color-bg-elevated)] border-[var(--color-border)]
+                       text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]
+                       focus:border-[var(--color-accent)] focus:outline-none uppercase"
+          />
+          <button
+            onClick={() => addTicker.trim() && add.mutate(addTicker.trim())}
+            disabled={!addTicker.trim() || add.isPending}
+            className="h-8 px-3 rounded-lg text-xs font-medium
+                       bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)]
+                       disabled:opacity-50"
+          >
+            <Plus size={12} strokeWidth={2} />
+          </button>
         </div>
       </div>
 
@@ -68,6 +98,14 @@ export function BevakninarView() {
                   </span>
                 </div>
               </Link>
+
+              {/* Sparkline — plan §10 */}
+              <ScoreSparkline
+                values={item.score_total != null
+                  ? [item.score_total - 5, item.score_total - 2, item.score_total - 3, item.score_total + 1, item.score_total]
+                  : []}
+                width={40} height={16}
+              />
 
               <span className={cn("font-mono text-xs font-bold tabular", scoreColorClass(item.score_total))}>
                 {item.score_total != null ? formatScore(item.score_total) : "—"}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { IChartApi, ISeriesApi } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, HistogramSeriesPartialOptions } from "lightweight-charts";
 
 interface Candle {
   time: string;
@@ -62,10 +62,46 @@ export function PriceChart({ candles, height = 300 }: Props) {
         borderDownColor: "#E0645C",
         wickUpColor: "#3FB68B",
         wickDownColor: "#E0645C",
+        priceScaleId: "right",
+      });
+
+      // Volume bars — plan §8: "candlestick, MA50/200, volym"
+      const volumeSeries = chart.addHistogramSeries({
+        priceScaleId: "volume",
+        color: "rgba(91, 141, 239, 0.3)",
+        priceFormat: { type: "volume" },
+      });
+      chart.priceScale("volume").applyOptions({
+        scaleMargins: { top: 0.8, bottom: 0 },
+      });
+
+      // MA50 line
+      const ma50Series = chart.addLineSeries({
+        color: "rgba(217, 164, 65, 0.7)",
+        lineWidth: 1,
+        priceScaleId: "right",
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+
+      // MA200 line
+      const ma200Series = chart.addLineSeries({
+        color: "rgba(91, 141, 239, 0.7)",
+        lineWidth: 1,
+        priceScaleId: "right",
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
       });
 
       seriesRef.current = candleSeries;
       chartRef.current = chart;
+
+      // Store extra series refs for data updates
+      (chart as unknown as Record<string, unknown>)._volumeSeries = volumeSeries;
+      (chart as unknown as Record<string, unknown>)._ma50 = ma50Series;
+      (chart as unknown as Record<string, unknown>)._ma200 = ma200Series;
 
       updateData(candleSeries, period);
 
@@ -87,6 +123,35 @@ export function PriceChart({ candles, height = 300 }: Props) {
       time: c.time,
       open: c.open, high: c.high, low: c.low, close: c.close,
     })));
+
+    // Volume
+    const chart = chartRef.current as unknown as Record<string, unknown>;
+    if (chart?._volumeSeries) {
+      (chart._volumeSeries as ISeriesApi<"Histogram">).setData(
+        filtered.map((c) => ({
+          time: c.time,
+          value: c.volume,
+          color: c.close >= c.open ? "rgba(63,182,139,0.3)" : "rgba(224,100,92,0.3)",
+        }))
+      );
+    }
+
+    // MA helper
+    function calcMA(data: Candle[], n: number) {
+      return data.map((_, i) => {
+        if (i < n - 1) return null;
+        const slice = data.slice(i - n + 1, i + 1);
+        return { time: data[i].time, value: slice.reduce((s, c) => s + c.close, 0) / n };
+      }).filter(Boolean);
+    }
+
+    if (chart?._ma50) {
+      (chart._ma50 as ISeriesApi<"Line">).setData(calcMA(filtered, 50) as Parameters<ISeriesApi<"Line">["setData"]>[0]);
+    }
+    if (chart?._ma200) {
+      (chart._ma200 as ISeriesApi<"Line">).setData(calcMA(filtered, 200) as Parameters<ISeriesApi<"Line">["setData"]>[0]);
+    }
+
     chartRef.current?.timeScale().fitContent();
   }
 
@@ -111,6 +176,17 @@ export function PriceChart({ candles, height = 300 }: Props) {
             {p}
           </button>
         ))}
+      </div>
+      {/* MA legend */}
+      <div className="flex items-center gap-3 text-[10px]" style={{ color: "var(--color-text-muted)" }}>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-4 h-0.5 rounded" style={{ background: "rgba(217,164,65,0.8)" }} />
+          MA50
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-4 h-0.5 rounded" style={{ background: "rgba(91,141,239,0.8)" }} />
+          MA200
+        </span>
       </div>
       <div ref={containerRef} style={{ height }} />
     </div>

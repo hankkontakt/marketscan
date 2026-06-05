@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Search, Sparkles, X } from "lucide-react";
+import { Search, Sparkles, X, Bookmark, BookmarkCheck } from "lucide-react";
 import { useScreener, useScanMeta } from "@/hooks/useScreener";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SegmentToggle } from "@/components/screener/SegmentToggle";
 import { FilterRail } from "@/components/screener/FilterRail";
 import { ResultTable } from "@/components/screener/ResultTable";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
 import type { ScanParams } from "@/lib/api";
 
 const DEFAULT_FILTERS: ScanParams = {
@@ -15,14 +17,41 @@ const DEFAULT_FILTERS: ScanParams = {
   limit: 200,
 };
 
+interface SavedScreen { id: string; name: string; filter_json: Record<string, unknown>; }
+
 export function ScreenerView() {
   const [filters, setFilters] = useState<ScanParams>(DEFAULT_FILTERS);
   const [nlQuery, setNlQuery] = useState("");
   const [nlParsing, setNlParsing] = useState(false);
   const [nlInterpreted, setNlInterpreted] = useState<string>("");
+  const [saveName, setSaveName] = useState("");
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const qc = useQueryClient();
 
   const { data = [], isLoading } = useScreener(filters);
   const { data: meta } = useScanMeta();
+
+  const { data: savedScreens = [] } = useQuery<SavedScreen[]>({
+    queryKey: ["screens"],
+    queryFn: () => api<SavedScreen[]>("/api/screens"),
+    staleTime: 60_000,
+  });
+
+  const saveScreen = useMutation({
+    mutationFn: (name: string) =>
+      api("/api/screens", { method: "POST", body: JSON.stringify({ name, filter_json: filters }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["screens"] });
+      setSaveName("");
+      setShowSaveForm(false);
+      toast.success("Vy sparad");
+    },
+  });
+
+  const deleteScreen = useMutation({
+    mutationFn: (id: string) => api(`/api/screens/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["screens"] }),
+  });
 
   const updateFilters = useCallback((partial: Partial<ScanParams>) => {
     setFilters((f) => ({ ...f, ...partial }));
@@ -55,13 +84,63 @@ export function ScreenerView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Screener</h1>
           {meta && (
             <p className="text-xs mt-0.5 text-[var(--color-text-muted)]">
               {meta.total} aktier &middot; Senast uppdaterat {meta.scan_date}
             </p>
+          )}
+        </div>
+
+        {/* Saved screens */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {savedScreens.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => { setFilters({ ...DEFAULT_FILTERS, ...(s.filter_json as ScanParams) }); }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-colors
+                         border-[var(--color-border)] text-[var(--color-text-secondary)]
+                         hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+            >
+              <BookmarkCheck size={11} strokeWidth={1.5} />
+              {s.name}
+            </button>
+          ))}
+
+          {showSaveForm ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && saveName.trim()) saveScreen.mutate(saveName.trim()); if (e.key === "Escape") setShowSaveForm(false); }}
+                placeholder="Namn på vy..."
+                className="h-7 px-2 rounded-lg text-xs border bg-[var(--color-bg-elevated)]
+                           border-[var(--color-accent)] text-[var(--color-text-primary)] focus:outline-none w-32"
+              />
+              <button
+                onClick={() => saveName.trim() && saveScreen.mutate(saveName.trim())}
+                className="text-xs px-2 h-7 rounded-lg bg-[var(--color-accent)] text-white"
+              >
+                Spara
+              </button>
+              <button onClick={() => setShowSaveForm(false)}
+                      className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-down)]">
+                <X size={12} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowSaveForm(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-colors
+                         border-[var(--color-border)] text-[var(--color-text-muted)]
+                         hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-secondary)]"
+            >
+              <Bookmark size={11} strokeWidth={1.5} />
+              Spara vy
+            </button>
           )}
         </div>
       </div>

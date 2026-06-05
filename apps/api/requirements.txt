@@ -1,0 +1,14 @@
+# FastAPI API requirements — Vercel serverless bundle
+# CRITICAL: NO pandas, xgboost, yfinance, psycopg2 here
+# Those are in backend_worker/requirements.txt ONLY
+# Bundle must stay under 500 MB
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.3
+supabase>=2.4
+PyJWT>=2.8
+python-dotenv>=1.0
+httpx>=0.27
+duckdb>=1.0

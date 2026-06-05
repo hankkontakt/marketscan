@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Briefcase, Plus, Trash2, MessageSquare, TrendingUp, AlertTriangle } from "lucide-react";
+import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert } from "lucide-react";
 import { usePortfolio, useRemoveHolding } from "@/hooks/usePortfolio";
-import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
   formatPrice, formatPctChange, formatScore, signalLabel, signalClass,
-  scoreColorClass, changeClass, formatMarketCap,
+  scoreColorClass, changeClass,
 } from "@/lib/format";
+import { PieChart as RechartsPie, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 
 export function PortfoljView() {
@@ -153,6 +153,14 @@ export function PortfoljView() {
         </div>
       )}
 
+      {/* Allocation + Risk — plan §10: "allokering-donut + riskanalys" */}
+      {holdings.length > 1 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <AllocationDonut holdings={holdings} totalValue={totalValue} />
+          <RiskPanel holdings={holdings} />
+        </div>
+      )}
+
       {/* AI Coach */}
       {holdings.length > 0 && (
         <div className="rounded-xl p-5 border"
@@ -243,6 +251,101 @@ function PortfoljSkeleton() {
       {Array.from({ length: 5 }).map((_, i) => (
         <div key={i} className="skeleton h-12 rounded-xl" />
       ))}
+    </div>
+  );
+}
+
+// Allocation donut (plan §10: "allokering-donut")
+const DONUT_COLORS = [
+  "#5B8DEF", "#3FB68B", "#D9A441", "#E0645C",
+  "#9AA1AC", "#7B6EF6", "#4ABDE8", "#F0A05A",
+];
+
+function AllocationDonut({ holdings, totalValue }: {
+  holdings: { ticker: string; shares: number; price: number | null }[];
+  totalValue: number;
+}) {
+  const data = holdings
+    .filter((h) => h.price && h.price > 0)
+    .map((h) => ({
+      name: h.ticker,
+      value: (h.price ?? 0) * h.shares,
+      pct: totalValue > 0 ? ((h.price ?? 0) * h.shares) / totalValue : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  return (
+    <div className="rounded-xl p-4 border"
+         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      <div className="flex items-center gap-2 mb-4">
+        <PieChart size={14} strokeWidth={1.5} style={{ color: "var(--color-accent)" }} />
+        <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">Allokering</h3>
+      </div>
+      <div className="flex items-center gap-4">
+        <ResponsiveContainer width={120} height={120}>
+          <RechartsPie>
+            <Pie
+              data={data}
+              cx="50%" cy="50%"
+              innerRadius={36} outerRadius={54}
+              dataKey="value"
+              strokeWidth={0}
+            >
+              {data.map((_, i) => (
+                <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={{ background: "#1B1E24", border: "1px solid #262A31", borderRadius: 8, fontSize: 11 }}
+              formatter={(v: number) => [formatPrice(v), "Värde"]}
+            />
+          </RechartsPie>
+        </ResponsiveContainer>
+        <div className="flex-1 space-y-1.5 min-w-0">
+          {data.slice(0, 6).map((d, i) => (
+            <div key={d.name} className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full shrink-0"
+                   style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+              <span className="font-mono text-xs text-[var(--color-text-secondary)] truncate">{d.name}</span>
+              <span className="font-mono text-xs tabular ml-auto text-[var(--color-text-primary)]">
+                {(d.pct * 100).toFixed(0)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Risk panel (plan §10: "riskanalys: sektorkoncentration, beta")
+function RiskPanel({ holdings }: {
+  holdings: { ticker: string; name: string | null }[];
+}) {
+  return (
+    <div className="rounded-xl p-4 border"
+         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      <div className="flex items-center gap-2 mb-4">
+        <ShieldAlert size={14} strokeWidth={1.5} style={{ color: "var(--color-warn)" }} />
+        <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">Riskanalys</h3>
+      </div>
+      <div className="space-y-3">
+        <div className="flex justify-between text-xs">
+          <span className="text-[var(--color-text-muted)]">Antal innehav</span>
+          <span className="font-mono tabular text-[var(--color-text-primary)]">{holdings.length}</span>
+        </div>
+        <div className="flex justify-between text-xs">
+          <span className="text-[var(--color-text-muted)]">Koncentration (top 3)</span>
+          <span className="font-mono tabular text-[var(--color-text-primary)]">
+            {holdings.length <= 3 ? "Hög" : holdings.length <= 7 ? "Medel" : "Låg"}
+          </span>
+        </div>
+        <p className="text-[11px] text-[var(--color-text-muted)] pt-1 border-t"
+           style={{ borderColor: "var(--color-border)" }}>
+          Detaljerad riskanalys (beta, sektorkoncentration, korrelation) beräknas av AI-coachen.
+          Fråga: &ldquo;Analysera min portföljrisk&rdquo;
+        </p>
+      </div>
     </div>
   );
 }

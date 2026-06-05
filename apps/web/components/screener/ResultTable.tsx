@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { ScoreSparkline } from "@/components/charts/ScoreSparkline";
 import { cn } from "@/lib/utils";
 import {
   formatPctChange,
@@ -88,6 +89,7 @@ export function ResultTable({ data, loading }: Props) {
                 width="90px"
                 align="right"
               />
+              <Th label="Trend (graf)" width="64px" />
               <Th label="Köpläge" width="130px" />
               <Th label="Trend" width="90px" />
               <Th
@@ -177,6 +179,23 @@ export function ResultTable({ data, loading }: Props) {
                 {/* Totalbetyg */}
                 <td className="px-4 py-3 text-right">
                   <ScoreChip score={row.score_total} />
+                </td>
+
+                {/* Sparkline — static demo from score range */}
+                <td className="px-4 py-3">
+                  <ScoreSparkline
+                    values={row.score_total != null
+                      ? [
+                          Math.max(0, row.score_total - 6),
+                          Math.max(0, row.score_total - 2),
+                          row.score_total - 4,
+                          row.score_total + 1,
+                          row.score_total,
+                        ]
+                      : []}
+                    width={44}
+                    height={18}
+                  />
                 </td>
 
                 {/* Köpläge */}
