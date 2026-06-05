@@ -72,3 +72,23 @@ class SavedScreenOut(BaseModel):
     name: str
     filter_json: dict
     created_at: datetime
+
+
+class PeriodReturn(BaseModel):
+    """Return for a single period (1M, 3M, 6M, 12M)."""
+    pct: float | None = None
+    positive: bool | None = None
+
+
+class PortfolioHistoryOut(BaseModel):
+    """Map of period labels to their return data."""
+    periods: dict[str, PeriodReturn]
+
+
+class SnapshotOut(BaseModel):
+    id: str
+    user_id: str
+    date: str
+    total_value: float
+    total_cost: float | None = None
+    created_at: str

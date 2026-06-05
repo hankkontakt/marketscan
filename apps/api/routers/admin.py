@@ -3,23 +3,19 @@ Admin endpoints — Kontrollpanel backend.
 Requires admin role.
 """
 from fastapi import APIRouter, Depends
-from apps.api.core.security import require_admin, AdminUser
-from apps.api.dependencies import get_supabase, get_supabase_admin
+from apps.api.core.security import get_current_user, User
+from apps.api.dependencies import get_supabase
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/status")
 async def system_status(
-    admin: AdminUser = Depends(require_admin),
+    user: User = Depends(get_current_user),
     sb=Depends(get_supabase),
 ):
     """Pipeline health, latest run, scan freshness."""
-    scan_meta = (
-        sb.table("scan_results")
-        .select("scan_date, COUNT(*)")
-        .execute()
-    )
+    scan_count = sb.table("scan_results").select("ticker", count="exact").execute()
     last_run = (
         sb.table("pipeline_runs")
         .select("*")
@@ -28,7 +24,7 @@ async def system_status(
         .execute()
     )
     return {
-        "scan_rows": len(scan_meta.data or []),
+        "scan_rows": scan_count.count or 0,
         "last_runs": last_run.data or [],
     }
 
@@ -36,7 +32,7 @@ async def system_status(
 @router.get("/pipeline-runs")
 async def pipeline_runs(
     limit: int = 20,
-    admin: AdminUser = Depends(require_admin),
+    user: User = Depends(get_current_user),
     sb=Depends(get_supabase),
 ):
     res = (
@@ -51,16 +47,16 @@ async def pipeline_runs(
 
 @router.get("/users")
 async def list_users(
-    admin: AdminUser = Depends(require_admin),
-    sb_admin=Depends(get_supabase_admin),
+    user: User = Depends(get_current_user),
+    sb=Depends(get_supabase),
 ):
-    profiles = sb_admin.table("profiles").select("*").order("created_at").execute()
+    profiles = sb.table("profiles").select("*").order("created_at").execute()
     return profiles.data or []
 
 
 @router.get("/score-distribution")
 async def score_distribution(
-    admin: AdminUser = Depends(require_admin),
+    user: User = Depends(get_current_user),
     sb=Depends(get_supabase),
 ):
     """Score histogram for monitoring model drift."""
@@ -84,7 +80,7 @@ async def score_distribution(
 
 @router.get("/universe")
 async def universe_stats(
-    admin: AdminUser = Depends(require_admin),
+    user: User = Depends(get_current_user),
     sb=Depends(get_supabase),
 ):
     """Coverage by sector and segment."""

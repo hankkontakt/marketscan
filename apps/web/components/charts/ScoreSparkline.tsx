@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 /**
  * Mini sparkline for score history in tables.
  * Plan §5.4: "Sparklines i tabeller: 1px linje, ingen axel, färgas av riktning"
@@ -12,7 +14,7 @@ interface Props {
   height?: number;
 }
 
-export function ScoreSparkline({ values, width = 48, height = 20 }: Props) {
+export const ScoreSparkline = React.memo(function ScoreSparkline({ values, width = 48, height = 20 }: Props) {
   if (!values || values.length < 2) {
     return <div style={{ width, height }} />;
   }
@@ -56,3 +58,5 @@ export function ScoreSparkline({ values, width = 48, height = 20 }: Props) {
     </svg>
   );
 }
+
+// Exported above via React.memo

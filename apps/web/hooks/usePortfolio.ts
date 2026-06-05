@@ -3,28 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ScanRow } from "@/types/scan";
-
-export interface Holding {
-  id: string;
-  portfolio_id: string;
-  ticker: string;
-  shares: number;
-  cost_basis: number | null;
-  added_at: string;
-  name: string | null;
-  price: number | null;
-  change_pct: number | null;
-  score_total: number | null;
-  entry_signal: string | null;
-}
-
-export interface Portfolio {
-  id: string;
-  user_id: string;
-  name: string;
-  created_at: string;
-  holdings: Holding[];
-}
+import type { Portfolio, Holding, PortfolioHistory } from "@/types/portfolio";
+export type { Portfolio, Holding, PortfolioHistory, PeriodReturn } from "@/types/portfolio";
 
 export function usePortfolio() {
   return useQuery<Portfolio>({
@@ -56,5 +36,16 @@ export function useWatchlist() {
     queryKey: ["watchlist"],
     queryFn: () => api<Holding[]>("/api/watchlist"),
     staleTime: 2 * 60_000,
+  });
+}
+
+// ─── Portfolio history ────────────────────────────────────────────
+
+export function usePortfolioHistory(periods = "1M,3M,6M,12M") {
+  return useQuery<PortfolioHistory>({
+    queryKey: ["portfolio-history", periods],
+    queryFn: () => api<PortfolioHistory>(`/api/portfolio/history?periods=${encodeURIComponent(periods)}`),
+    staleTime: 5 * 60_000,
+    retry: 1,
   });
 }

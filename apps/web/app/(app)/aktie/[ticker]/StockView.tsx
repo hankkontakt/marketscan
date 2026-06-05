@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import {
   formatPrice, formatNumber, formatPct, formatMarketCap, scoreColorClass, formatScore,
 } from "@/lib/format";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { ScanRow } from "@/types/scan";
 
 const TABS = ["Översikt", "Faktorer", "Analys", "Rapporter", "AI"] as const;
@@ -38,26 +40,28 @@ export function StockView({ ticker }: Props) {
 
   return (
     <div className="-mx-8 -mt-6">
-      {/* Sticky verdict header */}
-      <VerdictHeader stock={stock} />
+      {/* Sticky header block: VerdictHeader + tab bar as ONE sticky unit */}
+      <div className="sticky top-0 z-30">
+        <VerdictHeader stock={stock} />
 
-      {/* Tab bar */}
-      <div className="flex border-b px-6"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              "px-4 py-3 text-sm border-b-2 transition-colors -mb-px",
-              activeTab === tab
-                ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]",
-            )}
-          >
-            {tab}
-          </button>
-        ))}
+        {/* Tab bar */}
+        <div className="flex border-b px-6"
+             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+          {TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px",
+                activeTab === tab
+                  ? "border-[var(--color-accent)] text-[var(--color-accent)]"
+                  : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]",
+              )}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tab content */}
@@ -103,21 +107,68 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
         </h3>
         <dl className="space-y-3">
           {[
-            { label: "P/E (TTM)",           value: stock.pe_trailing != null ? formatNumber(stock.pe_trailing, 1) : "—" },
-            { label: "P/E (forward)",        value: stock.pe_forward != null ? formatNumber(stock.pe_forward, 1) : "—" },
-            { label: "ROE",                  value: stock.roe != null ? formatPct(stock.roe) : "—" },
-            { label: "ROA",                  value: stock.roa != null ? formatPct(stock.roa) : "—" },
-            { label: "Bruttomarginal",       value: stock.gross_margin != null ? formatPct(stock.gross_margin) : "—" },
-            { label: "Rörelsemarginal",      value: stock.operating_margin != null ? formatPct(stock.operating_margin) : "—" },
-            { label: "Finansiell styrka",    value: stock.piotroski_f != null ? `${stock.piotroski_f}/9` : "—" },
-            { label: "Skuldsättning (D/E)",  value: stock.debt_to_equity != null ? formatNumber(stock.debt_to_equity, 2) : "—" },
-            { label: "Direktavkastning",     value: stock.dividend_yield != null ? formatPct(stock.dividend_yield) : "—" },
-            { label: "Beta",                 value: stock.beta != null ? formatNumber(stock.beta, 2) : "—" },
-            { label: "Börsvärde",            value: formatMarketCap(stock.market_cap) },
-          ].map(({ label, value }) => (
+            {
+              label: "P/E (TTM)",
+              value: stock.pe_trailing != null ? formatNumber(stock.pe_trailing, 1) : "—",
+              tip: "Pris/vinst-kvot (senaste 12 mån). Visar hur många kronor du betalar per krona vinst. Lågt P/E kan tyda på att aktien är billig, men beror också på bransch.",
+            },
+            {
+              label: "P/E (forward)",
+              value: stock.pe_forward != null ? formatNumber(stock.pe_forward, 1) : "—",
+              tip: "Pris/vinst-kvot baserad på analytikernas vinstprognos för kommande 12 månader. Ger en bild av vad marknaden förväntar sig.",
+            },
+            {
+              label: "ROE",
+              value: stock.roe != null ? formatPct(stock.roe) : "—",
+              tip: "Avkastning på eget kapital. Hur effektivt bolaget genererar vinst med ägarnas kapital. Över 15 % anses generellt bra.",
+            },
+            {
+              label: "ROA",
+              value: stock.roa != null ? formatPct(stock.roa) : "—",
+              tip: "Avkastning på totala tillgångar. Mäter hur effektivt bolaget använder sina tillgångar för att skapa vinst.",
+            },
+            {
+              label: "Bruttomarginal",
+              value: stock.gross_margin != null ? formatPct(stock.gross_margin) : "—",
+              tip: "Hur stor andel av intäkterna som blir kvar efter direkta produktionskostnader. Hög marginal = starkt prissättningsutrymme.",
+            },
+            {
+              label: "Rörelsemarginal",
+              value: stock.operating_margin != null ? formatPct(stock.operating_margin) : "—",
+              tip: "Vinst efter alla driftkostnader, men före räntor och skatt. Visar hur lönsam kärnverksamheten är.",
+            },
+            {
+              label: "Finansiell styrka",
+              value: stock.piotroski_f != null ? `${stock.piotroski_f}/9` : "—",
+              tip: "Piotroski F-score (0–9). Mäter bolagets finansiella hälsa utifrån lönsamhet, skuldsättning och operativ effektivitet. 7–9 = starkt, 0–2 = svagt.",
+            },
+            {
+              label: "Skuldsättning (D/E)",
+              value: stock.debt_to_equity != null ? formatNumber(stock.debt_to_equity, 2) : "—",
+              tip: "Räntebärande skulder delat med eget kapital. Visar hur mycket bolaget är finansierat med lån kontra eget kapital. Under 1,0 anses ofta konservativt.",
+            },
+            {
+              label: "Direktavkastning",
+              value: stock.dividend_yield != null ? formatPct(stock.dividend_yield) : "—",
+              tip: "Årsutdelning delat med aktiekurs. Visar hur stor andel av din investering du får tillbaka i utdelning per år.",
+            },
+            {
+              label: "Beta",
+              value: stock.beta != null ? formatNumber(stock.beta, 2) : "—",
+              tip: "Mäter aktiens rörlighet jämfört med marknadsindex. Beta > 1 = rör sig mer än index. Beta < 1 = stabilare. Beta = 1 = följer marknaden.",
+            },
+            {
+              label: "Börsvärde",
+              value: formatMarketCap(stock.market_cap),
+              tip: "Aktiekursen multiplicerat med antalet aktier. Visar hur mycket hela bolaget värderas till på börsen.",
+            },
+          ].map(({ label, value, tip }) => (
             <div key={label} className="flex justify-between items-center">
-              <dt className="text-xs text-[var(--color-text-muted)]">{label}</dt>
-              <dd className="text-xs font-mono tabular text-[var(--color-text-primary)]">{value}</dd>
+              <dt className="flex items-center text-xs" style={{ color: "var(--color-text-muted)" }}>
+                {label}
+                <InfoTooltip text={tip} side="left" />
+              </dt>
+              <dd className="text-xs font-mono tabular" style={{ color: "var(--color-text-primary)" }}>{value}</dd>
             </div>
           ))}
         </dl>
@@ -181,11 +232,14 @@ function FaktorerTab({ stock }: { stock: ScanRow }) {
         <div className="space-y-4">
           {Object.entries(FACTOR_DESCS).map(([key, desc]) => {
             const score = stock[key as keyof ScanRow] as number | null;
+            const niceName = key.replace("score_", "");
+            const displayName = niceName.charAt(0).toUpperCase() + niceName.slice(1);
             return (
               <div key={key}>
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-[var(--color-text-primary)]">
-                    {key.replace("score_", "").charAt(0).toUpperCase() + key.replace("score_", "").slice(1)}
+                  <span className="flex items-center text-xs" style={{ color: "var(--color-text-primary)" }}>
+                    {displayName}
+                    <InfoTooltip text={desc} side="right" />
                   </span>
                   <span className={cn("font-mono text-xs font-semibold tabular", scoreColorClass(score))}>
                     {score != null ? Math.round(score) : "—"}
@@ -239,24 +293,52 @@ function AnalysTab({ ticker }: { ticker: string }) {
 }
 
 function ScoreHistoryChart({ history }: { history: { date: string; score: number; signal: string }[] }) {
+  const data = history.map((h) => ({
+    date: h.date.slice(0, 7), // YYYY-MM
+    score: Math.round(h.score),
+    signal: h.signal,
+  }));
+
   return (
-    <div className="flex items-end gap-1 h-32">
-      {history.slice().reverse().map((point, i) => (
-        <div
-          key={point.date}
-          title={`${point.date}: ${Math.round(point.score)}`}
-          className="flex-1 rounded-t transition-all"
-          style={{
-            height: `${point.score}%`,
-            background: point.score >= 70
-              ? "var(--color-score-high)"
-              : point.score >= 50
-              ? "var(--color-score-mid)"
-              : "var(--color-score-low)",
-            opacity: 0.6 + (i / history.length) * 0.4,
-          }}
-        />
-      ))}
+    <div style={{ height: 160 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+          <defs>
+            <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.15} />
+              <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 10, fill: "var(--color-text-muted)" }}
+            tickLine={false}
+            axisLine={false}
+            interval="preserveStartEnd"
+          />
+          <Tooltip
+            content={({ active, payload }: any) => {
+              if (!active || !payload?.length) return null;
+              return (
+                <div className="px-2 py-1.5 rounded-lg text-xs shadow-md"
+                     style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-strong)", color: "var(--color-text-primary)" }}>
+                  <span className="font-semibold">{payload[0].value}</span>
+                  <span className="ml-1" style={{ color: "var(--color-text-muted)" }}>{payload[0].payload.date}</span>
+                </div>
+              );
+            }}
+          />
+          <Area
+            type="monotone"
+            dataKey="score"
+            stroke="var(--color-accent)"
+            strokeWidth={2}
+            fill="url(#scoreGrad)"
+            dot={false}
+            activeDot={{ r: 3, strokeWidth: 0, fill: "var(--color-accent)" }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -264,16 +346,82 @@ function ScoreHistoryChart({ history }: { history: { date: string; score: number
 // ─── Rapporter ───────────────────────────────────────────────────────────────
 
 function RapporterTab({ stock }: { stock: ScanRow }) {
+  const hasGrowth = stock.revenue_growth != null || stock.earnings_growth != null;
+
   return (
-    <div className="rounded-xl p-5 border"
-         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-      <p className="text-sm text-[var(--color-text-secondary)]">
-        Kvartalsrapporter och EPS vs estimat hämtas från yfinance och visas här.
-        Klicka på Summera för AI-analys av senaste rapporten.
-      </p>
-      <p className="text-xs mt-2 text-[var(--color-text-muted)]">
-        Implementeras när backend_worker pipeline är kopplad till R2.
-      </p>
+    <div className="space-y-5">
+      {/* Available data */}
+      {hasGrowth && (
+        <div className="rounded-xl border p-5"
+             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--color-text-primary)" }}>
+            Tillväxt (senaste rapporten)
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            {stock.revenue_growth != null && (
+              <div>
+                <div className="flex items-center text-xs mb-1" style={{ color: "var(--color-text-muted)" }}>
+                  Intäktstillväxt (YoY)
+                  <InfoTooltip text="Hur mycket bolagets intäkter vuxit jämfört med samma period förra året." />
+                </div>
+                <div className={cn("text-lg font-bold tabular",
+                                   stock.revenue_growth >= 0 ? "text-[var(--color-up)]" : "text-[var(--color-down)]")}>
+                  {stock.revenue_growth >= 0 ? "+" : ""}{(stock.revenue_growth * 100).toFixed(1)} %
+                </div>
+              </div>
+            )}
+            {stock.earnings_growth != null && (
+              <div>
+                <div className="flex items-center text-xs mb-1" style={{ color: "var(--color-text-muted)" }}>
+                  Vinsttillväxt (YoY)
+                  <InfoTooltip text="Hur mycket bolagets vinst per aktie (EPS) vuxit jämfört med samma period förra året." />
+                </div>
+                <div className={cn("text-lg font-bold tabular",
+                                   stock.earnings_growth >= 0 ? "text-[var(--color-up)]" : "text-[var(--color-down)]")}>
+                  {stock.earnings_growth >= 0 ? "+" : ""}{(stock.earnings_growth * 100).toFixed(1)} %
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Key ratios from latest report */}
+      <div className="rounded-xl border p-5"
+           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+        <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--color-text-primary)" }}>
+          Nyckeltal från senaste rapporten
+        </h3>
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
+          {[
+            { label: "Bruttomarginal", value: stock.gross_margin != null ? `${(stock.gross_margin * 100).toFixed(1)} %` : "—", tip: "Hur stor andel av intäkterna som kvarstår efter direkta produktionskostnader." },
+            { label: "Rörelsemarginal", value: stock.operating_margin != null ? `${(stock.operating_margin * 100).toFixed(1)} %` : "—", tip: "Vinst som andel av intäkterna, efter driftkostnader men före räntor och skatt." },
+            { label: "ROE", value: stock.roe != null ? `${(stock.roe * 100).toFixed(1)} %` : "—", tip: "Avkastning på eget kapital — hur effektivt bolaget skapar värde för aktieägarna." },
+            { label: "Skuldsättning (D/E)", value: stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(2) : "—", tip: "Skulder relativt eget kapital. Under 1,0 är konservativt." },
+            { label: "Finansiell styrka", value: stock.piotroski_f != null ? `${stock.piotroski_f}/9` : "—", tip: "Piotroski F-score: summerar 9 finansiella hälsokontroller. 7–9 är starkt." },
+            { label: "Direktavkastning", value: stock.dividend_yield != null ? `${(stock.dividend_yield * 100).toFixed(2)} %` : "—", tip: "Årsutdelning delat med aktiekurs." },
+          ].map(({ label, value, tip }) => (
+            <div key={label}>
+              <dt className="flex items-center text-xs" style={{ color: "var(--color-text-muted)" }}>
+                {label} <InfoTooltip text={tip} />
+              </dt>
+              <dd className="text-sm font-semibold mt-0.5 tabular" style={{ color: "var(--color-text-primary)" }}>
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      {/* Coming soon note */}
+      <div className="rounded-xl border p-4 flex items-start gap-3"
+           style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)" }}>
+        <div className="text-xs leading-relaxed" style={{ color: "var(--color-text-muted)" }}>
+          <strong style={{ color: "var(--color-text-secondary)" }}>Detaljerade kvartalsrapporter</strong> med
+          EPS vs estimat och AI-summering läggs till när pipeline-historiken är ansluten.
+          Data ovan hämtas från senaste tillgängliga årsredovisning.
+        </div>
+      </div>
     </div>
   );
 }
@@ -301,7 +449,3 @@ function StockSkeleton() {
   );
 }
 
-// cn import needed
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
-}

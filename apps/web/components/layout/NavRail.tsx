@@ -14,13 +14,13 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/oversikt",      icon: LayoutDashboard,    label: "Översikt" },
-  { href: "/screener",      icon: SlidersHorizontal,  label: "Screener" },
+  { href: "/screener",      icon: SlidersHorizontal,  label: "Aktier" },
   { href: "/portfolj",      icon: Briefcase,           label: "Min portfölj" },
   { href: "/bevakningar",   icon: Star,                label: "Bevakningar" },
 ] as const;
 
 const BOTTOM_ITEMS = [
-  { href: "/kontrollpanel", icon: Settings, label: "Kontrollpanel" },
+  { href: "/installningar", icon: Settings, label: "Inställningar" },
 ] as const;
 
 export function NavRail() {
@@ -51,7 +51,7 @@ export function NavRail() {
               href={href}
               title={label}
               className={cn(
-                "relative flex items-center justify-center w-10 h-10 rounded-xl transition-colors",
+                "group relative flex items-center justify-center w-10 h-10 rounded-xl transition-colors",
                 active
                   ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                   : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)]",
@@ -65,6 +65,17 @@ export function NavRail() {
                 />
               )}
               <Icon size={18} strokeWidth={1.5} />
+              {/* Hover label */}
+              <span className="absolute left-12 px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap
+                               pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50
+                               shadow-lg"
+                    style={{
+                      background: "var(--color-bg-elevated)",
+                      color: "var(--color-text-primary)",
+                      border: "1px solid var(--color-border-strong)",
+                    }}>
+                {label}
+              </span>
             </Link>
           );
         })}

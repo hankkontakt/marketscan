@@ -98,7 +98,6 @@ Inga generella disclaimers. Var konkret.""",
 async def get_committee_analysis(
     ticker: str,
     body: CommitteeRequest,
-    user: User = Depends(get_current_user),
     sb=Depends(get_supabase),
 ):
     """
@@ -206,64 +205,17 @@ def _build_stock_context(ticker: str, data: dict) -> str:
 
 
 async def _call_ai(system_prompt: str, user_message: str) -> str:
-    """Call AI provider — defaults to Anthropic Claude."""
-    import httpx
-    from apps.api.core.config import settings
+    """Call AI provider — currently DeepSeek."""
+    from apps.api.core.deepseek_client import call_deepseek
 
-    if not settings.ANTHROPIC_API_KEY:
-        return "(AI ej konfigurerad)"
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": settings.ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 500,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": user_message}],
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()["content"][0]["text"]
+    return await call_deepseek(system_prompt, user_message, max_tokens=500, temperature=0.3)
 
 
 async def _call_ai_chat(system_prompt: str, context: str, messages: list[dict]) -> str:
-    import httpx
-    from apps.api.core.config import settings
+    """Call AI provider with chat history — currently DeepSeek."""
+    from apps.api.core.deepseek_client import call_deepseek_chat
 
-    if not settings.ANTHROPIC_API_KEY:
-        return "(AI ej konfigurerad)"
-
-    # Prepend context to first user message
-    augmented = []
-    for i, m in enumerate(messages):
-        if i == 0 and m["role"] == "user":
-            augmented.append({"role": "user", "content": f"{context}\n\nFRÅGA: {m['content']}"})
-        else:
-            augmented.append(m)
-
-    async with httpx.AsyncClient(timeout=45) as client:
-        resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": settings.ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 600,
-                "system": system_prompt,
-                "messages": augmented,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()["content"][0]["text"]
+    return await call_deepseek_chat(system_prompt, context, messages, max_tokens=600)
 
 
 def _cache_key_hash(key: str) -> str:

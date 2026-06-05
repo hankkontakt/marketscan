@@ -4,7 +4,7 @@ Handles segment-toggle, all filters, NL search via AI.
 """
 from fastapi import APIRouter, Depends, Query
 from apps.api.dependencies import get_supabase
-from apps.api.schemas.scan import ScanRow, ScanFilters
+from apps.api.schemas.scan import ScanRow
 
 router = APIRouter(prefix="/scan", tags=["screener"])
 
@@ -79,12 +79,20 @@ async def get_sectors(sb=Depends(get_supabase)):
 @router.get("/meta")
 async def get_scan_meta(sb=Depends(get_supabase)):
     """Scan metadata: date, counts per segment."""
-    result = sb.table("scan_results").select("segment, scan_date").execute()
-    rows = result.data
-    if not rows:
+    # Use count="exact" to avoid fetching all rows
+    count_res = sb.table("scan_results").select("ticker", count="exact").execute()
+    total = count_res.count or 0
+
+    if total == 0:
         return {"scan_date": None, "total": 0, "by_segment": {}}
 
+    # Only fetch scan_date from the most recent row
+    date_res = sb.table("scan_results").select("scan_date").order("scan_date", desc=True).limit(1).execute()
+    scan_date = date_res.data[0].get("scan_date") if date_res.data else None
+
+    # Fetch segments to build histogram (only ~4 distinct values)
+    segment_res = sb.table("scan_results").select("segment").execute()
     from collections import Counter
-    counts = Counter(r["segment"] for r in rows)
-    scan_date = rows[0].get("scan_date") if rows else None
-    return {"scan_date": scan_date, "total": len(rows), "by_segment": dict(counts)}
+    by_segment = dict(Counter(r["segment"] for r in (segment_res.data or [])))
+
+    return {"scan_date": scan_date, "total": total, "by_segment": by_segment}

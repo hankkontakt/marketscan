@@ -2,11 +2,15 @@ name: MarketScan Pipeline
 
 on:
   schedule:
-    # Morning scan (06:15 Stockholm = 05:15 UTC, or 04:15 UTC in summer)
-    - cron: "15 4 * * 1-5"
-    # Evening update (18:30 Stockholm = 17:30 UTC summer)
+    # Morning scan (~06:15 Stockholm)
+    # UTC 05:15 = 06:15 CET (vinter), 07:15 CEST (sommar)
+    # ±1h wobble acceptabelt — enklare än dubbla crons med DST-detektion
+    - cron: "15 5 * * 1-5"
+    # Evening update (~18:30 Stockholm)
+    # UTC 17:30 = 18:30 CET (vinter), 19:30 CEST (sommar)
     - cron: "30 17 * * 1-5"
-    # Weekly deep scan (Sunday 08:00 Stockholm)
+    # Weekly deep scan (Sunday ~08:00 Stockholm)
+    # UTC 07:00 = 08:00 CET (vinter), 09:00 CEST (sommar)
     - cron: "0 7 * * 0"
   workflow_dispatch:
     inputs:
@@ -19,7 +23,7 @@ on:
 
 env:
   TZ: "Europe/Stockholm"
-  PYTHONPATH: "."
+  PYTHONPATH: "marketscan:stock-scanner"
 
 jobs:
   run-pipeline:
@@ -30,8 +34,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Also fetch stock-scanner-fix for core/ logic
+          # Check out the new marketscan repo
           path: marketscan
+
+      # Also check out stock-scanner-fix for core/ pipeline logic
+      - uses: actions/checkout@v4
+        with:
+          repository: hankkontakt/stock-scanner
+          path: stock-scanner
 
       - uses: actions/setup-python@v5
         with:

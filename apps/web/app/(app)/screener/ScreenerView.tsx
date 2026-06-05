@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Search, Sparkles, X, Bookmark, BookmarkCheck } from "lucide-react";
+import { Search, X, Bookmark, BookmarkCheck } from "lucide-react";
 import { useScreener, useScanMeta } from "@/hooks/useScreener";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SegmentToggle } from "@/components/screener/SegmentToggle";
@@ -86,7 +86,7 @@ export function ScreenerView() {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Screener</h1>
+          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Aktier</h1>
           {meta && (
             <p className="text-xs mt-0.5 text-[var(--color-text-muted)]">
               {meta.total} aktier &middot; Senast uppdaterat {meta.scan_date}
@@ -145,70 +145,63 @@ export function ScreenerView() {
         </div>
       </div>
 
-      {/* NL search */}
-      <div className="rounded-xl p-4 space-y-3 border"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-        <div className="flex items-center gap-1.5 text-xs font-medium"
-             style={{ color: "var(--color-text-secondary)" }}>
-          <Sparkles size={13} strokeWidth={1.5} />
-          Naturlig sökning
+      {/* Fritextsökning */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search size={14} strokeWidth={1.5}
+                  className="absolute left-3 top-1/2 -translate-y-1/2"
+                  style={{ color: "var(--color-text-muted)" }} />
+          <input
+            value={nlQuery}
+            onChange={(e) => setNlQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runNlSearch()}
+            placeholder='Sök med egna ord, t.ex. "Undervärderade industribolag med hög utdelning"'
+            className="w-full h-10 pl-9 pr-3 rounded-xl text-sm border
+                       border-[var(--color-border)] bg-[var(--color-bg-surface)]
+                       text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]
+                       focus:border-[var(--color-accent)] focus:outline-none transition-colors"
+          />
         </div>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search size={14} strokeWidth={1.5}
-                    className="absolute left-3 top-1/2 -translate-y-1/2"
-                    style={{ color: "var(--color-text-muted)" }} />
-            <input
-              value={nlQuery}
-              onChange={(e) => setNlQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && runNlSearch()}
-              placeholder={`Prova: "Undervärderade industribolag med hög utdelning" eller "Starkt köpläge bland teknikbolag"`}
-              className="w-full h-9 pl-9 pr-3 rounded-lg text-xs border
-                         bg-[var(--color-bg-elevated)] border-[var(--color-border)]
-                         text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]
-                         focus:border-[var(--color-accent)] focus:outline-none"
-            />
-          </div>
+        <button
+          onClick={runNlSearch}
+          disabled={nlParsing || !nlQuery.trim()}
+          className="px-5 h-10 rounded-xl text-sm font-medium transition-colors
+                     bg-[var(--color-accent)] text-white
+                     hover:bg-[var(--color-accent-hover)]
+                     disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {nlParsing ? "Tolkar..." : "Sök"}
+        </button>
+      </div>
+      {nlInterpreted && (
+        <div className="flex items-center gap-2 px-1 text-xs"
+             style={{ color: "var(--color-text-muted)" }}>
+          <span>Filter: {nlInterpreted}</span>
           <button
-            onClick={runNlSearch}
-            disabled={nlParsing || !nlQuery.trim()}
-            className="px-4 h-9 rounded-lg text-xs font-medium transition-colors
-                       bg-[var(--color-accent)] text-white
-                       hover:bg-[var(--color-accent-hover)]
-                       disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => { setNlInterpreted(""); setFilters(DEFAULT_FILTERS); setNlQuery(""); }}
+            className="ml-auto hover:text-[var(--color-down)]"
           >
-            {nlParsing ? "Tolkar..." : "Sök"}
+            <X size={12} />
           </button>
         </div>
-        {nlInterpreted && (
-          <div className="flex items-start gap-2 text-[11px] text-[var(--color-text-muted)]">
-            <span>Tolkning: {nlInterpreted}</span>
-            <button
-              onClick={() => { setNlInterpreted(""); setFilters(DEFAULT_FILTERS); setNlQuery(""); }}
-              className="ml-auto shrink-0 hover:text-[var(--color-down)]"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        )}
-      </div>
+      )}
 
-      {/* Segment toggle */}
-      <div className="rounded-xl p-4 border"
+      {/* Segment + filters in one block */}
+      <div className="rounded-xl border p-4 space-y-4"
            style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-        <div className="text-xs font-medium mb-3 text-[var(--color-text-secondary)]">Segment</div>
         <SegmentToggle
           value={(filters.segments ?? ["large_cap", "mid_cap"]) as ("large_cap" | "mid_cap" | "small_cap" | "micro_cap")[]}
           onChange={(segments) => updateFilters({ segments })}
         />
+        <div className="border-t pt-4" style={{ borderColor: "var(--color-border)" }}>
+          <FilterRail
+            filters={filters}
+            onChange={updateFilters}
+            onReset={() => { setFilters(DEFAULT_FILTERS); setNlInterpreted(""); setNlQuery(""); }}
+            inline
+          />
+        </div>
       </div>
-
-      {/* Filters */}
-      <FilterRail
-        filters={filters}
-        onChange={updateFilters}
-        onReset={() => { setFilters(DEFAULT_FILTERS); setNlInterpreted(""); setNlQuery(""); }}
-      />
 
       {/* Results */}
       <ResultTable data={data} loading={isLoading} />

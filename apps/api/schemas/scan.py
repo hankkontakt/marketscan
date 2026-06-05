@@ -46,20 +46,3 @@ class ScanRow(BaseModel):
     low_liquidity: bool = False
     has_holding: bool = False
     scan_date: str | None = None
-
-
-class ScanFilters(BaseModel):
-    segments: list[str] = ["large_cap", "mid_cap"]
-    score_min: float = 0
-    score_max: float = 100
-    sector: str | None = None
-    country: str | None = None
-    entry_signal: str | None = None
-    trend_signal: str | None = None
-    piotroski_min: int | None = None
-    pe_max: float | None = None
-    roe_min: float | None = None
-    dividend_yield_min: float | None = None
-    exclude_low_liquidity: bool = False
-    limit: int = Field(200, ge=1, le=500)
-    search: str | None = None

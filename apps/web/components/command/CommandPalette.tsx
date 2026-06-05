@@ -29,39 +29,34 @@ interface SearchResult {
 
 const QUICK_LINKS = [
   { icon: LayoutDashboard, label: "Översikt", href: "/oversikt" },
-  { icon: SlidersHorizontal, label: "Screener — alla aktier", href: "/screener" },
-  { icon: SlidersHorizontal, label: "Screener — Starkt köpläge", href: "/screener?entry_signal=STARK" },
-  { icon: SlidersHorizontal, label: "Screener — Småbolag", href: "/screener?segments=small_cap,micro_cap" },
+  { icon: SlidersHorizontal, label: "Aktier — alla", href: "/screener" },
+  { icon: SlidersHorizontal, label: "Aktier — Starkt köpläge", href: "/screener?entry_signal=STARK" },
+  { icon: SlidersHorizontal, label: "Aktier — Småbolag", href: "/screener?segments=small_cap,micro_cap" },
   { icon: Briefcase, label: "Min portfölj", href: "/portfolj" },
   { icon: Star, label: "Bevakningar", href: "/bevakningar" },
   { icon: Settings, label: "Kontrollpanel", href: "/kontrollpanel" },
 ] as const;
 
 export function CommandPalette() {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const palette = useCommandPalette();
-
-  // Subscribe to external open/close
-  useEffect(() => {
-    const unsub = palette.subscribe(setOpen);
-    return unsub;
-  }, []);
+  const isOpen = useCommandPalette((s) => s.isOpen);
+  const close = useCommandPalette((s) => s.close);
+  const toggle = useCommandPalette((s) => s.toggle);
 
   // Global ⌘K / Ctrl+K shortcut
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        setOpen((v) => !v);
+        toggle();
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [toggle]);
 
   // Search stocks on query change
   useEffect(() => {
@@ -84,18 +79,18 @@ export function CommandPalette() {
   }, [query]);
 
   const navigate = useCallback((href: string) => {
-    setOpen(false);
+    close();
     setQuery("");
     router.push(href);
-  }, [router]);
+  }, [close, router]);
 
-  if (!open) return null;
+  if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
       style={{ background: "var(--color-bg-overlay)" }}
-      onClick={() => setOpen(false)}
+      onClick={() => close()}
     >
       <div
         className="w-full max-w-xl mx-4 rounded-2xl overflow-hidden shadow-2xl"

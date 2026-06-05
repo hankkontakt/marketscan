@@ -10,6 +10,7 @@ interface Props {
   filters: ScanParams;
   onChange: (f: Partial<ScanParams>) => void;
   onReset: () => void;
+  inline?: boolean; // when true: no outer card wrapper
 }
 
 const SIGNALS = [
@@ -24,7 +25,7 @@ const TRENDS = [
   { value: "Nedtrend", label: "Nedtrend" },
 ];
 
-export function FilterRail({ filters, onChange, onReset }: Props) {
+export function FilterRail({ filters, onChange, onReset, inline }: Props) {
   const { data: sectors = [] } = useSectors();
   const [expanded, setExpanded] = useState(false);
 
@@ -34,9 +35,8 @@ export function FilterRail({ filters, onChange, onReset }: Props) {
     filters.pe_max || filters.roe_min || filters.dividend_yield_min ||
     filters.exclude_low_liquidity;
 
-  return (
-    <div className="rounded-xl border p-4 space-y-4"
-         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+  const inner = (
+    <>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium"
              style={{ color: "var(--color-text-primary)" }}>
@@ -133,6 +133,15 @@ export function FilterRail({ filters, onChange, onReset }: Props) {
           </label>
         </div>
       )}
+    </>
+  );
+
+  if (inline) return <div className="space-y-4">{inner}</div>;
+
+  return (
+    <div className="rounded-xl border p-4 space-y-4"
+         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      {inner}
     </div>
   );
 }

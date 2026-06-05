@@ -7,40 +7,40 @@
    ============================================================ */
 
 @theme {
-  /* Fonts */
-  --font-sans: "Geist", "Inter", system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Fira Code", ui-monospace, monospace;
+  /* Inter för allt — som Lysa. Inga separata mono-fonts. */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Inter", system-ui, -apple-system, sans-serif;
 
-  /* Dark theme surfaces */
-  --color-bg-base:      #0A0B0D;
-  --color-bg-surface:   #131519;
-  --color-bg-elevated:  #1B1E24;
-  --color-bg-overlay:   rgba(10, 11, 13, 0.85);
-  --color-border:       #262A31;
-  --color-border-strong:#363B44;
+  /* LIGHT theme (default) — clean, Avanza/Lysa-inspired, institutional */
+  --color-bg-base:      #F8F9FB;
+  --color-bg-surface:   #FFFFFF;
+  --color-bg-elevated:  #F1F3F7;
+  --color-bg-overlay:   rgba(248, 249, 251, 0.92);
+  --color-border:       #E3E6EC;
+  --color-border-strong:#C8CDD8;
 
   /* Text */
-  --color-text-primary:   #E7E9EC;
-  --color-text-secondary: #9AA1AC;
-  --color-text-muted:     #646B76;
+  --color-text-primary:   #14181F;
+  --color-text-secondary: #4A5567;
+  --color-text-muted:     #8B929F;
 
-  /* Accent — institutional blue-teal, used sparingly */
-  --color-accent:         #5B8DEF;
-  --color-accent-soft:    rgba(91, 141, 239, 0.12);
-  --color-accent-hover:   #4A7ADE;
+  /* Accent — institutional deep blue (Lysa-style), NOT startup-neon */
+  --color-accent:         #1D4ED8;
+  --color-accent-soft:    rgba(29, 78, 216, 0.08);
+  --color-accent-hover:   #1A44C2;
 
-  /* Financial semantics — muted, not neon */
-  --color-up:             #3FB68B;
-  --color-up-soft:        rgba(63, 182, 139, 0.12);
-  --color-down:           #E0645C;
-  --color-down-soft:      rgba(224, 100, 92, 0.12);
-  --color-warn:           #D9A441;
-  --color-warn-soft:      rgba(217, 164, 65, 0.12);
+  /* Financial semantics — traditional, clear */
+  --color-up:             #15803D;
+  --color-up-soft:        rgba(21, 128, 61, 0.08);
+  --color-down:           #DC2626;
+  --color-down-soft:      rgba(220, 38, 38, 0.08);
+  --color-warn:           #B45309;
+  --color-warn-soft:      rgba(180, 83, 9, 0.08);
 
-  /* Score gradient (neutral, not rainbow) */
-  --color-score-low:      #646B76;
-  --color-score-mid:      #5B8DEF;
-  --color-score-high:     #3FB68B;
+  /* Score gradient */
+  --color-score-low:      #8B929F;
+  --color-score-mid:      #1D4ED8;
+  --color-score-high:     #15803D;
 
   /* Nav */
   --nav-width: 64px;
@@ -48,7 +48,7 @@
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
@@ -69,9 +69,8 @@ body {
   line-height: 1.5;
 }
 
-/* Tabular nums for all financial data — applied via utility class */
+/* Tabular nums — siffror alignar i kolumner utan att byta font (Lysa-stil) */
 .tabular {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
@@ -90,7 +89,7 @@ body {
 }
 
 /* Score chip colors */
-.score-chip-low  { color: var(--color-score-low);  background: rgba(100, 107, 118, 0.15); }
+.score-chip-low  { color: var(--color-score-low);  background: rgba(139, 146, 159, 0.12); }
 .score-chip-mid  { color: var(--color-score-mid);  background: var(--color-accent-soft); }
 .score-chip-high { color: var(--color-score-high); background: var(--color-up-soft); }
 
@@ -98,7 +97,7 @@ body {
 .signal-stark   { color: var(--color-up);   background: var(--color-up-soft);   }
 .signal-ok      { color: var(--color-accent); background: var(--color-accent-soft); }
 .signal-vanta   { color: var(--color-warn);  background: var(--color-warn-soft); }
-.signal-ej      { color: var(--color-text-muted); background: rgba(100,107,118,0.12); }
+.signal-ej      { color: var(--color-text-muted); background: rgba(139,146,159,0.10); }
 
 /* Skeleton loading animation */
 @keyframes skeleton-pulse {
@@ -148,28 +147,42 @@ body {
   max-width: 1600px;
 }
 
-/* Light theme override */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --color-bg-base:      #F6F7F9;
-    --color-bg-surface:   #FFFFFF;
-    --color-bg-elevated:  #EDEEF1;
-    --color-border:       #E2E4E9;
-    --color-border-strong:#C8CDD6;
-    --color-text-primary:   #111318;
-    --color-text-secondary: #4A5263;
-    --color-text-muted:     #8B929F;
-  }
+/* ── Hide ALL Next.js development UI elements ────────────────────────────── */
+nextjs-portal,
+#__next-build-watcher,
+[data-nextjs-dialog-overlay],
+[data-nextjs-toast],
+[data-nextjs-scrollable-error-overlay],
+.__next-dev-overlay,
+#nextjs__container_errors_label,
+#nextjs__container_build_error_label {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
-[data-theme="light"] {
-  --color-bg-base:      #F6F7F9;
-  --color-bg-surface:   #FFFFFF;
-  --color-bg-elevated:  #EDEEF1;
-  --color-border:       #E2E4E9;
-  --color-border-strong:#C8CDD6;
-  --color-text-primary:   #111318;
-  --color-text-secondary: #4A5263;
-  --color-text-muted:     #8B929F;
-  color-scheme: light;
+/* Dark theme override */
+[data-theme="dark"] {
+  --color-bg-base:      #0A0B0D;
+  --color-bg-surface:   #131519;
+  --color-bg-elevated:  #1B1E24;
+  --color-bg-overlay:   rgba(10, 11, 13, 0.85);
+  --color-border:       #262A31;
+  --color-border-strong:#363B44;
+  --color-text-primary:   #E7E9EC;
+  --color-text-secondary: #9AA1AC;
+  --color-text-muted:     #646B76;
+  --color-accent:         #5B8DEF;
+  --color-accent-soft:    rgba(91, 141, 239, 0.12);
+  --color-accent-hover:   #4A7ADE;
+  --color-up:             #3FB68B;
+  --color-up-soft:        rgba(63, 182, 139, 0.12);
+  --color-down:           #E0645C;
+  --color-down-soft:      rgba(224, 100, 92, 0.12);
+  --color-warn:           #D9A441;
+  --color-warn-soft:      rgba(217, 164, 65, 0.12);
+  --color-score-low:      #646B76;
+  --color-score-mid:      #5B8DEF;
+  --color-score-high:     #3FB68B;
+  color-scheme: dark;
 }

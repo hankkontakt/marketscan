@@ -32,43 +32,45 @@ export function PriceChart({ candles, height = 300 }: Props) {
 
     import("lightweight-charts").then(({ createChart, CrosshairMode }) => {
       if (!containerRef.current) return;
+
+      // Read theme from <html data-theme="">
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      const gridColor   = isDark ? "#262A31" : "#E3E6EC";
+      const textColor   = isDark ? "#9AA1AC" : "#4A5567";
+      const upColor     = isDark ? "#3FB68B" : "#15803D";
+      const downColor   = isDark ? "#E0645C" : "#DC2626";
+      const ma50Color   = isDark ? "rgba(217,164,65,0.7)"  : "rgba(180,83,9,0.6)";
+      const ma200Color  = isDark ? "rgba(91,141,239,0.7)"  : "rgba(29,78,216,0.6)";
+      const volColor    = isDark ? "rgba(91,141,239,0.25)" : "rgba(29,78,216,0.15)";
+
       chart = createChart(containerRef.current, {
         height,
         layout: {
           background: { color: "transparent" },
-          textColor: "#9AA1AC",
-          fontFamily: "Geist Mono, monospace",
+          textColor,
+          fontFamily: "Inter, system-ui, sans-serif",
           fontSize: 11,
         },
         grid: {
-          vertLines: { color: "#262A31", style: 1 },
-          horzLines: { color: "#262A31", style: 1 },
+          vertLines: { color: gridColor, style: 1 },
+          horzLines: { color: gridColor, style: 1 },
         },
         crosshair: { mode: CrosshairMode.Normal },
-        rightPriceScale: {
-          borderColor: "#262A31",
-        },
-        timeScale: {
-          borderColor: "#262A31",
-          timeVisible: true,
-          secondsVisible: false,
-        },
+        rightPriceScale: { borderColor: gridColor },
+        timeScale: { borderColor: gridColor, timeVisible: true, secondsVisible: false },
       });
 
       const candleSeries = chart.addCandlestickSeries({
-        upColor: "#3FB68B",
-        downColor: "#E0645C",
-        borderUpColor: "#3FB68B",
-        borderDownColor: "#E0645C",
-        wickUpColor: "#3FB68B",
-        wickDownColor: "#E0645C",
+        upColor, downColor,
+        borderUpColor: upColor, borderDownColor: downColor,
+        wickUpColor: upColor,   wickDownColor: downColor,
         priceScaleId: "right",
       });
 
-      // Volume bars — plan §8: "candlestick, MA50/200, volym"
+      // Volume bars
       const volumeSeries = chart.addHistogramSeries({
         priceScaleId: "volume",
-        color: "rgba(91, 141, 239, 0.3)",
+        color: volColor,
         priceFormat: { type: "volume" },
       });
       chart.priceScale("volume").applyOptions({
@@ -77,22 +79,14 @@ export function PriceChart({ candles, height = 300 }: Props) {
 
       // MA50 line
       const ma50Series = chart.addLineSeries({
-        color: "rgba(217, 164, 65, 0.7)",
-        lineWidth: 1,
-        priceScaleId: "right",
-        crosshairMarkerVisible: false,
-        lastValueVisible: false,
-        priceLineVisible: false,
+        color: ma50Color, lineWidth: 1, priceScaleId: "right",
+        crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
       });
 
       // MA200 line
       const ma200Series = chart.addLineSeries({
-        color: "rgba(91, 141, 239, 0.7)",
-        lineWidth: 1,
-        priceScaleId: "right",
-        crosshairMarkerVisible: false,
-        lastValueVisible: false,
-        priceLineVisible: false,
+        color: ma200Color, lineWidth: 1, priceScaleId: "right",
+        crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
       });
 
       seriesRef.current = candleSeries;

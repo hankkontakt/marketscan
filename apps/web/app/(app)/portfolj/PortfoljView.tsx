@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert } from "lucide-react";
-import { usePortfolio, useRemoveHolding } from "@/hooks/usePortfolio";
+import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check } from "lucide-react";
+import { usePortfolio, useRemoveHolding, useAddHolding } from "@/hooks/usePortfolio";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import {
   formatPrice, formatPctChange, formatScore, signalLabel, signalClass,
@@ -15,6 +16,11 @@ import { cn } from "@/lib/utils";
 export function PortfoljView() {
   const { data: portfolio, isLoading } = usePortfolio();
   const remove = useRemoveHolding();
+  const addHolding = useAddHolding();
+  const [showAdd, setShowAdd] = useState(false);
+  const [addTicker, setAddTicker] = useState("");
+  const [addShares, setAddShares] = useState("");
+  const [addCost, setAddCost] = useState("");
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState("");
@@ -58,28 +64,114 @@ export function PortfoljView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Min portfölj</h1>
-          {portfolio && (
-            <p className="text-xs mt-0.5 text-[var(--color-text-muted)]">
-              {holdings.length} innehav
-            </p>
-          )}
+          <h1 className="text-xl font-semibold" style={{ color: "var(--color-text-primary)" }}>Min portfölj</h1>
+          <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+            {holdings.length} innehav
+          </p>
         </div>
-        {totalValue > 0 && (
-          <div className="text-right">
-            <div className="text-2xl font-bold font-mono tabular text-[var(--color-text-primary)]">
-              {formatPrice(totalValue)}
-            </div>
-            {totalReturn != null && (
-              <div className={cn("text-sm font-mono tabular", changeClass(totalReturn))}>
-                {formatPctChange(totalReturn)} total avkastning
+        <div className="flex items-center gap-3">
+          {totalValue > 0 && (
+            <div className="text-right">
+              <div className="text-2xl font-bold tabular" style={{ color: "var(--color-text-primary)" }}>
+                {formatPrice(totalValue)}
               </div>
-            )}
-          </div>
-        )}
+              {totalReturn != null && (
+                <div className={cn("text-sm tabular", changeClass(totalReturn))}>
+                  {formatPctChange(totalReturn)} total avkastning
+                </div>
+              )}
+            </div>
+          )}
+          <button
+            onClick={() => setShowAdd(!showAdd)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors"
+            style={{
+              background: showAdd ? "var(--color-accent)" : "var(--color-bg-surface)",
+              color: showAdd ? "white" : "var(--color-text-secondary)",
+              borderColor: showAdd ? "var(--color-accent)" : "var(--color-border)",
+            }}
+          >
+            <Plus size={14} strokeWidth={1.5} />
+            Lägg till
+          </button>
+        </div>
       </div>
+
+      {/* Add holding form */}
+      {showAdd && (
+        <div className="rounded-2xl border p-5 space-y-4"
+             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+          <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+            Lägg till innehav
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs" style={{ color: "var(--color-text-muted)" }}>Ticker</label>
+              <input
+                value={addTicker}
+                onChange={(e) => setAddTicker(e.target.value.toUpperCase())}
+                placeholder="t.ex. VOLV-B.ST"
+                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none uppercase"
+                style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs" style={{ color: "var(--color-text-muted)" }}>Antal aktier</label>
+              <input
+                type="number" min="0" step="1"
+                value={addShares}
+                onChange={(e) => setAddShares(e.target.value)}
+                placeholder="100"
+                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none"
+                style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs" style={{ color: "var(--color-text-muted)" }}>Inköpskurs (valfri)</label>
+              <input
+                type="number" min="0" step="0.01"
+                value={addCost}
+                onChange={(e) => setAddCost(e.target.value)}
+                placeholder="287,40"
+                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none"
+                style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              disabled={!addTicker || !addShares || addHolding.isPending}
+              onClick={() => {
+                if (!addTicker || !addShares) return;
+                addHolding.mutate(
+                  { ticker: addTicker, shares: parseFloat(addShares), cost_basis: addCost ? parseFloat(addCost) : undefined },
+                  {
+                    onSuccess: () => {
+                      toast.success(`${addShares} aktier i ${addTicker} tillagda`);
+                      setShowAdd(false); setAddTicker(""); setAddShares(""); setAddCost("");
+                    },
+                    onError: () => toast.error("Kunde inte lägga till innehavet"),
+                  }
+                );
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-40"
+              style={{ background: "var(--color-accent)" }}
+            >
+              <Check size={14} strokeWidth={2} />
+              {addHolding.isPending ? "Sparar..." : "Lägg till"}
+            </button>
+            <button
+              onClick={() => { setShowAdd(false); setAddTicker(""); setAddShares(""); setAddCost(""); }}
+              className="px-4 py-2 rounded-lg text-sm border"
+              style={{ borderColor: "var(--color-border)", color: "var(--color-text-muted)" }}
+            >
+              Avbryt
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Holdings table */}
       {holdings.length === 0 ? (
@@ -102,7 +194,7 @@ export function PortfoljView() {
                 <tr
                   key={h.id}
                   style={{
-                    background: i % 2 === 0 ? "var(--color-bg-base)" : "var(--color-bg-surface)",
+                    background: "var(--color-bg-surface)",
                     borderBottom: "1px solid var(--color-border)",
                   }}
                 >
@@ -167,7 +259,7 @@ export function PortfoljView() {
              style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
           <div className="flex items-center gap-2 mb-4">
             <MessageSquare size={15} strokeWidth={1.5} style={{ color: "var(--color-accent)" }} />
-            <h2 className="text-sm font-medium text-[var(--color-text-primary)]">AI-portföljcoach</h2>
+            <h2 className="text-sm font-medium text-[var(--color-text-primary)]">Fråga om din portfölj</h2>
           </div>
 
           {/* Chat history */}
@@ -296,7 +388,13 @@ function AllocationDonut({ holdings, totalValue }: {
               ))}
             </Pie>
             <Tooltip
-              contentStyle={{ background: "#1B1E24", border: "1px solid #262A31", borderRadius: 8, fontSize: 11 }}
+              contentStyle={{
+                background: "var(--color-bg-surface)",
+                border: "1px solid var(--color-border-strong)",
+                borderRadius: 8,
+                fontSize: 11,
+                color: "var(--color-text-primary)",
+              }}
               formatter={(v: number) => [formatPrice(v), "Värde"]}
             />
           </RechartsPie>

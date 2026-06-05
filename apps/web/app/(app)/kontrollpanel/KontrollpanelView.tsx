@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity, BarChart2, Users, Globe, Settings, CheckCircle, XCircle, Clock, RefreshCw,
 } from "lucide-react";
+import React from "react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -106,7 +107,7 @@ function StatusSection() {
             <tbody>
               {data.last_runs.map((run, i) => (
                 <tr key={run.id} style={{
-                  background: i % 2 === 0 ? "var(--color-bg-base)" : "var(--color-bg-surface)",
+                  background: "var(--color-bg-surface)",
                   borderBottom: "1px solid var(--color-border)",
                 }}>
                   <td className="px-4 py-2.5 font-mono">{run.run_type}</td>
@@ -274,7 +275,7 @@ interface PipelineRun {
   started_at: string;
 }
 
-function KpiCard({ label, value, status }: { label: string; value: string; status?: string }) {
+const KpiCard = React.memo(function KpiCard({ label, value, status }: { label: string; value: string; status?: string }) {
   return (
     <div className="rounded-xl p-4 border"
          style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
@@ -284,9 +285,9 @@ function KpiCard({ label, value, status }: { label: string; value: string; statu
       </div>
     </div>
   );
-}
+});
 
-function StatusPill({ status }: { status: string }) {
+const StatusPill = React.memo(function StatusPill({ status }: { status: string }) {
   const styles: Record<string, { icon: React.ReactNode; cls: string }> = {
     success: { icon: <CheckCircle size={12} strokeWidth={1.5} />, cls: "text-[var(--color-up)]" },
     failed:  { icon: <XCircle size={12} strokeWidth={1.5} />,    cls: "text-[var(--color-down)]" },
@@ -299,7 +300,7 @@ function StatusPill({ status }: { status: string }) {
       {status}
     </span>
   );
-}
+});
 
 function RunsTable({ runs }: { runs: PipelineRun[] }) {
   return (
@@ -316,7 +317,7 @@ function RunsTable({ runs }: { runs: PipelineRun[] }) {
         <tbody>
           {runs.map((run, i) => (
             <tr key={run.id} style={{
-              background: i % 2 === 0 ? "var(--color-bg-base)" : "var(--color-bg-surface)",
+              background: "var(--color-bg-surface)",
               borderBottom: "1px solid var(--color-border)",
             }}>
               <td className="px-4 py-2.5 font-mono">{run.run_type}</td>

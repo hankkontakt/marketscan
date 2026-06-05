@@ -9,6 +9,7 @@ export function useScreener(params: ScanParams) {
     queryKey: ["scan", params],
     queryFn: () => api<ScanRow[]>(buildScanUrl(params)),
     staleTime: 5 * 60_000,
+    gcTime: 1 * 60_000,
   });
 }
 

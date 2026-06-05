@@ -1,22 +1,59 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
-type Theme = "dark" | "light";
+export type Theme = "light" | "dark" | "auto";
+
+function resolveTheme(pref: Theme): "light" | "dark" {
+  if (pref === "auto") {
+    if (typeof window === "undefined") return "light";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return pref;
+}
 
 export function useTheme() {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>("light");
+  const [resolved, setResolved] = useState<"light" | "dark">("light");
 
-  useEffect(() => {
-    const stored = localStorage.getItem("ms-theme") as Theme | null;
-    if (stored) apply(stored);
+  const apply = useCallback((t: Theme) => {
+    const effective = resolveTheme(t);
+    setThemeState(t);
+    setResolved(effective);
+    document.documentElement.setAttribute("data-theme", effective);
+    localStorage.setItem("ms-theme", t);
   }, []);
 
-  function apply(t: Theme) {
-    setTheme(t);
-    document.documentElement.setAttribute("data-theme", t);
-    localStorage.setItem("ms-theme", t);
-  }
+  // Init from localStorage on mount
+  useEffect(() => {
+    const stored = (localStorage.getItem("ms-theme") as Theme) ?? "light";
+    apply(stored);
+  }, [apply]);
 
-  return { theme, toggle: () => apply(theme === "dark" ? "light" : "dark") };
+  // Listen for system preference changes when in auto mode
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      const current = localStorage.getItem("ms-theme") as Theme | null;
+      if (current === "auto") {
+        apply("auto");
+      }
+    };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [apply]);
+
+  const setTheme = useCallback((t: Theme) => apply(t), [apply]);
+
+  const toggle = useCallback(() => {
+    const current = localStorage.getItem("ms-theme") as Theme | null;
+    if (current === "auto") {
+      const r = resolveTheme("auto");
+      apply(r === "dark" ? "light" : "dark");
+    } else {
+      apply(current === "dark" ? "light" : "dark");
+    }
+  }, [apply]);
+
+  return { theme, resolved, setTheme, toggle };
 }

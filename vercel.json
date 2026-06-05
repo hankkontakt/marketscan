@@ -1,12 +1,11 @@
 {
   "functions": {
-    "apps/api/main.py": {
+    "api/main.py": {
       "runtime": "python3.12",
       "maxDuration": 60
     }
   },
-  "fluid": true,
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/apps/api/main.py" }
+    { "source": "/api/:path*", "destination": "/api/main.py" }
   ]
 }

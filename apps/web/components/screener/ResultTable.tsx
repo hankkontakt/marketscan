@@ -89,7 +89,8 @@ export function ResultTable({ data, loading }: Props) {
                 width="90px"
                 align="right"
               />
-              <Th label="Trend (graf)" width="64px" />
+              {/* Score trend — awaiting R2 score history */}
+              {/* <Th label="Trend (graf)" width="64px" /> */}
               <Th label="Köpläge" width="130px" />
               <Th label="Trend" width="90px" />
               <Th
@@ -146,12 +147,9 @@ export function ResultTable({ data, loading }: Props) {
                 ref={(el) => { if (focusedRow === i) el?.focus(); }}
                 className={cn(
                   "cursor-pointer border-b transition-colors focus:outline-none",
-                  "hover:bg-[var(--color-bg-elevated)] focus:bg-[var(--color-bg-elevated)]",
+                  "bg-[var(--color-bg-surface)] hover:bg-[var(--color-bg-elevated)] focus:bg-[var(--color-bg-elevated)]",
                 )}
-                style={{
-                  background: i % 2 === 0 ? "var(--color-bg-base)" : "var(--color-bg-surface)",
-                  borderColor: "var(--color-border)",
-                }}
+                style={{ borderColor: "var(--color-border)" }}
               >
                 {/* Aktie */}
                 <td className="px-4 py-3">
@@ -181,8 +179,8 @@ export function ResultTable({ data, loading }: Props) {
                   <ScoreChip score={row.score_total} />
                 </td>
 
-                {/* Sparkline — static demo from score range */}
-                <td className="px-4 py-3">
+              {/* Score trend — awaiting R2 score history */}
+              {/* <td className="px-4 py-3">
                   <ScoreSparkline
                     values={row.score_total != null
                       ? [
@@ -196,7 +194,7 @@ export function ResultTable({ data, loading }: Props) {
                     width={44}
                     height={18}
                   />
-                </td>
+                </td> */}
 
                 {/* Köpläge */}
                 <td className="px-4 py-3">

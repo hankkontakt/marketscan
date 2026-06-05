@@ -18,9 +18,10 @@ class Settings(BaseSettings):
     R2_BUCKET: str = "marketscan-data"
 
     # AI
-    ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"
+    DEEPSEEK_MODEL: str = "deepseek-chat"
 
     # App
     ENVIRONMENT: str = "development"

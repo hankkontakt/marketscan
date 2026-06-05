@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -93,6 +94,17 @@ export default function LoginPage() {
               {loading ? "Loggar in..." : "Logga in"}
             </button>
           </form>
+          <p className="mt-4 text-center text-xs" style={{ color: "var(--color-text-muted)" }}>
+            Inget konto?{" "}
+            <Link href="/register" className="hover:underline" style={{ color: "var(--color-accent)" }}>
+              Skapa ett gratis konto
+            </Link>
+          </p>
+          <p className="mt-1 text-center text-xs">
+            <Link href="/reset" className="hover:underline" style={{ color: "var(--color-text-muted)" }}>
+              Glömt lösenordet?
+            </Link>
+          </p>
         </div>
       </div>
     </div>

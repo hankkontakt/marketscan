@@ -86,15 +86,18 @@ def load_scan(df: pd.DataFrame, dsn: str | None = None) -> int:
     prepared.to_csv(buf, index=False, header=False, na_rep="")
     buf.seek(0)
 
-    with psycopg2.connect(dsn) as con, con.cursor() as cur:
-        cur.execute("TRUNCATE scan_results;")
-        cur.copy_expert(
-            f"COPY scan_results ({','.join(SCAN_COLUMNS)}) FROM STDIN WITH (FORMAT csv, NULL '')",
-            buf,
-        )
-        cur.execute("SELECT COUNT(*) FROM scan_results;")
-        n = cur.fetchone()[0]
+    with psycopg2.connect(dsn) as con:
+        con.autocommit = False
+        with con.cursor() as cur:
+            cur.execute("TRUNCATE scan_results;")
+            cur.copy_expert(
+                f"COPY scan_results ({','.join(SCAN_COLUMNS)}) FROM STDIN WITH (FORMAT csv, NULL '')",
+                buf,
+            )
         con.commit()
+        with con.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM scan_results;")
+            n = cur.fetchone()[0]
 
     logger.info("scan_results loaded: %d rows", n)
     return n
