@@ -457,7 +457,7 @@ function SectionCard({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SectionTitle({ icon: Icon, title }: { icon: React.ComponentType<{ size?: number; strokeWidth?: number }>; title: string }) {
+function SectionTitle({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
   return (
     <div className="flex items-center gap-2">
       <Icon size={16} strokeWidth={1.5} style={{ color: "var(--color-accent)" }} />

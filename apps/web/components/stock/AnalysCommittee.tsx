@@ -161,7 +161,7 @@ export function AnalysCommittee({ stock }: Props) {
 }
 
 function AnalystCard({ icon: Icon, name, analysis }: {
-  icon: React.ComponentType<{ size: number; strokeWidth: number }>;
+  icon: React.ElementType;
   name: string;
   analysis: string;
 }) {

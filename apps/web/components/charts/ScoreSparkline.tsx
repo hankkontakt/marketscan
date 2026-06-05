@@ -57,6 +57,6 @@ export const ScoreSparkline = React.memo(function ScoreSparkline({ values, width
       />
     </svg>
   );
-}
+});
 
 // Exported above via React.memo

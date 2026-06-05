@@ -56,4 +56,4 @@ export const InfoTooltip = React.memo(function InfoTooltip({ text, side = "top" 
       </RadixTooltip.Root>
     </RadixTooltip.Provider>
   );
-}
+});
