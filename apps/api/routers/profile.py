@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from apps.api.dependencies import get_supabase
 from apps.api.core.security import get_current_user, User
 
-router = APIRouter(tags=["profile"])
+router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 
 class ProfileUpdate(BaseModel):
@@ -19,7 +19,7 @@ class ProfileOut(BaseModel):
     display_name: str | None = None
 
 
-@router.put("/profile", response_model=ProfileOut)
+@router.put("", response_model=ProfileOut)
 async def update_profile(
     body: ProfileUpdate,
     user: User = Depends(get_current_user),
@@ -44,6 +44,21 @@ async def update_profile(
     res = sb.table("profiles").select("*").eq("id", user.id).limit(1).execute()
     profile = res.data[0] if res.data else {"id": user.id}
 
+    return ProfileOut(
+        id=profile["id"],
+        email=user.email,
+        display_name=profile.get("display_name"),
+    )
+
+
+@router.get("", response_model=ProfileOut)
+async def get_profile(
+    user: User = Depends(get_current_user),
+    sb=Depends(get_supabase),
+):
+    """Get the current user's profile."""
+    res = sb.table("profiles").select("*").eq("id", user.id).limit(1).execute()
+    profile = res.data[0] if res.data else {"id": user.id}
     return ProfileOut(
         id=profile["id"],
         email=user.email,

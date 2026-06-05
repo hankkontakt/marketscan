@@ -80,10 +80,34 @@ def _generate_mock_score_history(ticker: str, current_score: float, weeks: int =
         })
     return history
 
+from apps.api.schemas.scan import ScanRow
+from pydantic import BaseModel
+
+
+class PriceHistoryOut(BaseModel):
+    ticker: str
+    candles: list[dict]
+
+
+class ScoreHistoryOut(BaseModel):
+    ticker: str
+    history: list[dict]
+
+
+class StockSearchResult(BaseModel):
+    ticker: str
+    name: str | None = None
+    segment: str | None = None
+    score_total: float | None = None
+    entry_signal: str | None = None
+    price: float | None = None
+    change_pct: float | None = None
+
+
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 
-@router.get("/{ticker}")
+@router.get("/{ticker}", response_model=ScanRow)
 async def get_stock(ticker: str, sb=Depends(get_supabase)):
     """Current scan data for a single ticker."""
     result = (
@@ -98,7 +122,7 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
     return result.data
 
 
-@router.get("/{ticker}/price-history")
+@router.get("/{ticker}/price-history", response_model=PriceHistoryOut)
 async def get_price_history(ticker: str, sb=Depends(get_supabase)):
     """OHLCV data from R2 for TradingView Lightweight Charts.
     Falls back to generated mock data when R2 is not configured."""
@@ -107,7 +131,6 @@ async def get_price_history(ticker: str, sb=Depends(get_supabase)):
         return {"ticker": ticker, "candles": data}
     except Exception as e:
         logger.warning("R2 price history unavailable for %s — falling back to mock data: %s", ticker, e)
-        # R2 not configured — generate realistic mock candles from current price
         try:
             row = sb.table("scan_results").select("price").eq("ticker", ticker.upper()).single().execute()
             current_price = row.data.get("price") if row.data else None
@@ -119,7 +142,7 @@ async def get_price_history(ticker: str, sb=Depends(get_supabase)):
         return {"ticker": ticker, "candles": candles}
 
 
-@router.get("/{ticker}/score-history")
+@router.get("/{ticker}/score-history", response_model=ScoreHistoryOut)
 async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabase)):
     """Weekly score snapshots from R2. Falls back to generated mock data."""
     try:
@@ -138,7 +161,7 @@ async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabas
         return {"ticker": ticker, "history": history}
 
 
-@router.get("")
+@router.get("", response_model=list[StockSearchResult])
 async def search_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
     """Quick search by ticker or name — used by ⌘K palette."""
     result = (

@@ -2,14 +2,47 @@
 Admin endpoints — Kontrollpanel backend.
 Requires admin role.
 """
+from datetime import datetime
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 from apps.api.core.security import get_current_user, User
 from apps.api.dependencies import get_supabase
 
+
+class PipelineRunOut(BaseModel):
+    id: str
+    run_type: str
+    status: str
+    tickers_ok: int | None = None
+    tickers_err: int | None = None
+    duration_s: float | None = None
+    error_msg: str | None = None
+    started_at: str | None = None
+
+
+class SystemStatusOut(BaseModel):
+    scan_rows: int
+    last_runs: list[PipelineRunOut]
+
+
+class ScoreDistributionOut(BaseModel):
+    buckets: list[dict]
+    total: int
+    by_signal: dict[str, int]
+
+
+class UniverseStatsOut(BaseModel):
+    by_sector: dict[str, int]
+    by_segment: dict[str, int]
+    by_country: dict[str, int]
+    low_liquidity: int
+    total: int
+
+
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-@router.get("/status")
+@router.get("/status", response_model=SystemStatusOut)
 async def system_status(
     user: User = Depends(get_current_user),
     sb=Depends(get_supabase),
@@ -29,7 +62,7 @@ async def system_status(
     }
 
 
-@router.get("/pipeline-runs")
+@router.get("/pipeline-runs", response_model=list[PipelineRunOut])
 async def pipeline_runs(
     limit: int = 20,
     user: User = Depends(get_current_user),
@@ -54,7 +87,7 @@ async def list_users(
     return profiles.data or []
 
 
-@router.get("/score-distribution")
+@router.get("/score-distribution", response_model=ScoreDistributionOut)
 async def score_distribution(
     user: User = Depends(get_current_user),
     sb=Depends(get_supabase),
@@ -62,7 +95,7 @@ async def score_distribution(
     """Score histogram for monitoring model drift."""
     res = sb.table("scan_results").select("score_total, segment, entry_signal").execute()
     rows = res.data or []
-    buckets = [0] * 10  # 0-9, 10-19, ... 90-100
+    buckets = [0] * 10
     for r in rows:
         s = r.get("score_total")
         if s is not None:
@@ -78,7 +111,7 @@ async def score_distribution(
     }
 
 
-@router.get("/universe")
+@router.get("/universe", response_model=UniverseStatsOut)
 async def universe_stats(
     user: User = Depends(get_current_user),
     sb=Depends(get_supabase),

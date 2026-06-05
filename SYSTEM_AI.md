@@ -337,6 +337,7 @@ Alla routes prefixas med `/api/`. FastAPI körs på `http://localhost:8000`.
 | Route | Metod | Auth | Beskrivning |
 |---|---|---|---|
 | `/api/profile` | PUT | JWT | Uppdatera display_name |
+| `/api/profile` | GET | JWT | Hämta profil (e-post, display_name) |
 
 ### 5.10 Health
 

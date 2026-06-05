@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { IChartApi, ISeriesApi, HistogramSeriesPartialOptions } from "lightweight-charts";
+import { useTheme } from "@/hooks/useTheme";
 
 interface Candle {
   time: string;
@@ -24,6 +25,7 @@ export function PriceChart({ candles, height = 300 }: Props) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const [period, setPeriod] = useState<"1M" | "3M" | "6M" | "1Å" | "MAX">("3M");
+  const { resolved } = useTheme();
 
   useEffect(() => {
     if (!containerRef.current || typeof window === "undefined") return;
@@ -33,8 +35,8 @@ export function PriceChart({ candles, height = 300 }: Props) {
     import("lightweight-charts").then(({ createChart, CrosshairMode }) => {
       if (!containerRef.current) return;
 
-      // Read theme from <html data-theme="">
-      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      // Read theme from useTheme hook (reacts to toggle)
+      const isDark = resolved === "dark";
       const gridColor   = isDark ? "#262A31" : "#E3E6EC";
       const textColor   = isDark ? "#9AA1AC" : "#4A5567";
       const upColor     = isDark ? "#3FB68B" : "#15803D";

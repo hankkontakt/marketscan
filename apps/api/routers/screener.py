@@ -92,7 +92,10 @@ async def get_scan_meta(sb=Depends(get_supabase)):
 
     # Fetch segments to build histogram (only ~4 distinct values)
     segment_res = sb.table("scan_results").select("segment").execute()
-    from collections import Counter
-    by_segment = dict(Counter(r["segment"] for r in (segment_res.data or [])))
+    by_segment = {}
+    for r in (segment_res.data or []):
+        s = r.get("segment")
+        if s:
+            by_segment[s] = by_segment.get(s, 0) + 1
 
     return {"scan_date": scan_date, "total": total, "by_segment": by_segment}

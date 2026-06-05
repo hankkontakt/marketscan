@@ -85,15 +85,14 @@ function ProfileSection() {
     supabase.auth.getUser().then(({ data }) => {
       setEmail(data.user?.email ?? null);
     });
-    // Fetch existing profile
-    createClient()
-      .from("profiles")
-      .select("display_name")
-      .then(({ data }) => {
-        if (data?.[0]?.display_name) {
-          setDisplayName(data[0].display_name);
-        }
-      });
+    // Fetch existing profile via API
+    api<{ display_name: string | null }>("/api/profile").then((data) => {
+      if (data.display_name) {
+        setDisplayName(data.display_name);
+      }
+    }).catch(() => {
+      // Profile fetch failed silently — user may not have profile yet
+    });
   }, []);
 
   async function handleSave() {
