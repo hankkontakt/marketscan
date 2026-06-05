@@ -1,0 +1,12 @@
+# Heavy deps — runs ONLY in GitHub Actions / Modal Labs
+# NEVER imported by apps/api/
+pandas>=2.2
+numpy>=1.26
+yfinance>=0.2.40
+xgboost>=2.0
+scikit-learn>=1.5
+psycopg2-binary>=2.9
+boto3>=1.35
+python-dotenv>=1.0
+requests>=2.31
+finnhub-python>=2.4

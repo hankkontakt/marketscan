@@ -1,0 +1,66 @@
+name: MarketScan Pipeline
+
+on:
+  schedule:
+    # Morning scan (06:15 Stockholm = 05:15 UTC, or 04:15 UTC in summer)
+    - cron: "15 4 * * 1-5"
+    # Evening update (18:30 Stockholm = 17:30 UTC summer)
+    - cron: "30 17 * * 1-5"
+    # Weekly deep scan (Sunday 08:00 Stockholm)
+    - cron: "0 7 * * 0"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Pipeline mode"
+        required: true
+        default: "morning"
+        type: choice
+        options: [morning, evening, weekly, manual]
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "."
+
+jobs:
+  run-pipeline:
+    name: "${{ github.event.inputs.mode || 'scheduled' }} scan"
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Also fetch stock-scanner-fix for core/ logic
+          path: marketscan
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend_worker deps
+        run: pip install -r marketscan/backend_worker/requirements.txt
+
+      - name: Supabase heartbeat (keep DB warm)
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/scan_results?select=count&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}"
+        continue-on-error: true
+
+      - name: Run pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          R2_KEY_ID: ${{ secrets.R2_KEY_ID }}
+          R2_SECRET: ${{ secrets.R2_SECRET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          MODE="${{ github.event.inputs.mode || 'morning' }}"
+          python -m marketscan.backend_worker.pipeline.entrypoint --mode "$MODE"

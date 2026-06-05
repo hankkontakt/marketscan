@@ -1,0 +1,175 @@
+@import "tailwindcss";
+
+/* ============================================================
+   MarketScan 2.0 — Design tokens
+   "Mörk terminal, men mänsklig"
+   Bloomberg-täthet + Avanza-tydlighet + Lysa-lugn
+   ============================================================ */
+
+@theme {
+  /* Fonts */
+  --font-sans: "Geist", "Inter", system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Fira Code", ui-monospace, monospace;
+
+  /* Dark theme surfaces */
+  --color-bg-base:      #0A0B0D;
+  --color-bg-surface:   #131519;
+  --color-bg-elevated:  #1B1E24;
+  --color-bg-overlay:   rgba(10, 11, 13, 0.85);
+  --color-border:       #262A31;
+  --color-border-strong:#363B44;
+
+  /* Text */
+  --color-text-primary:   #E7E9EC;
+  --color-text-secondary: #9AA1AC;
+  --color-text-muted:     #646B76;
+
+  /* Accent — institutional blue-teal, used sparingly */
+  --color-accent:         #5B8DEF;
+  --color-accent-soft:    rgba(91, 141, 239, 0.12);
+  --color-accent-hover:   #4A7ADE;
+
+  /* Financial semantics — muted, not neon */
+  --color-up:             #3FB68B;
+  --color-up-soft:        rgba(63, 182, 139, 0.12);
+  --color-down:           #E0645C;
+  --color-down-soft:      rgba(224, 100, 92, 0.12);
+  --color-warn:           #D9A441;
+  --color-warn-soft:      rgba(217, 164, 65, 0.12);
+
+  /* Score gradient (neutral, not rainbow) */
+  --color-score-low:      #646B76;
+  --color-score-mid:      #5B8DEF;
+  --color-score-high:     #3FB68B;
+
+  /* Nav */
+  --nav-width: 64px;
+  --topbar-height: 56px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01";
+}
+
+body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Tabular nums for all financial data — applied via utility class */
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Scrollbar — minimal, dark */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* Focus ring — accessible, non-distracting */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Score chip colors */
+.score-chip-low  { color: var(--color-score-low);  background: rgba(100, 107, 118, 0.15); }
+.score-chip-mid  { color: var(--color-score-mid);  background: var(--color-accent-soft); }
+.score-chip-high { color: var(--color-score-high); background: var(--color-up-soft); }
+
+/* Signal pill styles */
+.signal-stark   { color: var(--color-up);   background: var(--color-up-soft);   }
+.signal-ok      { color: var(--color-accent); background: var(--color-accent-soft); }
+.signal-vanta   { color: var(--color-warn);  background: var(--color-warn-soft); }
+.signal-ej      { color: var(--color-text-muted); background: rgba(100,107,118,0.12); }
+
+/* Skeleton loading animation */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.skeleton {
+  background: var(--color-bg-elevated);
+  border-radius: 4px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* App layout */
+.app-layout {
+  display: grid;
+  grid-template-columns: var(--nav-width) 1fr;
+  grid-template-rows: var(--topbar-height) 1fr;
+  min-height: 100dvh;
+}
+
+.app-nav {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  background: var(--color-bg-surface);
+  border-right: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+}
+
+.app-topbar {
+  grid-column: 2;
+  grid-row: 1;
+  background: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.app-main {
+  grid-column: 2;
+  grid-row: 2;
+  overflow-y: auto;
+  padding: 24px 32px;
+  max-width: 1600px;
+}
+
+/* Light theme override */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-bg-base:      #F6F7F9;
+    --color-bg-surface:   #FFFFFF;
+    --color-bg-elevated:  #EDEEF1;
+    --color-border:       #E2E4E9;
+    --color-border-strong:#C8CDD6;
+    --color-text-primary:   #111318;
+    --color-text-secondary: #4A5263;
+    --color-text-muted:     #8B929F;
+  }
+}
+
+[data-theme="light"] {
+  --color-bg-base:      #F6F7F9;
+  --color-bg-surface:   #FFFFFF;
+  --color-bg-elevated:  #EDEEF1;
+  --color-border:       #E2E4E9;
+  --color-border-strong:#C8CDD6;
+  --color-text-primary:   #111318;
+  --color-text-secondary: #4A5263;
+  --color-text-muted:     #8B929F;
+  color-scheme: light;
+}
