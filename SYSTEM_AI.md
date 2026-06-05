@@ -133,45 +133,27 @@ Alla `/(app)/*`-rutter är skyddade av `middleware.ts` (Supabase JWT-check → r
 
 | # | Vad | Prioritet |
 |---|---|---|
-| 1 | Installera npm-paket: `cd apps/web && npm install` | Hög |
-| 2 | Supabase-projekt skapa + köra migration `001_initial_schema.sql` | Hög |
-| 3 | Fylla i `.env` från `.env.example` | Hög |
-| 4 | `apps/api/requirements.txt` saknas — skapa från `pyproject.toml` | Hög |
-| 5 | `useCommandPalette.ts` använder enkel eventbus — ersätt med Zustand när paket är installerade | Medium |
-| 6 | `PriceChart.tsx` — `cmdk` och `zustand` saknas i deps (lägg till i package.json) | Medium |
-| 7 | `Rapporter`-fliken i aktiekort ej implementerad (requires pipeline integration) | Medium |
-| 8 | Prisriktkurslarm-UI ej byggt i Bevakningar | Medium |
-| 9 | Ljust tema — CSS-tokens finns, men temaväxlaren i TopBar behöver `"use client"` + `useTheme` | Låg |
+| 1 | Installera npm-paket: `cd apps/web && npm install` | Hög — gör detta först |
+| 2 | Supabase-projekt skapa + köra migration | Hög |
+| 3 | Fylla i `.env` | Hög |
+| 4 | `Rapporter`-fliken i aktiekort ej fullt implementerad (kräver pipeline + R2-integration) | Medium |
+| 5 | Sparklines i tabeller är demo-data (statisk) — koppla till R2 score history när data finns | Medium |
+| 6 | `useCommandPalette.ts` — eventbus-mönster; fungerar men kan ersättas med Zustand | Låg |
+| 7 | Prisriktkurslarm-UI (skapa/radera larm i Bevakningar) — API finns, UI saknas | Medium |
 
 ---
 
-## 7. Nästa steg (i ordning)
+## 7. Uppstart (komplett steg-för-steg)
 
-```bash
-# 1. Skapa Supabase-projekt (eu-north-1)
-# 2. Kopiera .env.example → .env, fyll i nycklar
-# 3. Kör migration
-supabase db push  # eller kör SQL manuellt i Supabase dashboard
-
-# 4. Installera frontend-paket
-cd apps/web && npm install
-
-# 5. Starta dev-server
-npm run dev
-# → http://localhost:3000
-
-# 6. Starta FastAPI lokalt
-cd apps/api && pip install -e ../.. && uvicorn main:app --reload
-# → http://localhost:8000
-
-# 7. Verifiera: /api/health returnerar {"status":"ok"}
-# 8. Verifiera: /api/scan returnerar seed-data
-# 9. Kör npm run type-check — rätta TypeScript-fel
-```
+Se §8 "Uppstartsguide" för fullständig instruktion.
 
 ---
 
-## 8. Verifierings-checklista
+## 8. Uppstartsguide (komplett)
+
+Se filen `SETUP.md` i rooten — skapas separat med fullständiga steg.
+
+## 9. Verifierings-checklista
 
 | Vad | Hur | Status |
 |---|---|---|
