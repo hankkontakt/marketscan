@@ -40,7 +40,7 @@ export function StatusSection() {
         <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
+              <tr className="bg-[var(--color-bg-surface)] border-b border-[var(--color-border)]">
                 {["Typ", "Status", "Ok", "Fel", "Tid", "Startat"].map((h) => (
                   <th key={h} className="px-4 py-2 text-left font-medium text-[var(--color-text-muted)]">{h}</th>
                 ))}
@@ -48,9 +48,7 @@ export function StatusSection() {
             </thead>
             <tbody>
               {data.last_runs.map((run, i) => (
-                <tr key={run.id} className="bg-[var(--color-bg-surface)]" style={{
-                  borderBottom: "1px solid var(--color-border)",
-                }}>
+                <tr key={run.id} className="bg-[var(--color-bg-surface)] border-b border-[var(--color-border)]">
                   <td className="px-4 py-2.5 font-mono">{run.run_type}</td>
                   <td className="px-4 py-2.5">
                     <StatusPill status={run.status} />

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,8 +14,10 @@ import {
   CalendarDays,
   ArrowLeftRight,
   BookOpen,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 
 const NAV_ITEMS = [
   { href: "/oversikt",      icon: LayoutDashboard,    label: "Översikt" },
@@ -33,6 +36,23 @@ const BOTTOM_ITEMS = [
 
 export function NavRail() {
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data.session?.access_token;
+      if (!token) return;
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        if (payload.role === "admin") {
+          setIsAdmin(true);
+        }
+      } catch {
+        // ignore decode errors
+      }
+    });
+  }, []);
 
   return (
     <nav className="app-nav flex flex-col items-center py-4 gap-1">
@@ -75,13 +95,37 @@ export function NavRail() {
               {/* Hover label */}
               <span className="absolute left-12 px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap
                                pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50
-                               shadow-lg bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]"
-                    style={{ border: "1px solid var(--color-border-strong)" }}>
+                               shadow-lg bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-strong)]">
                 {label}
               </span>
             </Link>
           );
         })}
+
+        {/* Admin link — only visible for admin users */}
+        {isAdmin && (
+          <Link
+            href="/kontrollpanel"
+            title="Kontrollpanel"
+            className={cn(
+              "group relative flex items-center justify-center w-10 h-10 rounded-xl transition-colors",
+              pathname.startsWith("/kontrollpanel")
+                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)]",
+            )}
+            aria-current={pathname.startsWith("/kontrollpanel") ? "page" : undefined}
+          >
+            {pathname.startsWith("/kontrollpanel") && (
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r bg-[var(--color-accent)]" />
+            )}
+            <Shield size={18} strokeWidth={1.5} />
+            <span className="absolute left-12 px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap
+                             pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50
+                             shadow-lg bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-strong)]">
+              Kontrollpanel
+            </span>
+          </Link>
+        )}
       </div>
 
       {/* Bottom items */}

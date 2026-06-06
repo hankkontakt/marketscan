@@ -1,10 +1,13 @@
 """
 Profile endpoints — user settings, display name, etc.
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from apps.api.dependencies import get_supabase
+from apps.api.dependencies import get_supabase, get_supabase_admin
 from apps.api.core.security import get_current_user, User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -64,3 +67,40 @@ async def get_profile(
         email=user.email,
         display_name=profile.get("display_name"),
     )
+
+
+@router.delete("/account", status_code=204)
+async def delete_account(
+    user: User = Depends(get_current_user),
+    sb=Depends(get_supabase),
+    sb_admin=Depends(get_supabase_admin),
+):
+    """Delete the user's account and all associated data (GDPR)."""
+    uid = user.id
+    logger.info("Deleting account %s", uid)
+
+    try:
+        # Delete in order (foreign keys)
+        sb.table("price_alerts").delete().eq("user_id", uid).execute()
+        sb.table("watchlist").delete().eq("user_id", uid).execute()
+        sb.table("portfolio_snapshots").delete().eq("user_id", uid).execute()
+
+        # Delete holdings then portfolio
+        port = sb.table("portfolios").select("id").eq("user_id", uid).limit(1).execute()
+        if port.data:
+            pid = port.data[0]["id"]
+            sb.table("holdings").delete().eq("portfolio_id", pid).execute()
+            sb.table("portfolios").delete().eq("id", pid).execute()
+
+        # Delete saved screens, profile
+        sb.table("saved_screens").delete().eq("user_id", uid).execute()
+        sb.table("profiles").delete().eq("id", uid).execute()
+
+        # Delete the auth user (admin client required)
+        sb_admin.auth.admin.delete_user(uid)
+    except Exception as e:
+        logger.error("Failed to delete account %s: %s", uid, str(e))
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Kunde inte ta bort kontot. Försök igen eller kontakta support.",
+        )

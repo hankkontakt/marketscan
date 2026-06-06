@@ -25,9 +25,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=auth_callback", request.url));
   }
 
-  // If recovery flow, redirect to settings with password update
+  // If recovery flow, redirect to settings with password tab
   if (type === "recovery") {
-    return NextResponse.redirect(new URL("/installningar?tab=password", request.url));
+    return NextResponse.redirect(new URL("/installningar?tab=losenord", request.url));
   }
 
   return NextResponse.redirect(new URL("/oversikt", request.url));

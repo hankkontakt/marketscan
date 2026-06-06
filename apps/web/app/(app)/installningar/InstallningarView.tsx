@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import * as Tabs from "@radix-ui/react-tabs";
 import { User, Palette, KeyRound, ShieldAlert } from "lucide-react";
 import { ProfileSection } from "@/components/settings/ProfileSection";
@@ -21,13 +23,24 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 // ─── Huvudvy ───────────────────────────────────────────────────────────────────
 
 export function InstallningarView() {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<SectionId>("profil");
+
+  // Sync tab from query param on mount and when it changes
+  useEffect(() => {
+    if (tabParam && SECTIONS.some((s) => s.id === tabParam)) {
+      setActiveTab(tabParam as SectionId);
+    }
+  }, [tabParam]);
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
       <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
         Inställningar
       </h1>
 
-      <Tabs.Root defaultValue="profil">
+      <Tabs.Root value={activeTab} onValueChange={(v) => setActiveTab(v as SectionId)}>
         {/* Section tabs */}
         <Tabs.List className="flex gap-1 flex-wrap">
           {SECTIONS.map((s) => {

@@ -1,23 +1,17 @@
 import { describe, it, expect } from "vitest";
-import React from "react";
+import { render, screen } from "@testing-library/react";
 import { ScoreSparkline } from "../ScoreSparkline";
 
 describe("ScoreSparkline", () => {
-  it("renders without crashing", () => {
-    const { container } = render(React.createElement(ScoreSparkline, { values: [30, 50, 70] }));
-    expect(container.querySelector("svg")).toBeTruthy();
+  it("renders empty state for <2 values", () => {
+    const { container } = render(<ScoreSparkline values={[]} />);
+    expect(container.querySelector("svg")).toBeNull();
   });
 
-  it("renders empty placeholder for < 2 values", () => {
-    const { container } = render(React.createElement(ScoreSparkline, { values: [50] }));
-    expect(container.querySelector("svg")).toBeFalsy();
+  it("renders svg with 2+ values", () => {
+    const { container } = render(<ScoreSparkline values={[50, 60, 70]} />);
+    const svg = container.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("width")).toBe("48");
   });
 });
-
-// Minimal render helper (no jsdom needed for SVG output)
-function render(el: React.ReactElement) {
-  const div = document.createElement("div");
-  document.body.appendChild(div);
-  // Server-side render by just checking existence
-  return { container: div };
-}
