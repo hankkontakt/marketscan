@@ -5,7 +5,7 @@ Requires admin role.
 from datetime import datetime
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends
-from apps.api.core.security import get_current_user, User
+from apps.api.core.security import get_current_user, require_admin, User, AdminUser
 from apps.api.dependencies import get_supabase
 
 
@@ -44,10 +44,11 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/status", response_model=SystemStatusOut)
 async def system_status(
-    user: User = Depends(get_current_user),
+    user: AdminUser = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
     """Pipeline health, latest run, scan freshness."""
+    _ = user  # admin access verified
     scan_count = sb.table("scan_results").select("ticker", count="exact").execute()
     last_run = (
         sb.table("pipeline_runs")
@@ -65,7 +66,7 @@ async def system_status(
 @router.get("/pipeline-runs", response_model=list[PipelineRunOut])
 async def pipeline_runs(
     limit: int = 20,
-    user: User = Depends(get_current_user),
+    user: AdminUser = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
     res = (
@@ -78,9 +79,16 @@ async def pipeline_runs(
     return res.data or []
 
 
-@router.get("/users")
+class UsersListOut(BaseModel):
+    id: str
+    email: str | None = None
+    display_name: str | None = None
+    created_at: str | None = None
+
+
+@router.get("/users", response_model=list[UsersListOut])
 async def list_users(
-    user: User = Depends(get_current_user),
+    user: AdminUser = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
     profiles = sb.table("profiles").select("*").order("created_at").execute()
@@ -89,7 +97,7 @@ async def list_users(
 
 @router.get("/score-distribution", response_model=ScoreDistributionOut)
 async def score_distribution(
-    user: User = Depends(get_current_user),
+    user: AdminUser = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
     """Score histogram for monitoring model drift."""
@@ -113,7 +121,7 @@ async def score_distribution(
 
 @router.get("/universe", response_model=UniverseStatsOut)
 async def universe_stats(
-    user: User = Depends(get_current_user),
+    user: AdminUser = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
     """Coverage by sector and segment."""

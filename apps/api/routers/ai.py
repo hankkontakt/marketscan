@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from apps.api.core.ai_cache import get_cached, set_cache
 from apps.api.core.security import get_current_user, User
 from apps.api.dependencies import get_supabase
+from pydantic import Field
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -27,6 +28,21 @@ class PortfolioCoachRequest(BaseModel):
     question: str
     portfolio_context: dict
     history: list[dict] = []
+
+
+class CommitteeResponse(BaseModel):
+    ticker: str
+    committee: list[dict]
+    synthesis: str
+
+
+class PortfolioCoachResponse(BaseModel):
+    response: str
+
+
+class EarningsResponseOut(BaseModel):
+    ticker: str
+    earnings: list[dict]
 
 
 # ─── NL filter parser ─────────────────────────────────────────────────────────
@@ -60,7 +76,26 @@ async def parse_nl_filter(body: NLFilterRequest):
         return {}
 
 
-# ─── Analyskommittén ──────────────────────────────────────────────────────────
+# ─── Analyskommittén → output schema ──────────────────────────────
+
+class CommitteeMember(BaseModel):
+    name: str
+    analysis: str
+
+
+class CommitteeSynthesis(BaseModel):
+    verdict: str
+    confidence: int
+    summary: str
+    disagreement: bool
+    disagreement_note: str | None = None
+
+
+class CommitteeOutput(BaseModel):
+    ticker: str
+    analysts: dict[str, CommitteeMember]
+    synthesis: CommitteeSynthesis
+    cached_date: str────────────────
 
 ANALYST_PROMPTS = {
     "teknisk": """Du är Teknisk Analytiker i en investeringskommitté.
@@ -94,7 +129,7 @@ Inga generella disclaimers. Var konkret.""",
 }
 
 
-@router.post("/committee/{ticker}")
+@router.post("/committee/{ticker}", response_model=CommitteeOutput)
 async def get_committee_analysis(
     ticker: str,
     body: CommitteeRequest,
@@ -165,7 +200,7 @@ Använd datan du får — fabricera inga siffror. Var konkret och handlingsbar.
 Om du saknar data för att svara, säg det tydligt."""
 
 
-@router.post("/portfolio-coach")
+@router.post("/portfolio-coach", response_model=PortfolioCoachResponse)
 async def portfolio_coach(
     body: PortfolioCoachRequest,
     user: User = Depends(get_current_user),

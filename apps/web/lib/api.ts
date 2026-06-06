@@ -1,7 +1,9 @@
 /**
  * Typed fetch wrapper against FastAPI backend.
- * Credentials included for JWT cookie auth.
+ * Automatically attaches Supabase JWT when available.
  */
+
+import { createClient } from "@/lib/supabase/client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -16,13 +18,26 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string>),
+  };
+
+  // Attach JWT from Supabase session if available
+  try {
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  } catch {
+    // supabase client may not be available (e.g. SSR)
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers,
   });
 
   if (!res.ok) {

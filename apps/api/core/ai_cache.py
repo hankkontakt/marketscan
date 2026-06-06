@@ -1,9 +1,10 @@
-"""Persistent AI response cache using the Supabase ai_cache table.
-
-Provides functions for reading, writing, and clearing cached AI responses
-with automatic expiration based on creation time.
 """
+Persistent AI response cache using the Supabase ai_cache table.
+"""
+import logging
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
 
 
 def get_cached(key: str, sb, max_age_hours: int = 24):
@@ -43,8 +44,8 @@ def get_cached(key: str, sb, max_age_hours: int = 24):
                 sb.table("ai_cache").delete().eq("cache_key", key).execute()
             else:
                 return row["response_data"]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("ai_cache.get_cached failed for key=%s: %s", key, e)
     return None
 
 
@@ -71,17 +72,13 @@ def set_cache(key: str, content, sb) -> None:
         ).execute()
         # Housekeeping: remove entries older than 7 days
         sb.rpc("clean_ai_cache").execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("ai_cache.set_cache failed for key=%s: %s", key, e)
 
 
 def clear_cache(sb) -> None:
-    """Delete every row from the ai_cache table.
-
-    Args:
-        sb: Authenticated Supabase client.
-    """
+    """Delete every row from the ai_cache table."""
     try:
         sb.table("ai_cache").delete().neq("cache_key", "").execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("ai_cache.clear_cache failed: %s", e)

@@ -147,14 +147,6 @@ def _period_labels_to_days(labels: list[str]) -> dict[str, int]:
         elif upper.endswith("Y") and upper[:-1].isdigit():
             years = int(upper[:-1])
             mapping[label] = years * 365
-        elif upper == "1M":
-            mapping[label] = 30
-        elif upper == "3M":
-            mapping[label] = 90
-        elif upper == "6M":
-            mapping[label] = 180
-        elif upper == "12M":
-            mapping[label] = 365
     return mapping
 
 

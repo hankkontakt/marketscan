@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { IChartApi, ISeriesApi, HistogramSeriesPartialOptions } from "lightweight-charts";
+import type { IChartApi, ISeriesApi } from "lightweight-charts";
 import { useTheme } from "@/hooks/useTheme";
 
 interface Candle {
@@ -24,26 +24,29 @@ export function PriceChart({ candles, height = 300 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const ma50Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const ma200Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [period, setPeriod] = useState<"1M" | "3M" | "6M" | "1Å" | "MAX">("3M");
   const { resolved } = useTheme();
 
   useEffect(() => {
     if (!containerRef.current || typeof window === "undefined") return;
 
+    const isDark = resolved === "dark";
+    const gridColor   = isDark ? "#262A31" : "#E3E6EC";
+    const textColor   = isDark ? "#9AA1AC" : "#4A5567";
+    const upColor     = isDark ? "#3FB68B" : "#15803D";
+    const downColor   = isDark ? "#E0645C" : "#DC2626";
+    const ma50Color   = isDark ? "rgba(217,164,65,0.7)"  : "rgba(180,83,9,0.6)";
+    const ma200Color  = isDark ? "rgba(91,141,239,0.7)"  : "rgba(29,78,216,0.6)";
+    const volColor    = isDark ? "rgba(91,141,239,0.25)" : "rgba(29,78,216,0.15)";
+
     let chart: IChartApi;
 
     import("lightweight-charts").then(({ createChart, CrosshairMode }) => {
       if (!containerRef.current) return;
-
-      // Read theme from useTheme hook (reacts to toggle)
-      const isDark = resolved === "dark";
-      const gridColor   = isDark ? "#262A31" : "#E3E6EC";
-      const textColor   = isDark ? "#9AA1AC" : "#4A5567";
-      const upColor     = isDark ? "#3FB68B" : "#15803D";
-      const downColor   = isDark ? "#E0645C" : "#DC2626";
-      const ma50Color   = isDark ? "rgba(217,164,65,0.7)"  : "rgba(180,83,9,0.6)";
-      const ma200Color  = isDark ? "rgba(91,141,239,0.7)"  : "rgba(29,78,216,0.6)";
-      const volColor    = isDark ? "rgba(91,141,239,0.25)" : "rgba(29,78,216,0.15)";
 
       chart = createChart(containerRef.current, {
         height,
@@ -69,7 +72,6 @@ export function PriceChart({ candles, height = 300 }: Props) {
         priceScaleId: "right",
       });
 
-      // Volume bars
       const volumeSeries = chart.addHistogramSeries({
         priceScaleId: "volume",
         color: volColor,
@@ -79,60 +81,60 @@ export function PriceChart({ candles, height = 300 }: Props) {
         scaleMargins: { top: 0.8, bottom: 0 },
       });
 
-      // MA50 line
-      const ma50Series = chart.addLineSeries({
+      const ma50 = chart.addLineSeries({
         color: ma50Color, lineWidth: 1, priceScaleId: "right",
         crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
       });
 
-      // MA200 line
-      const ma200Series = chart.addLineSeries({
+      const ma200 = chart.addLineSeries({
         color: ma200Color, lineWidth: 1, priceScaleId: "right",
         crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
       });
 
       seriesRef.current = candleSeries;
+      volumeSeriesRef.current = volumeSeries;
+      ma50Ref.current = ma50;
+      ma200Ref.current = ma200;
       chartRef.current = chart;
 
-      // Store extra series refs for data updates
-      (chart as unknown as Record<string, unknown>)._volumeSeries = volumeSeries;
-      (chart as unknown as Record<string, unknown>)._ma50 = ma50Series;
-      (chart as unknown as Record<string, unknown>)._ma200 = ma200Series;
+      updateData(candleSeries, volumeSeries, ma50, ma200, candles, period);
 
-      updateData(candleSeries, period);
-
-      const ro = new ResizeObserver(() => {
+      resizeObserverRef.current = new ResizeObserver(() => {
         if (containerRef.current) {
           chart.applyOptions({ width: containerRef.current.clientWidth });
         }
       });
-      ro.observe(containerRef.current);
-      return () => ro.disconnect();
+      resizeObserverRef.current.observe(containerRef.current);
     });
 
-    return () => chart?.remove();
-  }, [candles]);
+    return () => {
+      chart?.remove();
+      resizeObserverRef.current?.disconnect();
+    };
+  }, [candles, resolved]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function updateData(series: ISeriesApi<"Candlestick">, p: typeof period) {
-    const filtered = filterByPeriod(candles, p);
-    series.setData(filtered.map((c) => ({
+  function updateData(
+    candleSeries: ISeriesApi<"Candlestick">,
+    volumeSeries: ISeriesApi<"Histogram">,
+    ma50: ISeriesApi<"Line">,
+    ma200: ISeriesApi<"Line">,
+    data: Candle[],
+    p: (typeof PERIODS)[number],
+  ) {
+    const filtered = filterByPeriod(data, p);
+    candleSeries.setData(filtered.map((c) => ({
       time: c.time,
       open: c.open, high: c.high, low: c.low, close: c.close,
     })));
 
-    // Volume
-    const chart = chartRef.current as unknown as Record<string, unknown>;
-    if (chart?._volumeSeries) {
-      (chart._volumeSeries as ISeriesApi<"Histogram">).setData(
-        filtered.map((c) => ({
-          time: c.time,
-          value: c.volume,
-          color: c.close >= c.open ? "rgba(63,182,139,0.3)" : "rgba(224,100,92,0.3)",
-        }))
-      );
-    }
+    volumeSeries.setData(
+      filtered.map((c) => ({
+        time: c.time,
+        value: c.volume,
+        color: c.close >= c.open ? "rgba(63,182,139,0.3)" : "rgba(224,100,92,0.3)",
+      }))
+    );
 
-    // MA helper
     function calcMA(data: Candle[], n: number) {
       return data.map((_, i) => {
         if (i < n - 1) return null;
@@ -141,19 +143,29 @@ export function PriceChart({ candles, height = 300 }: Props) {
       }).filter(Boolean);
     }
 
-    if (chart?._ma50) {
-      (chart._ma50 as ISeriesApi<"Line">).setData(calcMA(filtered, 50) as Parameters<ISeriesApi<"Line">["setData"]>[0]);
-    }
-    if (chart?._ma200) {
-      (chart._ma200 as ISeriesApi<"Line">).setData(calcMA(filtered, 200) as Parameters<ISeriesApi<"Line">["setData"]>[0]);
-    }
+    ma50.setData(calcMA(filtered, 50) as Parameters<ISeriesApi<"Line">["setData"]>[0]);
+    ma200.setData(calcMA(filtered, 200) as Parameters<ISeriesApi<"Line">["setData"]>[0]);
 
     chartRef.current?.timeScale().fitContent();
   }
 
-  function changePeriod(p: typeof period) {
+  function changePeriod(p: (typeof PERIODS)[number]) {
     setPeriod(p);
-    if (seriesRef.current) updateData(seriesRef.current, p);
+    if (
+      seriesRef.current &&
+      volumeSeriesRef.current &&
+      ma50Ref.current &&
+      ma200Ref.current
+    ) {
+      updateData(
+        seriesRef.current,
+        volumeSeriesRef.current,
+        ma50Ref.current,
+        ma200Ref.current,
+        candles,
+        p,
+      );
+    }
   }
 
   return (
@@ -173,7 +185,6 @@ export function PriceChart({ candles, height = 300 }: Props) {
           </button>
         ))}
       </div>
-      {/* MA legend */}
       <div className="flex items-center gap-3 text-[10px] text-[var(--color-text-muted)]">
         <span className="flex items-center gap-1">
           <span className="inline-block w-4 h-0.5 rounded" style={{ background: "rgba(217,164,65,0.8)" }} />

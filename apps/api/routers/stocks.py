@@ -3,6 +3,7 @@ GET /stocks/{ticker} — detailed stock view.
 Hot data from Postgres, cold (price history, score history) from R2/DuckDB.
 Falls back to generated mock data when R2 is not configured.
 """
+import re
 import random
 import math
 import logging
@@ -14,6 +15,15 @@ from apps.api.core.duckdb_r2 import query_score_history, query_price_history
 from apps.api.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_TICKER_RE = re.compile(r"^[A-Za-z0-9.\-]{1,20}$")
+
+
+def _validate_ticker(ticker: str) -> str:
+    t = ticker.upper().strip()
+    if not _TICKER_RE.match(t):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Ogiltigt ticker-format: {ticker}")
+    return t
 
 
 def _generate_mock_candles(ticker: str, current_price: float, days: int = 400) -> list[dict]:
@@ -89,11 +99,13 @@ from pydantic import BaseModel
 class PriceHistoryOut(BaseModel):
     ticker: str
     candles: list[dict]
+    is_synthetic: bool = False
 
 
 class ScoreHistoryOut(BaseModel):
     ticker: str
     history: list[dict]
+    is_synthetic: bool = False
 
 
 class StockSearchResult(BaseModel):
@@ -121,16 +133,31 @@ class NewsResponse(BaseModel):
     news: list[NewsItemOut]
 
 
+class EarningsItem(BaseModel):
+    period: str | None = None
+    actual: float | None = None
+    estimate: float | None = None
+    surprise: float | None = None
+    surprise_pct: float | None = None
+    revenue: float | None = None
+
+
+class EarningsResponse(BaseModel):
+    ticker: str
+    earnings: list[EarningsItem]
+
+
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 
 @router.get("/{ticker}", response_model=ScanRow)
 async def get_stock(ticker: str, sb=Depends(get_supabase)):
     """Current scan data for a single ticker."""
+    t = _validate_ticker(ticker)
     result = (
         sb.table("scan_results")
         .select("*")
-        .eq("ticker", ticker.upper())
+        .eq("ticker", t)
         .single()
         .execute()
     )
@@ -143,39 +170,41 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
 async def get_price_history(ticker: str, sb=Depends(get_supabase)):
     """OHLCV data from R2 for TradingView Lightweight Charts.
     Falls back to generated mock data when R2 is not configured."""
+    t = _validate_ticker(ticker)
     try:
-        data = query_price_history(ticker.upper())
+        data = query_price_history(t)
         return {"ticker": ticker, "candles": data}
     except Exception as e:
         logger.warning("R2 price history unavailable for %s — falling back to mock data: %s", ticker, e)
         try:
-            row = sb.table("scan_results").select("price").eq("ticker", ticker.upper()).single().execute()
+            row = sb.table("scan_results").select("price").eq("ticker", t).single().execute()
             current_price = row.data.get("price") if row.data else None
         except Exception as inner_e:
             logger.warning("Could not fetch current price for %s: %s", ticker, inner_e)
             current_price = None
 
-        candles = _generate_mock_candles(ticker.upper(), current_price or 100.0)
-        return {"ticker": ticker, "candles": candles}
+        candles = _generate_mock_candles(t, current_price or 100.0)
+        return {"ticker": ticker, "candles": candles, "is_synthetic": True}
 
 
 @router.get("/{ticker}/score-history", response_model=ScoreHistoryOut)
 async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabase)):
     """Weekly score snapshots from R2. Falls back to generated mock data."""
+    t = _validate_ticker(ticker)
     try:
-        data = query_score_history(ticker.upper(), limit=limit)
+        data = query_score_history(t, limit=limit)
         return {"ticker": ticker, "history": data}
     except Exception as e:
         logger.warning("R2 score history unavailable for %s — falling back to mock data: %s", ticker, e)
         try:
-            row = sb.table("scan_results").select("score_total, entry_signal").eq("ticker", ticker.upper()).single().execute()
+            row = sb.table("scan_results").select("score_total, entry_signal").eq("ticker", t).single().execute()
             current_score = row.data.get("score_total") if row.data else 65.0
             current_signal = row.data.get("entry_signal") if row.data else "OK"
         except Exception as inner_e:
             logger.warning("Could not fetch current score for %s: %s", ticker, inner_e)
             current_score, current_signal = 65.0, "OK"
-        history = _generate_mock_score_history(ticker.upper(), float(current_score or 65), limit)
-        return {"ticker": ticker, "history": history}
+        history = _generate_mock_score_history(t, float(current_score or 65), limit)
+        return {"ticker": ticker, "history": history, "is_synthetic": True}
 
 
 @router.get("", response_model=list[StockSearchResult])
@@ -195,6 +224,7 @@ async def search_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
 @router.get("/{ticker}/news", response_model=NewsResponse)
 async def get_stock_news(ticker: str):
     """Company news via Finnhub API."""
+    t = _validate_ticker(ticker)
     if not settings.FINNHUB_API_KEY:
         return {"ticker": ticker, "news": []}
 
@@ -203,15 +233,14 @@ async def get_stock_news(ticker: str):
 
     url = (
         f"https://finnhub.io/api/v1/company-news"
-        f"?symbol={ticker.upper()}"
+        f"?symbol={t}"
         f"&from={one_year_ago.isoformat()}"
         f"&to={today.isoformat()}"
-        f"&token={settings.FINNHUB_API_KEY}"
     )
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -239,21 +268,21 @@ async def get_stock_news(ticker: str):
     return {"ticker": ticker, "news": news}
 
 
-@router.get("/{ticker}/earnings")
+@router.get("/{ticker}/earnings", response_model=EarningsResponse)
 async def get_stock_earnings(ticker: str):
     """Earnings calendar data via Finnhub API."""
+    t = _validate_ticker(ticker)
     if not settings.FINNHUB_API_KEY:
         return {"ticker": ticker, "earnings": []}
 
     url = (
         f"https://finnhub.io/api/v1/stock/earnings"
-        f"?symbol={ticker.upper()}"
-        f"&token={settings.FINNHUB_API_KEY}"
+        f"?symbol={t}"
     )
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:

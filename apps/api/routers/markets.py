@@ -41,7 +41,7 @@ async def get_sector_overview(sb=Depends(get_supabase)):
     """Aggregated sector data for heatmap/overview."""
     result = sb.table("scan_results").select(
         "sector, score_total, score_momentum, score_value, score_quality, "
-        "score_growth, score_risk, entry_signal, ticker"
+        "score_growth, score_risk, entry_signal, ticker, scan_date"
     ).execute()
 
     rows = result.data or []
@@ -152,8 +152,8 @@ async def get_global_indices():
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(
                     f"https://finnhub.io/api/v1/quote"
-                    f"?symbol={finnhub_symbol}"
-                    f"&token={settings.FINNHUB_API_KEY}"
+                    f"?symbol={finnhub_symbol}",
+                    headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
                 )
                 resp.raise_for_status()
                 data = resp.json()
