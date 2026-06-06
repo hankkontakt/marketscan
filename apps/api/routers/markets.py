@@ -70,10 +70,16 @@ async def get_sector_overview(sb=Depends(get_supabase)):
         mo = r.get("score_momentum")
         if mo is not None:
             s["momentums"].append(mo)
-        for field in ("score_value", "score_quality", "score_growth", "score_risk"):
+        _FIELD_MAP = {
+            "score_value": "score_values",
+            "score_quality": "score_qualities",
+            "score_growth": "score_growths",
+            "score_risk": "score_risks",
+        }
+        for field, dict_key in _FIELD_MAP.items():
             val = r.get(field)
             if val is not None:
-                s[field + "s"].append(val)
+                s[dict_key].append(val)
         sig = r.get("entry_signal")
         if sig:
             s["signals"][sig] += 1
