@@ -6,14 +6,5 @@
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/main.py" }
-  ],
-  "builds": [
-    {
-      "src": "api/main.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "15mb"
-      }
-    }
   ]
 }
