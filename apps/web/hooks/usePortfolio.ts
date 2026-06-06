@@ -3,8 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ScanRow } from "@/types/scan";
-import type { Portfolio, Holding, PortfolioHistory } from "@/types/portfolio";
-export type { Portfolio, Holding, PortfolioHistory, PeriodReturn } from "@/types/portfolio";
+import type { Portfolio, Holding, PortfolioHistory, PortfolioRisk } from "@/types/portfolio";
+export type { Portfolio, Holding, PortfolioHistory, PeriodReturn, PortfolioRisk } from "@/types/portfolio";
 
 export function usePortfolio() {
   return useQuery<Portfolio>({
@@ -45,6 +45,18 @@ export function usePortfolioHistory(periods = "1M,3M,6M,12M") {
   return useQuery<PortfolioHistory>({
     queryKey: ["portfolio-history", periods],
     queryFn: () => api<PortfolioHistory>(`/api/portfolio/history?periods=${encodeURIComponent(periods)}`),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+}
+
+
+// ─── Portfolio risk ────────────────────────────────────────────
+
+export function usePortfolioRisk() {
+  return useQuery<PortfolioRisk>({
+    queryKey: ["portfolio-risk"],
+    queryFn: () => api<PortfolioRisk>("/api/portfolio/risk"),
     staleTime: 5 * 60_000,
     retry: 1,
   });

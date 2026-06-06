@@ -224,6 +224,8 @@ function PortfolioCard({
 
       {/* Period selector */}
       <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-xs text-[var(--color-text-muted)] mr-1">Avkastning</span>
+        <InfoTooltip text="Avkastning senaste perioden." side="bottom" />
         {periods.map((period) => {
           const isActive = period.label === activePeriod;
           return (
@@ -384,6 +386,7 @@ function WatchlistCard({ items }: { items: ReturnType<typeof useWatchlist>["data
           <span className="text-sm font-semibold text-[var(--color-text-primary)]">
             Dina bevakningar
           </span>
+          <InfoTooltip text="Aktier du följer. Få snabb överblick av dina bevakningar." />
         </div>
         <Link
           href="/bevakningar"

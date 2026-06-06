@@ -344,3 +344,99 @@ async def get_stock_earnings(ticker: str):
         return {"ticker": ticker, "earnings": []}
 
     return {"ticker": ticker, "earnings": data[:12]}
+
+
+class InsiderTradeOut(BaseModel):
+    name: str | None = None
+    share: float | None = None
+    change: float | None = None
+    filiing_date: str | None = None
+    transaction_date: str | None = None
+    transaction_price: float | None = None
+    transaction_code: str | None = None
+    url: str | None = None
+
+
+class InsiderTradesResponse(BaseModel):
+    ticker: str
+    insider_trades: list[InsiderTradeOut]
+
+
+@router.get("/{ticker}/insider-trades", response_model=InsiderTradesResponse)
+async def get_insider_trades(ticker: str):
+    """Insider trading data via Finnhub API."""
+    t = _validate_ticker(ticker)
+    if not settings.FINNHUB_API_KEY:
+        return {"ticker": ticker, "insider_trades": []}
+
+    url = f"https://finnhub.io/api/v1/stock/insider-transactions?symbol={t}"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.warning("Finnhub insider trades failed for %s: %s", ticker, e)
+        return {"ticker": ticker, "insider_trades": []}
+
+    trades = []
+    for item in (data.get("data", []) or [])[:15]:
+        trades.append(InsiderTradeOut(
+            name=item.get("name"),
+            share=item.get("share"),
+            change=item.get("change"),
+            filiing_date=item.get("filingDate"),
+            transaction_date=item.get("transactionDate"),
+            transaction_price=item.get("transactionPrice"),
+            transaction_code=item.get("transactionCode"),
+        ))
+
+    return {"ticker": ticker, "insider_trades": trades}
+
+
+class PiotroskiCriterion(BaseModel):
+    name: str
+    passed: bool
+    explanation: str
+
+
+class PiotroskiDetailOut(BaseModel):
+    ticker: str
+    total_score: int
+    criteria: list[PiotroskiCriterion]
+
+
+@router.get("/{ticker}/piotroski", response_model=PiotroskiDetailOut)
+async def get_piotroski_detail(ticker: str, sb=Depends(get_supabase)):
+    """Show all 9 Piotroski F-Score criteria with pass/fail."""
+    t = _validate_ticker(ticker)
+    row = sb.table("scan_results").select(
+        "piotroski_f,roa,ocf_to_assets,accrual,debt_to_equity,current_ratio,"
+        "shares_diluted,gross_margin,asset_turnover,piotroski_roa,"
+        "piotroski_ocf,piotroski_accrual,piotroski_leverage,piotroski_liquidity,"
+        "piotroski_dilution,piotroski_margin,piotroski_turnover"
+    ).eq("ticker", t).single().execute()
+
+    if not row.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte")
+
+    r = row.data
+    total = r.get("piotroski_f", 0)
+
+    criteria = [
+        PiotroskiCriterion(name="ROA är positiv", passed=r.get("piotroski_roa", False), explanation="Positiv avkastning på totala tillgångar — bolaget genererar vinst relativt sina tillgångar."),
+        PiotroskiCriterion(name="OCF är positiv", passed=r.get("piotroski_ocf", False), explanation="Positivt kassaflöde från verksamheten — den löpande verksamheten genererar pengar."),
+        PiotroskiCriterion(name="OCF > ROA (Accrual)", passed=r.get("piotroski_accrual", False), explanation="Kassaflödet är högre än nettoresultatet — vinsten är av hög kvalitet, inte baserad på bokföringsposter."),
+        PiotroskiCriterion(name="Minskad skuldsättning", passed=not r.get("piotroski_leverage", True), explanation="Skuldsättningsgraden har minskat — bolaget blir mindre finansiellt riskabelt.") if r.get("debt_to_equity") else PiotroskiCriterion(name="Skuldsättning (finans)", passed=bool(r.get("piotroski_leverage")), explanation="Finansbolag bedöms annorlunda — skuldsättning är en del av affärsmodellen."),
+        PiotroskiCriterion(name="Förbättrad likviditet", passed=r.get("piotroski_liquidity", False), explanation="Current ratio har ökat — bolagets kortsiktiga betalningsförmåga förbättras."),
+        PiotroskiCriterion(name="Ingen utspädning", passed=not r.get("piotroski_dilution", True), explanation="Antalet aktier har inte ökat — befintliga aktieägare blir inte utspädda."),
+        PiotroskiCriterion(name="Förbättrad bruttomarginal", passed=r.get("piotroski_margin", False), explanation="Bruttomarginalen har ökat — bolaget får bättre betalt för sina produkter."),
+        PiotroskiCriterion(name="Förbättrad tillgångsomsättning", passed=r.get("piotroski_turnover", False), explanation="Tillgångarna används mer effektivt — mer intäkter per tillgångskrona."),
+    ]
+
+    return PiotroskiDetailOut(
+        ticker=ticker,
+        total_score=total or 0,
+        criteria=criteria,
+    )

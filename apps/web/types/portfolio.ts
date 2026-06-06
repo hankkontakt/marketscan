@@ -52,3 +52,18 @@ export interface PeriodReturn {
 export interface PortfolioHistory {
   periods: Record<string, PeriodReturn>;
 }
+
+export interface SectorAllocation {
+  sector: string;
+  value: number;
+  pct: number;
+}
+
+export interface PortfolioRisk {
+  tickers: string[];
+  sector_allocation: SectorAllocation[];
+  concentration_pct: number;
+  total_value: number;
+  count: number;
+  score_avg: number | null;
+}

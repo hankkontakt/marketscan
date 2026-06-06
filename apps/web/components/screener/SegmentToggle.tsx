@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { segmentLabel } from "@/lib/format";
 
 const SEGMENTS = ["large_cap", "mid_cap", "small_cap", "micro_cap"] as const;
@@ -31,6 +32,10 @@ export function SegmentToggle({ value, onChange }: Props) {
 
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-[var(--color-text-muted)]">Segment</span>
+        <InfoTooltip text="Välj marknadssegment baserat på börsvärde." />
+      </div>
       {/* Preset chips */}
       <div className="flex gap-1.5 flex-wrap">
         {PRESETS.map((preset) => {

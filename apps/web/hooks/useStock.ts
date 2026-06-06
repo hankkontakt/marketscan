@@ -60,3 +60,24 @@ export function useStockEarnings(ticker: string, enabled = true) {
     enabled: !!ticker && enabled,
   });
 }
+
+export interface PiotroskiCriterion {
+  name: string;
+  passed: boolean;
+  explanation: string;
+}
+
+export interface PiotroskiDetail {
+  ticker: string;
+  total_score: number;
+  criteria: PiotroskiCriterion[];
+}
+
+export function usePiotroski(ticker: string, enabled = true) {
+  return useQuery<PiotroskiDetail>({
+    queryKey: ["piotroski", ticker],
+    queryFn: () => api(`/api/stocks/${ticker}/piotroski`),
+    staleTime: 10 * 60_000,
+    enabled: !!ticker && enabled,
+  });
+}

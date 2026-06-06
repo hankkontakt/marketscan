@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check } from "lucide-react";
-import { usePortfolio, useRemoveHolding, useAddHolding } from "@/hooks/usePortfolio";
+import { MetricCard } from "@/components/ui/MetricCard";
+import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check, TrendingUp, Building2, Target } from "lucide-react";
+import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk } from "@/hooks/usePortfolio";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@/lib/format";
 import { PieChart as RechartsPie, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 export function PortfoljView() {
   const { data: portfolio, isLoading } = usePortfolio();
@@ -79,7 +81,11 @@ export function PortfoljView() {
               </div>
               {totalReturn != null && (
                 <div className={cn("text-sm tabular", changeClass(totalReturn))}>
-                  {formatPctChange(totalReturn)} total avkastning
+                  {formatPctChange(totalReturn)}{" "}
+                  <span className="inline-flex items-center gap-1">
+                    total avkastning
+                    <InfoTooltip text="Portföljens totala avkastning sedan start." />
+                  </span>
                 </div>
               )}
             </div>
@@ -250,6 +256,7 @@ export function PortfoljView() {
           <div className="flex items-center gap-2 mb-4">
             <MessageSquare size={15} strokeWidth={1.5} className="text-[var(--color-accent)]" />
             <h2 className="text-sm font-medium text-[var(--color-text-primary)]">Fråga om din portfölj</h2>
+            <InfoTooltip text="Få AI-genererade råd om din portfölj." />
           </div>
 
           {/* Chat history */}
@@ -404,31 +411,130 @@ function AllocationDonut({ holdings, totalValue }: {
   );
 }
 
-// Risk panel (plan §10: "riskanalys: sektorkoncentration, beta")
+// Risk panel (P3-5: portfolio risk endpoint — sector allocation, concentration, avg score)
+const SECTOR_COLORS = [
+  "#5B8DEF", "#3FB68B", "#D9A441", "#E0645C",
+  "#9AA1AC", "#7B6EF6", "#4ABDE8", "#F0A05A",
+  "#E882D9", "#6BB59B", "#C98B6B", "#A0A4B8",
+];
+
 function RiskPanel({ holdings }: {
   holdings: { ticker: string; name: string | null }[];
 }) {
+  const { data: risk, isLoading } = usePortfolioRisk();
+
+  if (isLoading) return <RiskPanelSkeleton />;
+  if (!risk || risk.count === 0) {
+    return (
+      <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+        <div className="flex items-center gap-2 mb-4">
+          <ShieldAlert size={14} strokeWidth={1.5} className="text-[var(--color-warn)]" />
+          <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">Risk & Allokering</h3>
+        </div>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Ingen riskdata tillgänglig. Lägg till innehav med scan_resultat för att se sektorallokering.
+        </p>
+      </div>
+    );
+  }
+
+  const topSectors = risk.sector_allocation.slice(0, 6);
+
   return (
     <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
       <div className="flex items-center gap-2 mb-4">
         <ShieldAlert size={14} strokeWidth={1.5} className="text-[var(--color-warn)]" />
-        <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">Riskanalys</h3>
+        <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">Risk & Allokering</h3>
+      </div>
+
+      {/* Metric cards row */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <MetricCard
+          label="Totalvärde"
+          value={formatPrice(risk.total_value)}
+          tooltip="Marknadsvärde baserat på senast kända kurs"
+        />
+        <MetricCard
+          label="Antal innehav"
+          value={risk.count}
+          tooltip="Totalt antal aktier i portföljen"
+        />
+        <MetricCard
+          label="Snittbetyg"
+          value={risk.score_avg != null ? risk.score_avg.toFixed(1) : "—"}
+          variant={risk.score_avg != null ? (risk.score_avg >= 60 ? "positive" : risk.score_avg >= 40 ? "neutral" : "negative") : "default"}
+          tooltip="Genomsnittligt Marketscan-betyg (0–100)"
+        />
+        <MetricCard
+          label="Sektorkoncentration"
+          value={`${risk.concentration_pct}%`}
+          variant={risk.concentration_pct > 50 ? "negative" : risk.concentration_pct > 30 ? "neutral" : "positive"}
+          tooltip="Andel av portföljvärdet i den största sektorn"
+        />
+      </div>
+
+      {/* Sector allocation bars */}
+      {topSectors.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Building2 size={13} strokeWidth={1.5} className="text-[var(--color-text-muted)]" />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">Sektorallokering</span>
+            <InfoTooltip text="Hur portföljen är fördelad över olika sektorer." />
+          </div>
+          {topSectors.map((s, i) => (
+            <div key={s.sector} className="space-y-0.5">
+              <div className="flex justify-between text-xs">
+                <span className="text-[var(--color-text-secondary)] truncate mr-2">{s.sector}</span>
+                <span className="font-mono tabular text-[var(--color-text-muted)] shrink-0">
+                  {s.pct}% · {formatPrice(s.value)}
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-[var(--color-bg-elevated)] overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${s.pct}%`,
+                    background: SECTOR_COLORS[i % SECTOR_COLORS.length],
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Concentration warning */}
+      {risk.concentration_pct > 50 && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--color-down)]/20 bg-[var(--color-down)]/5 p-2.5">
+          <Target size={14} strokeWidth={1.5} className="text-[var(--color-down)] shrink-0 mt-0.5" />
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Hög koncentration: <strong>{risk.concentration_pct}%</strong> i en sektor. Överväg att diversifiera för att minska risken.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RiskPanelSkeleton() {
+  return (
+    <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="skeleton h-4 w-4 rounded" />
+        <div className="skeleton h-4 w-28 rounded" />
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="skeleton h-16 rounded-xl" />
+        ))}
       </div>
       <div className="space-y-3">
-        <div className="flex justify-between text-xs">
-          <span className="text-[var(--color-text-muted)]">Antal innehav</span>
-          <span className="font-mono tabular text-[var(--color-text-primary)]">{holdings.length}</span>
-        </div>
-        <div className="flex justify-between text-xs">
-          <span className="text-[var(--color-text-muted)]">Koncentration (top 3)</span>
-          <span className="font-mono tabular text-[var(--color-text-primary)]">
-            {holdings.length <= 3 ? "Hög" : holdings.length <= 7 ? "Medel" : "Låg"}
-          </span>
-        </div>
-        <p className="text-[11px] text-[var(--color-text-muted)] pt-1 border-t border-[var(--color-border)]">
-          Detaljerad riskanalys (beta, sektorkoncentration, korrelation) beräknas av AI-coachen.
-          Fråga: &ldquo;Analysera min portföljrisk&rdquo;
-        </p>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="space-y-1">
+            <div className="skeleton h-3 w-full rounded" />
+            <div className="skeleton h-2 w-full rounded" />
+          </div>
+        ))}
       </div>
     </div>
   );

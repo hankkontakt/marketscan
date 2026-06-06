@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
-import { AlertTriangle } from "lucide-react";
-import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings } from "@/hooks/useStock";
+import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski } from "@/hooks/useStock";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
@@ -242,62 +242,68 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
 // ─── Faktorer ────────────────────────────────────────────────────────────────
 
 const FACTOR_DESCS: Record<string, string> = {
-  score_value:     "Hur attraktivt aktien är prissatt relativt fundamentala värden (P/E, P/B m.fl.)",
-  score_quality:   "Bolagets lönsamhet, finansiell styrka och resultatstabilitet",
-  score_momentum:  "Pristrend och relativ styrka de senaste 3–12 månaderna",
-  score_growth:    "Tillväxt i intäkter, vinst och kassaflöde",
-  score_risk:      "Volatilitet, skuldsättning och likviditetsrisk",
+  score_value:     "Värderingsbetyg baserat på P/E, P/B, EV/EBITDA.",
+  score_quality:   "Kvalitetsbetyg baserat på ROE, marginaler, Piotroski.",
+  score_momentum:  "Momentumbetyg baserat på kursutveckling 6-12 mån.",
+  score_growth:    "Tillväxtbetyg baserat på intäkts- och vinsttillväxt.",
+  score_risk:      "Riskbetyg baserat på beta, volatilitet, skuldsättning.",
   score_size:      "Storlekspremium och marknadskapitalisering",
   score_dividend:  "Direktavkastning, utdelningshistorik och hållbarhet",
   score_sentiment: "Nyhetssentiment, analytikerkonsensus och marknadsregim",
 };
 
 function FaktorerTab({ stock }: { stock: ScanRow }) {
+  const [showDetails, setShowDetails] = useState(false);
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
       {/* Radar */}
       <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-medium mb-2 text-[var(--color-text-secondary)]">Faktoröversikt</h3>
         <FactorRadar stock={stock} />
-      </div>
-
-      {/* Factor breakdown */}
-      <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-        <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">Faktorbetyg</h3>
-        <div className="space-y-4">
-          {Object.entries(FACTOR_DESCS).map(([key, desc]) => {
-            const score = stock[key as keyof ScanRow] as number | null;
-            const niceName = key.replace("score_", "");
-            const displayName = niceName.charAt(0).toUpperCase() + niceName.slice(1);
-            return (
-              <div key={key}>
-                <div className="flex justify-between items-center mb-1">
-                  <span className="flex items-center text-xs text-[var(--color-text-primary)]">
-                    {displayName}
-                    <InfoTooltip text={desc} side="right" />
-                  </span>
-                  <span className={cn("font-mono text-xs font-semibold tabular", scoreColorClass(score))}>
-                    {score != null ? Math.round(score) : "—"}
-                  </span>
-                </div>
-                <div className="h-1.5 rounded-full overflow-hidden bg-[var(--color-bg-elevated)]">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${score ?? 0}%`,
-                      background: (score ?? 0) >= 70
-                        ? "var(--color-score-high)"
-                        : (score ?? 0) >= 50
-                        ? "var(--color-score-mid)"
-                        : "var(--color-score-low)",
-                    }}
-                  />
-                </div>
-                <p className="text-[11px] mt-1 text-[var(--color-text-muted)]">{desc}</p>
-              </div>
-            );
-          })}
+        <div className="mt-3 text-center">
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="text-xs text-[var(--color-accent)] hover:underline"
+          >
+            {showDetails ? "Dölj detaljer" : "Detaljer"}
+          </button>
         </div>
+        {showDetails && (
+          <div className="mt-4 space-y-3 pt-3 border-t border-[var(--color-border)]">
+            {Object.entries(FACTOR_DESCS).map(([key, desc]) => {
+              const score = stock[key as keyof ScanRow] as number | null;
+              const niceName = key.replace("score_", "");
+              const displayName = niceName.charAt(0).toUpperCase() + niceName.slice(1);
+              return (
+                <div key={key}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="flex items-center text-xs text-[var(--color-text-primary)]">
+                      {displayName}
+                      <InfoTooltip text={desc} side="right" />
+                    </span>
+                    <span className={cn("font-mono text-xs font-semibold tabular", scoreColorClass(score))}>
+                      {score != null ? Math.round(score) : "—"}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden bg-[var(--color-bg-elevated)]">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${score ?? 0}%`,
+                        background: (score ?? 0) >= 70
+                          ? "var(--color-score-high)"
+                          : (score ?? 0) >= 50
+                          ? "var(--color-score-mid)"
+                          : "var(--color-score-low)",
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -307,6 +313,7 @@ function FaktorerTab({ stock }: { stock: ScanRow }) {
 
 function AnalysTab({ ticker }: { ticker: string }) {
   const { data, isLoading } = useScoreHistory(ticker);
+  const { data: piotroskiData, isLoading: piotroskiLoading } = usePiotroski(ticker);
 
   return (
     <div className="space-y-6">
@@ -320,6 +327,45 @@ function AnalysTab({ ticker }: { ticker: string }) {
               Betygstrend ej tillgänglig (kräver historikdata i R2)
             </p>
         }
+      </div>
+
+      <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+        <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">
+          Piotroski F-Score: {piotroskiData ? `${piotroskiData.total_score}/9` : "—"}
+        </h3>
+        {piotroskiLoading ? (
+          <div className="skeleton h-48 rounded-lg" />
+        ) : piotroskiData?.criteria?.length ? (
+          <div className="space-y-2">
+            {piotroskiData.criteria.map((c, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 rounded-lg p-3 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] group relative"
+              >
+                {c.passed ? (
+                  <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-[var(--color-up)]" />
+                ) : (
+                  <XCircle size={18} className="shrink-0 mt-0.5 text-[var(--color-down)]" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <span className={cn(
+                    "text-sm font-medium",
+                    c.passed ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]",
+                  )}>
+                    {c.name}
+                  </span>
+                  <div className="text-xs text-[var(--color-text-muted)] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {c.explanation}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-[var(--color-text-muted)] text-center py-8">
+            Piotroski-data ej tillgänglig
+          </p>
+        )}
       </div>
     </div>
   );
@@ -383,6 +429,9 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
   const { data: newsData, isLoading: newsLoading } = useStockNews(ticker);
   const earnings = earningsData?.earnings ?? [];
   const news = newsData?.news ?? [];
+  const [showAllNews, setShowAllNews] = useState(false);
+  const newsLimit = 3;
+  const visibleNews = showAllNews ? news : news.slice(0, newsLimit);
 
   return (
     <div className="space-y-5">
@@ -480,7 +529,7 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
           <div className="skeleton h-40 rounded-lg" />
         ) : news.length > 0 ? (
           <div className="space-y-3 max-h-[400px] overflow-y-auto">
-            {news.map((item, i) => (
+            {visibleNews.map((item, i) => (
               <a
                 key={i}
                 href={item.url ?? "#"}
@@ -510,6 +559,14 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
                 </div>
               </a>
             ))}
+            {!showAllNews && news.length > newsLimit && (
+              <button
+                onClick={() => setShowAllNews(true)}
+                className="w-full py-2 text-xs font-medium text-[var(--color-accent)] hover:underline transition-colors"
+              >
+                Visa alla {news.length} nyheter
+              </button>
+            )}
           </div>
         ) : (
           <p className="text-sm text-[var(--color-text-muted)] text-center py-6">
@@ -550,7 +607,37 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
 // ─── AI ─────────────────────────────────────────────────────────────────────
 
 function AITab({ stock }: { stock: ScanRow }) {
-  return <AnalysCommittee stock={stock} />;
+  const [committeeOpen, setCommitteeOpen] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      {!committeeOpen ? (
+        <div className="rounded-xl border p-6 text-center bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+          <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+            AI-baserad analyskommitté med detaljerad genomgång av aktiens styrkor och svagheter.
+          </p>
+          <button
+            onClick={() => setCommitteeOpen(true)}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors"
+          >
+            Visa analys
+          </button>
+        </div>
+      ) : (
+        <div>
+          <AnalysCommittee stock={stock} />
+          <div className="mt-3 text-center">
+            <button
+              onClick={() => setCommitteeOpen(false)}
+              className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+            >
+              Dölj analys
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Skeleton ────────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SegmentToggle } from "@/components/screener/SegmentToggle";
 import { FilterRail } from "@/components/screener/FilterRail";
 import { ResultTable } from "@/components/screener/ResultTable";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import type { ScanParams } from "@/lib/api";
@@ -146,7 +147,7 @@ export function ScreenerView() {
       </div>
 
       {/* Fritextsökning */}
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={14} strokeWidth={1.5}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
@@ -161,6 +162,7 @@ export function ScreenerView() {
                        focus:border-[var(--color-accent)] focus:outline-none transition-colors"
           />
         </div>
+        <InfoTooltip text="Sök på naturligt språk, t.ex. 'billiga svenska kvalitetsbolag'." side="bottom" />
         <button
           onClick={runNlSearch}
           disabled={nlParsing || !nlQuery.trim()}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { useSectors } from "@/hooks/useScreener";
 import type { ScanParams } from "@/lib/api";
 
@@ -64,35 +65,55 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
 
       {/* Always visible */}
       <div className="grid grid-cols-2 gap-3">
-        <FilterSelect
-          label="Köpläge"
-          value={filters.entry_signal ?? ""}
-          onChange={(v) => onChange({ entry_signal: v || undefined })}
-          options={[{ value: "", label: "Alla" }, ...SIGNALS]}
-        />
-        <FilterSelect
-          label="Trend"
-          value={filters.trend_signal ?? ""}
-          onChange={(v) => onChange({ trend_signal: v || undefined })}
-          options={[{ value: "", label: "Alla" }, ...TRENDS]}
-        />
+        <div className="space-y-1">
+          <label className="flex items-center text-[11px] text-[var(--color-text-muted)]">
+            Köpläge
+            <InfoTooltip text="Välj entry-signal: STARK, OK, VÄNTA, eller EJ AKTUELL." />
+          </label>
+          <FilterSelect
+            value={filters.entry_signal ?? ""}
+            onChange={(v) => onChange({ entry_signal: v || undefined })}
+            options={[{ value: "", label: "Alla" }, ...SIGNALS]}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="flex items-center text-[11px] text-[var(--color-text-muted)]">
+            Trend
+            <InfoTooltip text="Filtrera på trendriktning: upptrend, sidled, eller nedtrend." />
+          </label>
+          <FilterSelect
+            value={filters.trend_signal ?? ""}
+            onChange={(v) => onChange({ trend_signal: v || undefined })}
+            options={[{ value: "", label: "Alla" }, ...TRENDS]}
+          />
+        </div>
       </div>
 
       {/* Expanded filters */}
       {expanded && (
         <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[var(--color-border)]">
-          <FilterSelect
-            label="Sektor"
-            value={filters.sector ?? ""}
-            onChange={(v) => onChange({ sector: v || undefined })}
-            options={[{ value: "", label: "Alla sektorer" }, ...sectors.map(s => ({ value: s, label: s }))]}
-          />
-          <FilterNumber
-            label="Totalbetyg min"
-            value={filters.score_min}
-            onChange={(v) => onChange({ score_min: v })}
-            min={0} max={100} step={5}
-          />
+          <div className="space-y-1">
+            <label className="flex items-center text-[11px] text-[var(--color-text-muted)]">
+              Sektor
+              <InfoTooltip text="Filtrera på marknadssektor." />
+            </label>
+            <FilterSelect
+              value={filters.sector ?? ""}
+              onChange={(v) => onChange({ sector: v || undefined })}
+              options={[{ value: "", label: "Alla sektorer" }, ...sectors.map(s => ({ value: s, label: s }))]}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="flex items-center text-[11px] text-[var(--color-text-muted)]">
+              Totalbetyg min
+              <InfoTooltip text="Minsta totalbetyg. 60+ = positivt, 70+ = starkt." />
+            </label>
+            <FilterNumber
+              value={filters.score_min}
+              onChange={(v) => onChange({ score_min: v })}
+              min={0} max={100} step={5}
+            />
+          </div>
           <FilterNumber
             label="Piotroski F min"
             value={filters.piotroski_min}
