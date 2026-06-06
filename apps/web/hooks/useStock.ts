@@ -32,3 +32,31 @@ export function useScoreHistory(ticker: string, enabled = true) {
     enabled: !!ticker && enabled,
   });
 }
+
+export interface NewsItem {
+  date: string;
+  headline: string;
+  summary: string;
+  source: string;
+  url: string | null;
+  sentiment: string | null;
+  ticker: string | null;
+}
+
+export function useStockNews(ticker: string, enabled = true) {
+  return useQuery<{ ticker: string; news: NewsItem[] }>({
+    queryKey: ["stock-news", ticker],
+    queryFn: () => api(`/api/stocks/${ticker}/news`),
+    staleTime: 10 * 60_000,
+    enabled: !!ticker && enabled,
+  });
+}
+
+export function useStockEarnings(ticker: string, enabled = true) {
+  return useQuery<{ ticker: string; earnings: unknown[] }>({
+    queryKey: ["stock-earnings", ticker],
+    queryFn: () => api(`/api/stocks/${ticker}/earnings`),
+    staleTime: 60 * 60_000,
+    enabled: !!ticker && enabled,
+  });
+}

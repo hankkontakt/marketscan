@@ -3,7 +3,7 @@
 import { useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AlertTriangle } from "lucide-react";
-import { useStock, usePriceHistory, useScoreHistory } from "@/hooks/useStock";
+import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings } from "@/hooks/useStock";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
@@ -107,7 +107,7 @@ export function StockView({ ticker }: Props) {
             <Tabs.Content value="oversikt"><OverviewTab stock={stock} /></Tabs.Content>
             <Tabs.Content value="faktorer"><FaktorerTab stock={stock} /></Tabs.Content>
             <Tabs.Content value="analys"><AnalysTab ticker={ticker} /></Tabs.Content>
-            <Tabs.Content value="rapporter"><RapporterTab stock={stock} /></Tabs.Content>
+            <Tabs.Content value="rapporter"><RapporterTab ticker={ticker} stock={stock} /></Tabs.Content>
             <Tabs.Content value="ai"><AITab stock={stock} /></Tabs.Content>
           </div>
         </Tabs.Root>
@@ -378,13 +378,66 @@ function ScoreHistoryChart({ history }: { history: { date: string; score: number
 
 // ─── Rapporter ───────────────────────────────────────────────────────────────
 
-function RapporterTab({ stock }: { stock: ScanRow }) {
-  const hasGrowth = stock.revenue_growth != null || stock.earnings_growth != null;
+function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
+  const { data: earningsData, isLoading: earningsLoading } = useStockEarnings(ticker);
+  const { data: newsData, isLoading: newsLoading } = useStockNews(ticker);
+  const earnings = earningsData?.earnings ?? [];
+  const news = newsData?.news ?? [];
 
   return (
     <div className="space-y-5">
-      {/* Available data */}
-      {hasGrowth && (
+      {/* Earnings history */}
+      <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+        <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-primary)]">
+          Kvartalsrapporter
+        </h3>
+        {earningsLoading ? (
+          <div className="skeleton h-32 rounded-lg" />
+        ) : earnings.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
+                  <th className="text-left py-2 pr-4 font-medium">Period</th>
+                  <th className="text-right py-2 pr-4 font-medium">EPS (rapport)</th>
+                  <th className="text-right py-2 pr-4 font-medium">EPS (estimat)</th>
+                  <th className="text-right py-2 pr-4 font-medium">Överraskning</th>
+                  <th className="text-right py-2 font-medium">Intäkt (M$)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {earnings.slice(0, 8).map((e: any, i: number) => {
+                  const surprise = e.estimate ? ((e.actual - e.estimate) / Math.abs(e.estimate) * 100).toFixed(1) : null;
+                  return (
+                    <tr key={i} className="border-b border-[var(--color-border)] hover:bg-[var(--color-bg-elevated)]">
+                      <td className="py-2 pr-4 text-[var(--color-text-primary)]">{e.quarter} {e.year}</td>
+                      <td className={cn("text-right py-2 pr-4 font-mono tabular", e.actual >= 0 ? "text-[var(--color-up)]" : "text-[var(--color-down)]")}>
+                        {e.actual?.toFixed(2) ?? "—"}
+                      </td>
+                      <td className="text-right py-2 pr-4 font-mono tabular text-[var(--color-text-muted)]">
+                        {e.estimate?.toFixed(2) ?? "—"}
+                      </td>
+                      <td className={cn("text-right py-2 pr-4 font-mono tabular", surprise && parseFloat(surprise) > 0 ? "text-[var(--color-up)]" : "text-[var(--color-down)]")}>
+                        {surprise ? `${surprise}%` : "—"}
+                      </td>
+                      <td className="text-right py-2 font-mono tabular text-[var(--color-text-muted)]">
+                        {e.revenue ? (e.revenue / 1_000_000).toFixed(0) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-[var(--color-text-muted)] text-center py-6">
+            Inga rapportdata tillgängliga från Finnhub
+          </p>
+        )}
+      </div>
+
+      {/* Growth data from latest report */}
+      {(stock.revenue_growth != null || stock.earnings_growth != null) && (
         <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
           <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-primary)]">
             Tillväxt (senaste rapporten)
@@ -418,7 +471,54 @@ function RapporterTab({ stock }: { stock: ScanRow }) {
         </div>
       )}
 
-      {/* Key ratios from latest report */}
+      {/* News */}
+      <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+        <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-primary)]">
+          Nyheter
+        </h3>
+        {newsLoading ? (
+          <div className="skeleton h-40 rounded-lg" />
+        ) : news.length > 0 ? (
+          <div className="space-y-3 max-h-[400px] overflow-y-auto">
+            {news.map((item, i) => (
+              <a
+                key={i}
+                href={item.url ?? "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block rounded-lg p-3 border border-[var(--color-border)] hover:bg-[var(--color-bg-elevated)] transition-colors"
+              >
+                <div className="flex justify-between items-start gap-3">
+                  <p className="text-sm font-medium text-[var(--color-text-primary)] leading-snug">
+                    {item.headline}
+                  </p>
+                  {item.sentiment && (
+                    <span className={cn(
+                      "shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded",
+                      item.sentiment === "positive" ? "bg-[var(--color-up-soft)] text-[var(--color-up)]" :
+                      item.sentiment === "negative" ? "bg-[var(--color-down-soft)] text-[var(--color-down)]" :
+                      "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]",
+                    )}>
+                      {item.sentiment === "positive" ? "Positiv" : item.sentiment === "negative" ? "Negativ" : "Neutral"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1 line-clamp-2">{item.summary}</p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[10px] text-[var(--color-text-muted)]">{item.source}</span>
+                  {item.date && <span className="text-[10px] text-[var(--color-text-muted)]">{item.date}</span>}
+                </div>
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-[var(--color-text-muted)] text-center py-6">
+            Inga nyheter tillgängliga
+          </p>
+        )}
+      </div>
+
+      {/* Key ratios */}
       <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-primary)]">
           Nyckeltal från senaste rapporten
@@ -442,15 +542,6 @@ function RapporterTab({ stock }: { stock: ScanRow }) {
             </div>
           ))}
         </dl>
-      </div>
-
-      {/* Coming soon note */}
-      <div className="rounded-xl border p-4 flex items-start gap-3 bg-[var(--color-bg-elevated)] border-[var(--color-border)]">
-        <div className="text-xs leading-relaxed text-[var(--color-text-muted)]">
-          <strong className="text-[var(--color-text-secondary)]">Detaljerade kvartalsrapporter</strong> med
-          EPS vs estimat och AI-summering läggs till när pipeline-historiken är ansluten.
-          Data ovan hämtas från senaste tillgängliga årsredovisning.
-        </div>
       </div>
     </div>
   );

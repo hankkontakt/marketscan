@@ -11,7 +11,7 @@ from apps.api.core.config import settings
 from apps.api.core.logging_config import setup_logging
 from apps.api.routers import (
     screener, stocks, portfolio, ai, admin, profile,
-    watchlist, alerts, saved_screens, snapshots,
+    watchlist, alerts, saved_screens, snapshots, markets,
 )
 
 setup_logging()
@@ -43,6 +43,7 @@ app.include_router(watchlist.router)
 app.include_router(alerts.router)
 app.include_router(saved_screens.router)
 app.include_router(snapshots.router)
+app.include_router(markets.router, prefix="/api")
 
 
 @app.get("/api/health")

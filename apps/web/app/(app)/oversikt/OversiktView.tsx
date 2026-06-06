@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { ArrowRight, TrendingUp, TrendingDown, Minus, Star } from "lucide-react";
+import { ArrowRight, TrendingUp, TrendingDown, Minus, Star, Globe } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, Tooltip as ReTooltip,
 } from "recharts";
@@ -15,6 +15,7 @@ import {
   scoreColorClass, formatScore, changeClass, formatNumber,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useGlobalIndices, GlobalIndexPanel } from "@/hooks/useMarkets";
 
 // ─── Mock portfolio chart data (fallback when no real history) ────
 const MOCK_CHART = [
@@ -36,6 +37,7 @@ export function OversiktView() {
   const { data: portfolio } = usePortfolio();
   const { data: watchlist = [] } = useWatchlist();
   const { data: history } = usePortfolioHistory();
+  const { data: markets } = useGlobalIndices();
 
   const holdings = portfolio?.holdings ?? [];
   const totalValue = useMemo(
@@ -108,6 +110,22 @@ export function OversiktView() {
         {/* Watchlist */}
         <WatchlistCard items={watchlist.slice(0, 5)} />
       </div>
+
+      {/* ── Global markets ──────────────────────────────── */}
+      {markets?.indices && markets.indices.length > 0 && (
+        <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+          <div className="flex items-center gap-2 mb-3">
+            <Globe size={15} strokeWidth={1.5} className="text-[var(--color-accent)]" />
+            <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+              Globala index
+            </span>
+            <Link href="/marknad" className="ml-auto flex items-center gap-1 text-xs text-[var(--color-accent)]">
+              Visa alla <ArrowRight size={12} strokeWidth={1.5} />
+            </Link>
+          </div>
+          <GlobalIndexPanel indices={markets.indices} />
+        </div>
+      )}
     </div>
   );
 }

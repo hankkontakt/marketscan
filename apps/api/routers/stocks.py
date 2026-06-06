@@ -6,10 +6,12 @@ Falls back to generated mock data when R2 is not configured.
 import random
 import math
 import logging
-from datetime import date, timedelta
+import httpx
+from datetime import date, timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from apps.api.dependencies import get_supabase
 from apps.api.core.duckdb_r2 import query_score_history, query_price_history
+from apps.api.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,21 @@ class StockSearchResult(BaseModel):
     change_pct: float | None = None
 
 
+class NewsItemOut(BaseModel):
+    date: str
+    headline: str
+    summary: str
+    source: str
+    url: str | None = None
+    sentiment: str | None = None
+    ticker: str | None = None
+
+
+class NewsResponse(BaseModel):
+    ticker: str
+    news: list[NewsItemOut]
+
+
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 
@@ -173,3 +190,74 @@ async def search_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
         .execute()
     )
     return result.data
+
+
+@router.get("/{ticker}/news", response_model=NewsResponse)
+async def get_stock_news(ticker: str):
+    """Company news via Finnhub API."""
+    if not settings.FINNHUB_API_KEY:
+        return {"ticker": ticker, "news": []}
+
+    today = date.today()
+    one_year_ago = today - timedelta(days=365)
+
+    url = (
+        f"https://finnhub.io/api/v1/company-news"
+        f"?symbol={ticker.upper()}"
+        f"&from={one_year_ago.isoformat()}"
+        f"&to={today.isoformat()}"
+        f"&token={settings.FINNHUB_API_KEY}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.warning("Finnhub news failed for %s: %s", ticker, e)
+        return {"ticker": ticker, "news": []}
+
+    # Finnhub returns articles sorted by datetime descending
+    news: list[dict] = []
+    for item in data[:20]:
+        headline = item.get("headline", "")
+        if not headline:
+            continue
+        ts = item.get("datetime")
+        dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d") if ts else ""
+        news.append(NewsItemOut(
+            date=dt,
+            headline=headline,
+            summary=item.get("summary", "")[:300],
+            source=item.get("source", "Finnhub"),
+            url=item.get("url"),
+            sentiment=item.get("sentiment", None),
+            ticker=ticker.upper(),
+        ))
+
+    return {"ticker": ticker, "news": news}
+
+
+@router.get("/{ticker}/earnings")
+async def get_stock_earnings(ticker: str):
+    """Earnings calendar data via Finnhub API."""
+    if not settings.FINNHUB_API_KEY:
+        return {"ticker": ticker, "earnings": []}
+
+    url = (
+        f"https://finnhub.io/api/v1/stock/earnings"
+        f"?symbol={ticker.upper()}"
+        f"&token={settings.FINNHUB_API_KEY}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.warning("Finnhub earnings failed for %s: %s", ticker, e)
+        return {"ticker": ticker, "earnings": []}
+
+    return {"ticker": ticker, "earnings": data[:12]}

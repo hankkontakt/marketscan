@@ -35,7 +35,8 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/portfolj") ||
     request.nextUrl.pathname.startsWith("/bevakningar") ||
     request.nextUrl.pathname.startsWith("/kontrollpanel") ||
-    request.nextUrl.pathname.startsWith("/installningar");
+    request.nextUrl.pathname.startsWith("/installningar") ||
+    request.nextUrl.pathname.startsWith("/marknad");
 
   if (!user && isAppRoute) {
     const loginUrl = request.nextUrl.clone();

@@ -3,10 +3,10 @@ AI endpoints: NL screener parser, stock analysis, Analyskommittén, portfolio co
 All responses are cached per ticker/day to minimize token spend.
 """
 import json
-import hashlib
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from apps.api.core.ai_cache import get_cached, set_cache
 from apps.api.core.security import get_current_user, User
 from apps.api.dependencies import get_supabase
 
@@ -107,7 +107,7 @@ async def get_committee_analysis(
     import asyncio
 
     cache_key = f"committee:{ticker}:{date.today().isoformat()}"
-    cached = _get_cache(cache_key, sb)
+    cached = get_cached(cache_key, sb)
     if cached:
         return cached
 
@@ -152,7 +152,7 @@ SENTIMENTANALYTIKER:
         "cached_date": date.today().isoformat(),
     }
 
-    _set_cache(cache_key, response, sb)
+    set_cache(cache_key, response, sb)
     return response
 
 
@@ -216,31 +216,3 @@ async def _call_ai_chat(system_prompt: str, context: str, messages: list[dict]) 
     from apps.api.core.deepseek_client import call_deepseek_chat
 
     return await call_deepseek_chat(system_prompt, context, messages, max_tokens=600)
-
-
-def _cache_key_hash(key: str) -> str:
-    return hashlib.md5(key.encode()).hexdigest()[:16]
-
-
-def _get_cache(key: str, sb) -> dict | None:
-    """Retrieve cached AI response from Supabase ai_cache table."""
-    try:
-        result = sb.table("ai_cache").select("response_data").eq("cache_key", key).execute()
-        if result.data and len(result.data) > 0:
-            return result.data[0]["response_data"]
-    except Exception:
-        pass
-    return None
-
-
-def _set_cache(key: str, value: dict, sb) -> None:
-    """Store AI response in Supabase ai_cache table and clean old entries."""
-    try:
-        sb.table("ai_cache").upsert(
-            {"cache_key": key, "response_data": value},
-            on_conflict="cache_key",
-        ).execute()
-        # Clean cache entries older than 7 days
-        sb.rpc("clean_ai_cache").execute()
-    except Exception:
-        pass

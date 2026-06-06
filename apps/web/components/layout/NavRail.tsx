@@ -9,12 +9,14 @@ import {
   Star,
   Settings,
   TrendingUp,
+  Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/oversikt",      icon: LayoutDashboard,    label: "Översikt" },
   { href: "/screener",      icon: SlidersHorizontal,  label: "Aktier" },
+  { href: "/marknad",       icon: Globe,               label: "Marknad" },
   { href: "/portfolj",      icon: Briefcase,           label: "Min portfölj" },
   { href: "/bevakningar",   icon: Star,                label: "Bevakningar" },
 ] as const;
