@@ -52,8 +52,8 @@ async def get_sector_overview(sb=Depends(get_supabase)):
 
     from collections import defaultdict
     sectors: dict[str, dict] = defaultdict(lambda: {
-        "count": 0, "scores": [], "momentums": [], "values": [],
-        "qualities": [], "growths": [], "risks": [],
+        "count": 0, "scores": [], "momentums": [], "score_values": [],
+        "score_qualities": [], "score_growths": [], "score_risks": [],
         "signals": defaultdict(int), "top_ticker": None, "top_score": 0,
     })
 
