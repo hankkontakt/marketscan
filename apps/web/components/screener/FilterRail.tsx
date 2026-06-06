@@ -38,8 +38,7 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
   const inner = (
     <>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium"
-             style={{ color: "var(--color-text-primary)" }}>
+        <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
           <Filter size={14} strokeWidth={1.5} />
           Filter
           {hasActive && (
@@ -81,8 +80,7 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
 
       {/* Expanded filters */}
       {expanded && (
-        <div className="grid grid-cols-2 gap-3 pt-2 border-t"
-             style={{ borderColor: "var(--color-border)" }}>
+        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[var(--color-border)]">
           <FilterSelect
             label="Sektor"
             value={filters.sector ?? ""}
@@ -121,8 +119,7 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
           />
 
           {/* Exclude low liquidity */}
-          <label className="flex items-center gap-2 text-xs col-span-2 cursor-pointer"
-                 style={{ color: "var(--color-text-secondary)" }}>
+          <label className="flex items-center gap-2 text-xs col-span-2 cursor-pointer text-[var(--color-text-secondary)]">
             <input
               type="checkbox"
               checked={filters.exclude_low_liquidity ?? false}
@@ -139,8 +136,7 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
   if (inline) return <div className="space-y-4">{inner}</div>;
 
   return (
-    <div className="rounded-xl border p-4 space-y-4"
-         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+    <div className="rounded-xl border p-4 space-y-4 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
       {inner}
     </div>
   );
@@ -154,7 +150,7 @@ function FilterSelect({ label, value, onChange, options }: {
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>{label}</label>
+      <label className="text-[11px] text-[var(--color-text-muted)]">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -179,7 +175,7 @@ function FilterNumber({ label, value, onChange, min, max, step }: {
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>{label}</label>
+      <label className="text-[11px] text-[var(--color-text-muted)]">{label}</label>
       <input
         type="number"
         value={value ?? ""}

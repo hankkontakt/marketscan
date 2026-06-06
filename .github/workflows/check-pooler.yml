@@ -1,0 +1,41 @@
+name: Check Supabase Connection Pooler
+
+on:
+  workflow_dispatch:  # manual trigger
+  schedule:
+    - cron: "0 8 * * 1"  # every Monday at 8am
+
+jobs:
+  check-pooler:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test DATABASE_URL pooler connection
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Testing connection pooler (port 6543)..."
+
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL is not set in secrets — skipping"
+            exit 0
+          fi
+
+          # Extract host from DATABASE_URL
+          HOST=$(echo "$DATABASE_URL" | sed -n 's/.*@\([^:/]*\).*/\1/p')
+          PORT=$(echo "$DATABASE_URL" | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
+
+          echo "Host: $HOST"
+          echo "Port: $PORT"
+
+          # Test TCP connectivity to the pooler port
+          if command -v nc &> /dev/null; then
+            nc -zv "$HOST" "$PORT" -w 10 && echo "Connection pooler: OK" || echo "::warning::Cannot connect to $HOST:$PORT — pooler may not be active"
+          else
+            # Fallback: use timeout + bash
+            timeout 10 bash -c "echo > /dev/tcp/$HOST/$PORT" 2>/dev/null && echo "Connection pooler: OK" || echo "::warning::Cannot connect to $HOST:$PORT — pooler may not be active"
+          fi
+
+          echo "Pooler check complete."

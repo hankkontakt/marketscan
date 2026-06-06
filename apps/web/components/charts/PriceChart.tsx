@@ -174,7 +174,7 @@ export function PriceChart({ candles, height = 300 }: Props) {
         ))}
       </div>
       {/* MA legend */}
-      <div className="flex items-center gap-3 text-[10px]" style={{ color: "var(--color-text-muted)" }}>
+      <div className="flex items-center gap-3 text-[10px] text-[var(--color-text-muted)]">
         <span className="flex items-center gap-1">
           <span className="inline-block w-4 h-0.5 rounded" style={{ background: "rgba(217,164,65,0.8)" }} />
           MA50

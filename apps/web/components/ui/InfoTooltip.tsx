@@ -9,7 +9,7 @@ interface Props {
 }
 
 /**
- * InfoTooltip — small ⓘ icon that shows a description on hover.
+ * InfoTooltip — small i icon that shows a description on hover.
  * Place next to any label to explain what the value means.
  *
  * Usage:
@@ -39,17 +39,12 @@ export const InfoTooltip = React.memo(function InfoTooltip({ text, side = "top" 
             side={side}
             sideOffset={5}
             className="max-w-56 px-3 py-2 text-xs rounded-xl shadow-lg z-[100]
-                       leading-relaxed"
-            style={{
-              background: "var(--color-bg-surface)",
-              border: "1px solid var(--color-border-strong)",
-              color: "var(--color-text-secondary)",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-            }}
+                       leading-relaxed bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]"
+            style={{ border: "1px solid var(--color-border-strong)" }}
           >
             {text}
             <RadixTooltip.Arrow
-              style={{ fill: "var(--color-border-strong)" }}
+              className="fill-[var(--color-border-strong)]"
             />
           </RadixTooltip.Content>
         </RadixTooltip.Portal>

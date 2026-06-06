@@ -88,23 +88,18 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
-      style={{ background: "var(--color-bg-overlay)" }}
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] bg-[var(--color-bg-overlay)]"
       onClick={() => close()}
     >
       <div
-        className="w-full max-w-xl mx-4 rounded-2xl overflow-hidden shadow-2xl"
-        style={{
-          background: "var(--color-bg-surface)",
-          border: "1px solid var(--color-border-strong)",
-        }}
+        className="w-full max-w-xl mx-4 rounded-2xl overflow-hidden shadow-2xl bg-[var(--color-bg-surface)]"
+        style={{ border: "1px solid var(--color-border-strong)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <Command shouldFilter={false}>
-          <div className="flex items-center gap-2 px-4 border-b"
-               style={{ borderColor: "var(--color-border)" }}>
+          <div className="flex items-center gap-2 px-4 border-b border-[var(--color-border)]">
             <Search size={16} strokeWidth={1.5}
-                    style={{ color: "var(--color-text-muted)" }} />
+                    className="text-[var(--color-text-muted)]" />
             <Command.Input
               value={query}
               onValueChange={setQuery}
@@ -169,7 +164,7 @@ export function CommandPalette() {
                                text-[var(--color-text-secondary)] text-sm"
                   >
                     <link.icon size={15} strokeWidth={1.5}
-                               style={{ color: "var(--color-text-muted)" }} />
+                               className="text-[var(--color-text-muted)]" />
                     <span>{link.label}</span>
                     <ArrowRight size={13} strokeWidth={1.5}
                                 className="ml-auto opacity-40" />

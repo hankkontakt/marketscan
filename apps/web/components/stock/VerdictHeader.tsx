@@ -73,17 +73,16 @@ export function VerdictHeader({ stock }: Props) {
 
   return (
     <div
-      className="border-b px-6 py-4"
-      style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}
+      className="border-b px-6 py-4 bg-[var(--color-bg-surface)] border-[var(--color-border)]"
     >
       {/* Row 1: Name + price */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-3">
-            <span className="font-mono font-bold text-lg" style={{ color: "var(--color-text-primary)" }}>
+            <span className="font-mono font-bold text-lg text-[var(--color-text-primary)]">
               {stock.ticker}
             </span>
-            <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
+            <span className="text-sm text-[var(--color-text-secondary)]">
               {stock.name}
             </span>
           </div>
@@ -95,7 +94,7 @@ export function VerdictHeader({ stock }: Props) {
 
             {/* Totalbetyg */}
             <div className="flex items-center gap-1.5">
-              <span className="flex items-center text-xs" style={{ color: "var(--color-text-muted)" }}>
+              <span className="flex items-center text-xs text-[var(--color-text-muted)]">
                 Totalbetyg
                 <InfoTooltip
                   text="Systemets samlade betyg (0–100) baserat på 8 faktorer: Värde, Kvalitet, Momentum, Tillväxt, Risk, Storlek, Utdelning och Sentiment. Över 70 är starkt."
@@ -116,7 +115,7 @@ export function VerdictHeader({ stock }: Props) {
             {/* AI-prognos */}
             {stock.predicted_return != null && (
               <div className="flex items-center gap-1 text-xs">
-                <span className="flex items-center" style={{ color: "var(--color-text-muted)" }}>
+                <span className="flex items-center text-[var(--color-text-muted)]">
                   AI-prognos 30d
                   <InfoTooltip text="Maskinlärd prognos för förväntad prisutveckling de närmaste 30 dagarna. OBS: Prognoser är osäkra — använd som ett av flera underlag, aldrig ensamt." side="bottom" />
                 </span>
@@ -130,7 +129,7 @@ export function VerdictHeader({ stock }: Props) {
 
         {/* Price */}
         <div className="flex flex-col items-end gap-1">
-          <span className="font-mono tabular text-2xl font-bold" style={{ color: "var(--color-text-primary)" }}>
+          <span className="font-mono tabular text-2xl font-bold text-[var(--color-text-primary)]">
             {formatPrice(stock.price)}
           </span>
           <span className={cn("font-mono tabular text-sm font-medium", changeClass(stock.change_pct))}>
@@ -149,9 +148,8 @@ export function VerdictHeader({ stock }: Props) {
             "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
             isWatching
               ? "border-[var(--color-warn)] text-[var(--color-warn)] bg-[var(--color-warn-soft)]"
-              : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]",
+              : "border-[var(--color-border)] hover:border-[var(--color-border-strong)] text-[var(--color-text-secondary)]",
           )}
-          style={!isWatching ? { color: "var(--color-text-secondary)" } : {}}
         >
           <Star size={13} strokeWidth={1.5} fill={isWatching ? "currentColor" : "none"} />
           {isWatching ? "Bevakad" : "Bevaka"}
@@ -162,8 +160,7 @@ export function VerdictHeader({ stock }: Props) {
           <button
             onClick={() => setShowAddForm(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border
-                       border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
-            style={{ color: "var(--color-text-secondary)" }}
+                       border-[var(--color-border)] hover:border-[var(--color-border-strong)] text-[var(--color-text-secondary)]"
           >
             <Plus size={13} strokeWidth={1.5} />
             Lägg i portfölj
@@ -178,12 +175,7 @@ export function VerdictHeader({ stock }: Props) {
               value={shares}
               onChange={(e) => setShares(e.target.value)}
               placeholder="Antal aktier"
-              className="w-32 h-7 px-2 rounded-lg text-xs border focus:outline-none"
-              style={{
-                background: "var(--color-bg-elevated)",
-                borderColor: "var(--color-accent)",
-                color: "var(--color-text-primary)",
-              }}
+              className="w-32 h-7 px-2 rounded-lg text-xs border focus:outline-none bg-[var(--color-bg-elevated)] border-[var(--color-accent)] text-[var(--color-text-primary)]"
             />
             <input
               type="number"
@@ -192,12 +184,7 @@ export function VerdictHeader({ stock }: Props) {
               value={costBasis}
               onChange={(e) => setCostBasis(e.target.value)}
               placeholder={`Inköpskurs (valfri, ~${stock.price ? Math.round(stock.price) : ""})`}
-              className="w-44 h-7 px-2 rounded-lg text-xs border focus:outline-none"
-              style={{
-                background: "var(--color-bg-elevated)",
-                borderColor: "var(--color-border)",
-                color: "var(--color-text-primary)",
-              }}
+              className="w-44 h-7 px-2 rounded-lg text-xs border focus:outline-none bg-[var(--color-bg-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]"
             />
             <button
               onClick={() => shares && parseFloat(shares) > 0 && addHolding.mutate()}
@@ -210,15 +197,14 @@ export function VerdictHeader({ stock }: Props) {
             </button>
             <button
               onClick={() => { setShowAddForm(false); setShares(""); setCostBasis(""); }}
-              className="h-7 px-2 rounded-lg text-xs"
-              style={{ color: "var(--color-text-muted)" }}
+              className="h-7 px-2 rounded-lg text-xs text-[var(--color-text-muted)]"
             >
               <X size={12} strokeWidth={1.5} />
             </button>
           </div>
         )}
 
-        <span className="ml-auto text-xs" style={{ color: "var(--color-text-muted)" }}>
+        <span className="ml-auto text-xs text-[var(--color-text-muted)]">
           Tillförlitlighet: {stock.confidence_label ?? "—"}
         </span>
       </div>

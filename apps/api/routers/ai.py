@@ -223,9 +223,24 @@ def _cache_key_hash(key: str) -> str:
 
 
 def _get_cache(key: str, sb) -> dict | None:
-    # Simple KV via Supabase (or skip if no cache table)
-    return None  # Implement with Redis/Supabase when needed
+    """Retrieve cached AI response from Supabase ai_cache table."""
+    try:
+        result = sb.table("ai_cache").select("response_data").eq("cache_key", key).execute()
+        if result.data and len(result.data) > 0:
+            return result.data[0]["response_data"]
+    except Exception:
+        pass
+    return None
 
 
 def _set_cache(key: str, value: dict, sb) -> None:
-    pass  # Implement with Redis/Supabase when needed
+    """Store AI response in Supabase ai_cache table and clean old entries."""
+    try:
+        sb.table("ai_cache").upsert(
+            {"cache_key": key, "response_data": value},
+            on_conflict="cache_key",
+        ).execute()
+        # Clean cache entries older than 7 days
+        sb.rpc("clean_ai_cache").execute()
+    except Exception:
+        pass

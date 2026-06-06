@@ -37,7 +37,7 @@ export function NavRail() {
         <TrendingUp
           size={22}
           strokeWidth={1.5}
-          style={{ color: "var(--color-accent)" }}
+          className="text-[var(--color-accent)]"
         />
       </Link>
 
@@ -60,20 +60,15 @@ export function NavRail() {
             >
               {active && (
                 <span
-                  className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r"
-                  style={{ background: "var(--color-accent)" }}
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r bg-[var(--color-accent)]"
                 />
               )}
               <Icon size={18} strokeWidth={1.5} />
               {/* Hover label */}
               <span className="absolute left-12 px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap
                                pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50
-                               shadow-lg"
-                    style={{
-                      background: "var(--color-bg-elevated)",
-                      color: "var(--color-text-primary)",
-                      border: "1px solid var(--color-border-strong)",
-                    }}>
+                               shadow-lg bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]"
+                    style={{ border: "1px solid var(--color-border-strong)" }}>
                 {label}
               </span>
             </Link>

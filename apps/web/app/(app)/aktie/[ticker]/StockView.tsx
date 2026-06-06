@@ -1,12 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import * as Tabs from "@radix-ui/react-tabs";
 import { AlertTriangle } from "lucide-react";
 import { useStock, usePriceHistory, useScoreHistory } from "@/hooks/useStock";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
-import { AnalysCommittee } from "@/components/stock/AnalysCommittee";
+import dynamic from "next/dynamic";
+
+const AnalysCommittee = dynamic(async () => {
+  const mod = await import("@/components/stock/AnalysCommittee");
+  return mod.AnalysCommittee;
+}, {
+  loading: () => <div className="skeleton h-48 rounded-xl" />,
+});
 import { cn } from "@/lib/utils";
 import {
   formatPrice, formatNumber, formatPct, formatMarketCap, scoreColorClass, formatScore,
@@ -15,22 +23,18 @@ import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { ScanRow } from "@/types/scan";
 
-const TABS = ["Översikt", "Faktorer", "Analys", "Rapporter", "AI"] as const;
-type Tab = (typeof TABS)[number];
-
 interface Props {
   ticker: string;
 }
 
 export function StockView({ ticker }: Props) {
   const { data: stock, isLoading, error } = useStock(ticker);
-  const [activeTab, setActiveTab] = useState<Tab>("Översikt");
 
   if (isLoading) return <StockSkeleton />;
   if (error || !stock) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3">
-        <AlertTriangle size={24} style={{ color: "var(--color-warn)" }} />
+        <AlertTriangle size={24} className="text-[var(--color-warn)]" />
         <p className="text-sm text-[var(--color-text-secondary)]">
           Aktie {ticker} hittades inte
         </p>
@@ -44,33 +48,69 @@ export function StockView({ ticker }: Props) {
       <div className="sticky top-0 z-30">
         <VerdictHeader stock={stock} />
 
-        {/* Tab bar */}
-        <div className="flex border-b px-6"
-             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+        {/* Tab bar with Radix Tabs */}
+        <Tabs.Root defaultValue="oversikt" className="bg-[var(--color-bg-surface)]">
+          <Tabs.List className="flex border-b px-6 border-[var(--color-border)]" aria-label="Flikar">
+            <Tabs.Trigger
+              value="oversikt"
               className={cn(
-                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px",
-                activeTab === tab
-                  ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                  : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]",
+                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
               )}
             >
-              {tab}
-            </button>
-          ))}
-        </div>
-      </div>
+              Översikt
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="faktorer"
+              className={cn(
+                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+              )}
+            >
+              Faktorer
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="analys"
+              className={cn(
+                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+              )}
+            >
+              Analys
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="rapporter"
+              className={cn(
+                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+              )}
+            >
+              Rapporter
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="ai"
+              className={cn(
+                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+              )}
+            >
+              AI
+            </Tabs.Trigger>
+          </Tabs.List>
 
-      {/* Tab content */}
-      <div className="px-6 py-6">
-        {activeTab === "Översikt" && <OverviewTab stock={stock} />}
-        {activeTab === "Faktorer" && <FaktorerTab stock={stock} />}
-        {activeTab === "Analys" && <AnalysTab ticker={ticker} />}
-        {activeTab === "Rapporter" && <RapporterTab stock={stock} />}
-        {activeTab === "AI" && <AITab stock={stock} />}
+          <div className="px-6 py-6">
+            <Tabs.Content value="oversikt"><OverviewTab stock={stock} /></Tabs.Content>
+            <Tabs.Content value="faktorer"><FaktorerTab stock={stock} /></Tabs.Content>
+            <Tabs.Content value="analys"><AnalysTab ticker={ticker} /></Tabs.Content>
+            <Tabs.Content value="rapporter"><RapporterTab stock={stock} /></Tabs.Content>
+            <Tabs.Content value="ai"><AITab stock={stock} /></Tabs.Content>
+          </div>
+        </Tabs.Root>
       </div>
     </div>
   );
@@ -84,8 +124,7 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
       {/* Price chart */}
-      <div className="xl:col-span-2 rounded-xl p-4 border"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      <div className="xl:col-span-2 rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">
           Prisutveckling
         </h3>
@@ -100,8 +139,7 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
       </div>
 
       {/* Quick facts */}
-      <div className="rounded-xl p-4 border"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">
           Nyckeltal
         </h3>
@@ -164,11 +202,11 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
             },
           ].map(({ label, value, tip }) => (
             <div key={label} className="flex justify-between items-center">
-              <dt className="flex items-center text-xs" style={{ color: "var(--color-text-muted)" }}>
+              <dt className="flex items-center text-xs text-[var(--color-text-muted)]">
                 {label}
                 <InfoTooltip text={tip} side="left" />
               </dt>
-              <dd className="text-xs font-mono tabular" style={{ color: "var(--color-text-primary)" }}>{value}</dd>
+              <dd className="text-xs font-mono tabular text-[var(--color-text-primary)]">{value}</dd>
             </div>
           ))}
         </dl>
@@ -176,8 +214,7 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
 
       {/* AI summary */}
       {stock.score_total != null && (
-        <div className="xl:col-span-3 rounded-xl p-4 border"
-             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+        <div className="xl:col-span-3 rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
           <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
             <strong className={scoreColorClass(stock.score_total)}>
               {stock.name}
@@ -219,15 +256,13 @@ function FaktorerTab({ stock }: { stock: ScanRow }) {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
       {/* Radar */}
-      <div className="rounded-xl p-4 border"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-medium mb-2 text-[var(--color-text-secondary)]">Faktoröversikt</h3>
         <FactorRadar stock={stock} />
       </div>
 
       {/* Factor breakdown */}
-      <div className="rounded-xl p-4 border"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">Faktorbetyg</h3>
         <div className="space-y-4">
           {Object.entries(FACTOR_DESCS).map(([key, desc]) => {
@@ -237,7 +272,7 @@ function FaktorerTab({ stock }: { stock: ScanRow }) {
             return (
               <div key={key}>
                 <div className="flex justify-between items-center mb-1">
-                  <span className="flex items-center text-xs" style={{ color: "var(--color-text-primary)" }}>
+                  <span className="flex items-center text-xs text-[var(--color-text-primary)]">
                     {displayName}
                     <InfoTooltip text={desc} side="right" />
                   </span>
@@ -245,8 +280,7 @@ function FaktorerTab({ stock }: { stock: ScanRow }) {
                     {score != null ? Math.round(score) : "—"}
                   </span>
                 </div>
-                <div className="h-1.5 rounded-full overflow-hidden"
-                     style={{ background: "var(--color-bg-elevated)" }}>
+                <div className="h-1.5 rounded-full overflow-hidden bg-[var(--color-bg-elevated)]">
                   <div
                     className="h-full rounded-full transition-all"
                     style={{
@@ -276,8 +310,7 @@ function AnalysTab({ ticker }: { ticker: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl p-4 border"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">Betygstrend (veckovis)</h3>
         {isLoading
           ? <div className="skeleton h-40 rounded-lg" />
@@ -320,10 +353,10 @@ function ScoreHistoryChart({ history }: { history: { date: string; score: number
             content={({ active, payload }: any) => {
               if (!active || !payload?.length) return null;
               return (
-                <div className="px-2 py-1.5 rounded-lg text-xs shadow-md"
-                     style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-strong)", color: "var(--color-text-primary)" }}>
+                <div className="px-2 py-1.5 rounded-lg text-xs shadow-md bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]"
+                     style={{ border: "1px solid var(--color-border-strong)" }}>
                   <span className="font-semibold">{payload[0].value}</span>
-                  <span className="ml-1" style={{ color: "var(--color-text-muted)" }}>{payload[0].payload.date}</span>
+                  <span className="ml-1 text-[var(--color-text-muted)]">{payload[0].payload.date}</span>
                 </div>
               );
             }}
@@ -352,15 +385,14 @@ function RapporterTab({ stock }: { stock: ScanRow }) {
     <div className="space-y-5">
       {/* Available data */}
       {hasGrowth && (
-        <div className="rounded-xl border p-5"
-             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--color-text-primary)" }}>
+        <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+          <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-primary)]">
             Tillväxt (senaste rapporten)
           </h3>
           <div className="grid grid-cols-2 gap-4">
             {stock.revenue_growth != null && (
               <div>
-                <div className="flex items-center text-xs mb-1" style={{ color: "var(--color-text-muted)" }}>
+                <div className="flex items-center text-xs mb-1 text-[var(--color-text-muted)]">
                   Intäktstillväxt (YoY)
                   <InfoTooltip text="Hur mycket bolagets intäkter vuxit jämfört med samma period förra året." />
                 </div>
@@ -372,7 +404,7 @@ function RapporterTab({ stock }: { stock: ScanRow }) {
             )}
             {stock.earnings_growth != null && (
               <div>
-                <div className="flex items-center text-xs mb-1" style={{ color: "var(--color-text-muted)" }}>
+                <div className="flex items-center text-xs mb-1 text-[var(--color-text-muted)]">
                   Vinsttillväxt (YoY)
                   <InfoTooltip text="Hur mycket bolagets vinst per aktie (EPS) vuxit jämfört med samma period förra året." />
                 </div>
@@ -387,9 +419,8 @@ function RapporterTab({ stock }: { stock: ScanRow }) {
       )}
 
       {/* Key ratios from latest report */}
-      <div className="rounded-xl border p-5"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-        <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--color-text-primary)" }}>
+      <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+        <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-primary)]">
           Nyckeltal från senaste rapporten
         </h3>
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
@@ -402,10 +433,10 @@ function RapporterTab({ stock }: { stock: ScanRow }) {
             { label: "Direktavkastning", value: stock.dividend_yield != null ? `${(stock.dividend_yield * 100).toFixed(2)} %` : "—", tip: "Årsutdelning delat med aktiekurs." },
           ].map(({ label, value, tip }) => (
             <div key={label}>
-              <dt className="flex items-center text-xs" style={{ color: "var(--color-text-muted)" }}>
+              <dt className="flex items-center text-xs text-[var(--color-text-muted)]">
                 {label} <InfoTooltip text={tip} />
               </dt>
-              <dd className="text-sm font-semibold mt-0.5 tabular" style={{ color: "var(--color-text-primary)" }}>
+              <dd className="text-sm font-semibold mt-0.5 tabular text-[var(--color-text-primary)]">
                 {value}
               </dd>
             </div>
@@ -414,10 +445,9 @@ function RapporterTab({ stock }: { stock: ScanRow }) {
       </div>
 
       {/* Coming soon note */}
-      <div className="rounded-xl border p-4 flex items-start gap-3"
-           style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)" }}>
-        <div className="text-xs leading-relaxed" style={{ color: "var(--color-text-muted)" }}>
-          <strong style={{ color: "var(--color-text-secondary)" }}>Detaljerade kvartalsrapporter</strong> med
+      <div className="rounded-xl border p-4 flex items-start gap-3 bg-[var(--color-bg-elevated)] border-[var(--color-border)]">
+        <div className="text-xs leading-relaxed text-[var(--color-text-muted)]">
+          <strong className="text-[var(--color-text-secondary)]">Detaljerade kvartalsrapporter</strong> med
           EPS vs estimat och AI-summering läggs till när pipeline-historiken är ansluten.
           Data ovan hämtas från senaste tillgängliga årsredovisning.
         </div>
@@ -448,4 +478,3 @@ function StockSkeleton() {
     </div>
   );
 }
-

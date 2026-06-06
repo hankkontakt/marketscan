@@ -83,10 +83,10 @@ export function OversiktView() {
 
       {/* ── Greeting ─────────────────────────────────────── */}
       <div className="flex items-baseline justify-between pt-2">
-        <h1 className="text-xl font-semibold" style={{ color: "var(--color-text-primary)" }}>
+        <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
           {greeting}
         </h1>
-        <span className="text-sm capitalize" style={{ color: "var(--color-text-muted)" }}>
+        <span className="text-sm capitalize text-[var(--color-text-muted)]">
           {dateStr}
         </span>
       </div>
@@ -133,29 +133,24 @@ function PortfolioCard({
 
   return (
     <div
-      className="rounded-2xl border p-6"
-      style={{
-        background: "var(--color-bg-surface)",
-        borderColor: "var(--color-border)",
-      }}
+      className="rounded-2xl border p-6 bg-[var(--color-bg-surface)] border-[var(--color-border)]"
     >
       {/* Top row: value + change */}
       <div className="flex items-start justify-between mb-5">
         <div>
           <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-sm" style={{ color: "var(--color-text-muted)" }}>
+            <span className="text-sm text-[var(--color-text-muted)]">
               Portföljvärde
             </span>
             <InfoTooltip text="Det totala marknadsvärdet på alla dina aktieinnehav just nu." />
           </div>
-          <div className="text-3xl font-bold font-mono tabular tracking-tight"
-               style={{ color: "var(--color-text-primary)" }}>
+          <div className="text-3xl font-bold font-mono tabular tracking-tight text-[var(--color-text-primary)]">
             {formatPrice(totalValue)}
           </div>
           {!hasRealData && (
-            <p className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
+            <p className="text-xs mt-1 text-[var(--color-text-muted)]">
               Exempeldata — lägg till innehav i{" "}
-              <Link href="/portfolj" className="underline" style={{ color: "var(--color-accent)" }}>
+              <Link href="/portfolj" className="underline text-[var(--color-accent)]">
                 Min portfölj
               </Link>
             </p>
@@ -164,7 +159,7 @@ function PortfolioCard({
 
         <div className="text-right">
           <div className="flex items-center gap-1 justify-end mb-0.5">
-            <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>Idag</span>
+            <span className="text-xs text-[var(--color-text-muted)]">Idag</span>
             <InfoTooltip text="Portföljens värdeförändring under dagens handelsdag." side="left" />
           </div>
           <div className={cn("font-mono tabular text-sm font-medium", changeClass(todayChange / totalValue))}>
@@ -188,12 +183,8 @@ function PortfolioCard({
                 if (!active || !payload?.length) return null;
                 return (
                   <div
-                    className="px-3 py-2 rounded-lg text-xs shadow-lg"
-                    style={{
-                      background: "var(--color-bg-surface)",
-                      border: "1px solid var(--color-border-strong)",
-                      color: "var(--color-text-primary)",
-                    }}
+                    className="px-3 py-2 rounded-lg text-xs shadow-lg bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]"
+                    style={{ border: "1px solid var(--color-border-strong)" }}
                   >
                     <span className="font-mono tabular">{formatPrice(payload[0].value as number)}</span>
                   </div>
@@ -240,14 +231,16 @@ function PortfolioCard({
         {/* Show selected period return */}
         {activePeriod && activePeriodData && (
           <span
-            className="ml-auto text-xs font-mono tabular font-semibold"
-            style={{ color: activePeriodData.pct != null
-              ? (activePeriodData.positive ? "var(--color-up)" : "var(--color-down)")
-              : "var(--color-text-muted)" }}
+            className={cn(
+              "ml-auto text-xs font-mono tabular font-semibold",
+              activePeriodData.pct != null
+                ? (activePeriodData.positive ? "text-[var(--color-up)]" : "text-[var(--color-down)]")
+                : "text-[var(--color-text-muted)]"
+            )}
           >
             {activePeriodData.pct != null ? activePeriodData.pct : "--"}
             {activePeriodData.pct != null && (
-              <span className="font-normal ml-1" style={{ color: "var(--color-text-muted)" }}>
+              <span className="font-normal ml-1 text-[var(--color-text-muted)]">
                 ({activePeriod})
               </span>
             )}
@@ -269,28 +262,22 @@ function TopPicksCard({
 }) {
   return (
     <div
-      className="rounded-2xl border overflow-hidden"
-      style={{
-        background: "var(--color-bg-surface)",
-        borderColor: "var(--color-border)",
-      }}
+      className="rounded-2xl border overflow-hidden bg-[var(--color-bg-surface)] border-[var(--color-border)]"
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-5 py-4 border-b"
-        style={{ borderColor: "var(--color-border)" }}
+        className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]"
       >
         <div className="flex items-center gap-2">
-          <TrendingUp size={15} strokeWidth={1.5} style={{ color: "var(--color-up)" }} />
-          <span className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+          <TrendingUp size={15} strokeWidth={1.5} className="text-[var(--color-up)]" />
+          <span className="text-sm font-semibold text-[var(--color-text-primary)]">
             Starka köplägen
           </span>
           <InfoTooltip text="Aktier som systemet bedömer som de bästa köplägen just nu, baserat på betyg, trend och tekniska signaler." />
         </div>
         <Link
           href="/screener?entry_signal=STARK"
-          className="flex items-center gap-1 text-xs transition-colors"
-          style={{ color: "var(--color-accent)" }}
+          className="flex items-center gap-1 text-xs transition-colors text-[var(--color-accent)]"
         >
           Visa alla <ArrowRight size={12} strokeWidth={1.5} />
         </Link>
@@ -300,8 +287,7 @@ function TopPicksCard({
       <div>
         {isLoading
           ? Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="px-5 py-4 border-b last:border-b-0 flex items-center gap-3"
-                   style={{ borderColor: "var(--color-border)" }}>
+              <div key={i} className="px-5 py-4 border-b last:border-b-0 flex items-center gap-3 border-[var(--color-border)]">
                 <div className="skeleton h-4 w-20 rounded" />
                 <div className="skeleton h-4 w-28 rounded" />
                 <div className="skeleton h-4 w-12 rounded ml-auto" />
@@ -310,7 +296,7 @@ function TopPicksCard({
           : picks.length === 0
           ? (
               <div className="px-5 py-8 text-center">
-                <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
+                <p className="text-sm text-[var(--color-text-muted)]">
                   Inga starka köplägen just nu
                 </p>
               </div>
@@ -320,17 +306,14 @@ function TopPicksCard({
                 key={stock.ticker}
                 href={`/aktie/${stock.ticker}`}
                 className="flex items-center gap-3 px-5 py-4 border-b last:border-b-0
-                           transition-colors hover:bg-[var(--color-bg-elevated)] group"
-                style={{ borderColor: "var(--color-border)" }}
+                           transition-colors hover:bg-[var(--color-bg-elevated)] group border-[var(--color-border)]"
               >
                 {/* Ticker + name */}
                 <div className="flex-1 min-w-0">
-                  <div className="font-mono text-sm font-semibold"
-                       style={{ color: "var(--color-text-primary)" }}>
+                  <div className="font-mono text-sm font-semibold text-[var(--color-text-primary)]">
                     {stock.ticker.replace(".ST", "")}
                   </div>
-                  <div className="text-xs truncate mt-0.5"
-                       style={{ color: "var(--color-text-muted)" }}>
+                  <div className="text-xs truncate mt-0.5 text-[var(--color-text-muted)]">
                     {stock.name}
                   </div>
                 </div>
@@ -347,8 +330,7 @@ function TopPicksCard({
 
                 {/* Change */}
                 <div className="text-right">
-                  <div className="font-mono tabular text-sm font-semibold"
-                       style={{ color: "var(--color-text-primary)" }}>
+                  <div className="font-mono tabular text-sm font-semibold text-[var(--color-text-primary)]">
                     {formatPrice(stock.price)}
                   </div>
                   <div className={cn("font-mono tabular text-xs", changeClass(stock.change_pct))}>
@@ -359,8 +341,7 @@ function TopPicksCard({
                 <ArrowRight
                   size={14}
                   strokeWidth={1.5}
-                  className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ color: "var(--color-text-muted)" }}
+                  className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-[var(--color-text-muted)]"
                 />
               </Link>
             ))}
@@ -374,27 +355,21 @@ function TopPicksCard({
 function WatchlistCard({ items }: { items: ReturnType<typeof useWatchlist>["data"] extends (infer T)[] | undefined ? T[] : never[] }) {
   return (
     <div
-      className="rounded-2xl border overflow-hidden"
-      style={{
-        background: "var(--color-bg-surface)",
-        borderColor: "var(--color-border)",
-      }}
+      className="rounded-2xl border overflow-hidden bg-[var(--color-bg-surface)] border-[var(--color-border)]"
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-5 py-4 border-b"
-        style={{ borderColor: "var(--color-border)" }}
+        className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]"
       >
         <div className="flex items-center gap-2">
-          <Star size={15} strokeWidth={1.5} style={{ color: "var(--color-warn)" }} />
-          <span className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+          <Star size={15} strokeWidth={1.5} className="text-[var(--color-warn)]" />
+          <span className="text-sm font-semibold text-[var(--color-text-primary)]">
             Dina bevakningar
           </span>
         </div>
         <Link
           href="/bevakningar"
-          className="flex items-center gap-1 text-xs"
-          style={{ color: "var(--color-accent)" }}
+          className="flex items-center gap-1 text-xs text-[var(--color-accent)]"
         >
           Hantera <ArrowRight size={12} strokeWidth={1.5} />
         </Link>
@@ -406,13 +381,12 @@ function WatchlistCard({ items }: { items: ReturnType<typeof useWatchlist>["data
           ? (
               <div className="px-5 py-8 text-center space-y-2">
                 <Star size={20} strokeWidth={1.5} style={{ color: "var(--color-border-strong)", margin: "0 auto" }} />
-                <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
+                <p className="text-sm text-[var(--color-text-muted)]">
                   Du bevakar inga aktier ännu
                 </p>
                 <Link
                   href="/bevakningar"
-                  className="inline-flex items-center gap-1 text-xs"
-                  style={{ color: "var(--color-accent)" }}
+                  className="inline-flex items-center gap-1 text-xs text-[var(--color-accent)]"
                 >
                   Lägg till en bevakning <ArrowRight size={11} strokeWidth={1.5} />
                 </Link>
@@ -429,13 +403,11 @@ function WatchlistCard({ items }: { items: ReturnType<typeof useWatchlist>["data
                   key={item.ticker}
                   href={`/aktie/${item.ticker}`}
                   className="flex items-center gap-3 px-5 py-3.5 border-b last:border-b-0
-                             transition-colors hover:bg-[var(--color-bg-elevated)]"
-                  style={{ borderColor: "var(--color-border)" }}
+                             transition-colors hover:bg-[var(--color-bg-elevated)] border-[var(--color-border)]"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-semibold"
-                            style={{ color: "var(--color-text-primary)" }}>
+                      <span className="font-mono text-xs font-semibold text-[var(--color-text-primary)]">
                         {item.ticker.replace(".ST", "")}
                       </span>
                       {item.entry_signal && (
@@ -455,8 +427,7 @@ function WatchlistCard({ items }: { items: ReturnType<typeof useWatchlist>["data
                   )}
 
                   <div className="text-right">
-                    <div className="font-mono tabular text-xs"
-                         style={{ color: "var(--color-text-primary)" }}>
+                    <div className="font-mono tabular text-xs text-[var(--color-text-primary)]">
                       {item.price != null ? formatPrice(item.price) : "—"}
                     </div>
                     {item.change_pct != null && (

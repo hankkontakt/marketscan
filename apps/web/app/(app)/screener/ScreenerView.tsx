@@ -149,8 +149,7 @@ export function ScreenerView() {
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search size={14} strokeWidth={1.5}
-                  className="absolute left-3 top-1/2 -translate-y-1/2"
-                  style={{ color: "var(--color-text-muted)" }} />
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
           <input
             value={nlQuery}
             onChange={(e) => setNlQuery(e.target.value)}
@@ -174,8 +173,7 @@ export function ScreenerView() {
         </button>
       </div>
       {nlInterpreted && (
-        <div className="flex items-center gap-2 px-1 text-xs"
-             style={{ color: "var(--color-text-muted)" }}>
+        <div className="flex items-center gap-2 px-1 text-xs text-[var(--color-text-muted)]">
           <span>Filter: {nlInterpreted}</span>
           <button
             onClick={() => { setNlInterpreted(""); setFilters(DEFAULT_FILTERS); setNlQuery(""); }}
@@ -187,13 +185,12 @@ export function ScreenerView() {
       )}
 
       {/* Segment + filters in one block */}
-      <div className="rounded-xl border p-4 space-y-4"
-           style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+      <div className="rounded-xl border p-4 space-y-4 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <SegmentToggle
           value={(filters.segments ?? ["large_cap", "mid_cap"]) as ("large_cap" | "mid_cap" | "small_cap" | "micro_cap")[]}
           onChange={(segments) => updateFilters({ segments })}
         />
-        <div className="border-t pt-4" style={{ borderColor: "var(--color-border)" }}>
+        <div className="border-t pt-4 border-[var(--color-border)]">
           <FilterRail
             filters={filters}
             onChange={updateFilters}

@@ -73,12 +73,11 @@ export function ResultTable({ data, loading }: Props) {
   if (loading) return <TableSkeleton />;
 
   return (
-    <div className="rounded-xl overflow-hidden border"
-         style={{ borderColor: "var(--color-border)" }}>
+    <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr style={{ background: "var(--color-bg-surface)", borderBottom: "1px solid var(--color-border)" }}>
+            <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
               <Th label="Aktie" width="220px" />
               <Th label="Segment" width="110px" />
               <Th
@@ -89,8 +88,6 @@ export function ResultTable({ data, loading }: Props) {
                 width="90px"
                 align="right"
               />
-              {/* Score trend — awaiting R2 score history */}
-              {/* <Th label="Trend (graf)" width="64px" /> */}
               <Th label="Köpläge" width="130px" />
               <Th label="Trend" width="90px" />
               <Th
@@ -156,7 +153,7 @@ export function ResultTable({ data, loading }: Props) {
                   <div className="flex items-center gap-2">
                     {row.low_liquidity && (
                       <AlertTriangle size={12} strokeWidth={1.5}
-                                     style={{ color: "var(--color-warn)", flexShrink: 0 }} />
+                                     className="text-[var(--color-warn)] shrink-0" />
                     )}
                     <div>
                       <div className="font-mono font-semibold text-[var(--color-text-primary)] text-xs">
@@ -178,23 +175,6 @@ export function ResultTable({ data, loading }: Props) {
                 <td className="px-4 py-3 text-right">
                   <ScoreChip score={row.score_total} />
                 </td>
-
-              {/* Score trend — awaiting R2 score history */}
-              {/* <td className="px-4 py-3">
-                  <ScoreSparkline
-                    values={row.score_total != null
-                      ? [
-                          Math.max(0, row.score_total - 6),
-                          Math.max(0, row.score_total - 2),
-                          row.score_total - 4,
-                          row.score_total + 1,
-                          row.score_total,
-                        ]
-                      : []}
-                    width={44}
-                    height={18}
-                  />
-                </td> */}
 
                 {/* Köpläge */}
                 <td className="px-4 py-3">
@@ -244,8 +224,7 @@ export function ResultTable({ data, loading }: Props) {
         </div>
       )}
 
-      <div className="px-4 py-2 border-t flex justify-between items-center"
-           style={{ borderColor: "var(--color-border)" }}>
+      <div className="px-4 py-2 border-t flex justify-between items-center border-[var(--color-border)]">
         <span className="text-xs text-[var(--color-text-muted)]">
           {sorted.length} aktier
         </span>
@@ -303,9 +282,9 @@ function ScoreChip({ score }: { score: number | null | undefined }) {
 function TrendBadge({ trend }: { trend: string | null | undefined }) {
   if (!trend) return <span className="text-[var(--color-text-muted)]">—</span>;
   const icon =
-    trend === "Upptrend" ? <TrendingUp size={12} strokeWidth={1.5} style={{ color: "var(--color-up)" }} /> :
-    trend === "Nedtrend" ? <TrendingDown size={12} strokeWidth={1.5} style={{ color: "var(--color-down)" }} /> :
-    <Minus size={12} strokeWidth={1.5} style={{ color: "var(--color-text-muted)" }} />;
+    trend === "Upptrend" ? <TrendingUp size={12} strokeWidth={1.5} className="text-[var(--color-up)]" /> :
+    trend === "Nedtrend" ? <TrendingDown size={12} strokeWidth={1.5} className="text-[var(--color-down)]" /> :
+    <Minus size={12} strokeWidth={1.5} className="text-[var(--color-text-muted)]" />;
   return (
     <div className="flex items-center gap-1 text-[var(--color-text-secondary)]">
       {icon}
@@ -316,10 +295,9 @@ function TrendBadge({ trend }: { trend: string | null | undefined }) {
 
 function TableSkeleton() {
   return (
-    <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--color-border)" }}>
+    <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="flex gap-4 px-4 py-3 border-b"
-             style={{ borderColor: "var(--color-border)" }}>
+        <div key={i} className="flex gap-4 px-4 py-3 border-b border-[var(--color-border)]">
           <div className="skeleton h-4 w-32" />
           <div className="skeleton h-4 w-20 ml-auto" />
           <div className="skeleton h-4 w-16" />

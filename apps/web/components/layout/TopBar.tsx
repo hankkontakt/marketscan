@@ -90,17 +90,12 @@ export function TopBar() {
 
         {menuOpen && (
           <div
-            className="absolute right-0 top-10 w-56 rounded-xl border shadow-xl z-50 overflow-hidden"
-            style={{
-              background: "var(--color-bg-elevated)",
-              borderColor: "var(--color-border-strong)",
-            }}
+            className="absolute right-0 top-10 w-56 rounded-xl border shadow-xl z-50 overflow-hidden bg-[var(--color-bg-elevated)] border-[var(--color-border-strong)]"
           >
             {/* User info */}
             {userEmail && (
               <div
-                className="px-4 py-3 border-b"
-                style={{ borderColor: "var(--color-border)" }}
+                className="px-4 py-3 border-b border-[var(--color-border)]"
               >
                 <p className="text-xs text-[var(--color-text-muted)]">Inloggad som</p>
                 <p className="text-sm font-medium text-[var(--color-text-primary)] truncate mt-0.5">
@@ -110,7 +105,7 @@ export function TopBar() {
             )}
 
             {!userEmail && (
-              <div className="px-4 py-3 border-b" style={{ borderColor: "var(--color-border)" }}>
+              <div className="px-4 py-3 border-b border-[var(--color-border)]">
                 <p className="text-xs text-[var(--color-text-muted)]">Inte inloggad</p>
                 <a
                   href="/login"

@@ -26,8 +26,7 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="flex-1 flex flex-col items-center justify-center text-center px-6 py-20">
         <div className="max-w-2xl mx-auto space-y-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border text-[var(--color-accent)]"
-               style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)" }}>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border text-[var(--color-accent)] bg-[var(--color-bg-elevated)] border-[var(--color-border)]">
             <span className="w-1.5 h-1.5 rounded-full bg-current" />
             Uppdateras automatiskt varje dag
           </div>
@@ -52,8 +51,7 @@ export default function LandingPage() {
             </Link>
             <Link href="/screener"
                   className="w-full sm:w-auto text-sm font-medium px-6 py-3 rounded-xl border transition-colors
-                             text-[var(--color-text-secondary)]"
-                  style={{ borderColor: "var(--color-border)", background: "var(--color-bg-surface)" }}>
+                             text-[var(--color-text-secondary)] bg-[var(--color-bg-surface)] border-[var(--color-border)]">
               Utforska aktier utan konto
             </Link>
           </div>
@@ -94,8 +92,7 @@ export default function LandingPage() {
             },
           ].map(({ icon: Icon, title, desc, color }) => (
             <div key={title}
-                 className="rounded-2xl p-6 border"
-                 style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+                 className="rounded-2xl p-6 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-4"
                    style={{ background: color + "14" }}>
                 <Icon size={18} strokeWidth={1.5} style={{ color }} />
@@ -108,8 +105,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t px-8 py-5 flex items-center justify-between max-w-6xl mx-auto w-full"
-              style={{ borderColor: "var(--color-border)" }}>
+      <footer className="border-t px-8 py-5 flex items-center justify-between max-w-6xl mx-auto w-full border-[var(--color-border)]">
         <span className="text-xs text-[var(--color-text-muted)]">MarketScan — personlig aktieanalys</span>
         <span className="text-xs text-[var(--color-text-muted)]">Investering innebär alltid risk</span>
       </footer>

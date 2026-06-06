@@ -72,11 +72,10 @@ export function BevakninarView() {
       <section>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold" style={{ color: "var(--color-text-primary)" }}>
+            <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
               Bevakningar
             </h1>
-            <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: "var(--color-bg-elevated)", color: "var(--color-text-muted)" }}>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]">
               {watchlist.length}
             </span>
           </div>
@@ -88,17 +87,12 @@ export function BevakninarView() {
               onChange={(e) => setAddTicker(e.target.value.toUpperCase())}
               onKeyDown={(e) => e.key === "Enter" && addTicker.trim() && addWatch.mutate(addTicker.trim())}
               placeholder="Lägg till ticker..."
-              className="h-9 px-3 rounded-xl text-sm border w-40 uppercase focus:outline-none"
-              style={{
-                background: "var(--color-bg-surface)", borderColor: "var(--color-border)",
-                color: "var(--color-text-primary)",
-              }}
+              className="h-9 px-3 rounded-xl text-sm border w-40 uppercase focus:outline-none bg-[var(--color-bg-surface)] border-[var(--color-border)] text-[var(--color-text-primary)]"
             />
             <button
               onClick={() => addTicker.trim() && addWatch.mutate(addTicker.trim())}
               disabled={!addTicker.trim() || addWatch.isPending}
-              className="h-9 px-3 rounded-xl text-sm font-medium text-white disabled:opacity-40"
-              style={{ background: "var(--color-accent)" }}
+              className="h-9 px-3 rounded-xl text-sm font-medium text-white disabled:opacity-40 bg-[var(--color-accent)]"
             >
               <Plus size={14} strokeWidth={2} />
             </button>
@@ -110,33 +104,29 @@ export function BevakninarView() {
             {[1,2,3].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}
           </div>
         ) : watchlist.length === 0 ? (
-          <div className="rounded-2xl border p-10 text-center"
-               style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+          <div className="rounded-2xl border p-10 text-center bg-[var(--color-bg-surface)] border-[var(--color-border)]">
             <Star size={28} strokeWidth={1} style={{ color: "var(--color-border-strong)", margin: "0 auto 10px" }} />
-            <p className="text-sm font-medium" style={{ color: "var(--color-text-secondary)" }}>
+            <p className="text-sm font-medium text-[var(--color-text-secondary)]">
               Inga bevakningar ännu
             </p>
-            <p className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
+            <p className="text-xs mt-1 text-[var(--color-text-muted)]">
               Sök efter en aktie och klicka "Bevaka" på aktiekortet
             </p>
             <Link href="/screener"
-                  className="inline-flex items-center gap-1 mt-3 text-xs"
-                  style={{ color: "var(--color-accent)" }}>
+                  className="inline-flex items-center gap-1 mt-3 text-xs text-[var(--color-accent)]">
               Gå till aktier <ArrowRight size={11} strokeWidth={1.5} />
             </Link>
           </div>
         ) : (
-          <div className="rounded-2xl border overflow-hidden"
-               style={{ borderColor: "var(--color-border)" }}>
+          <div className="rounded-2xl border overflow-hidden border-[var(--color-border)]">
             {watchlist.map((item) => (
               <div key={item.ticker}>
                 <div
-                  className="flex items-center gap-4 px-5 py-4 border-b transition-colors hover:bg-[var(--color-bg-elevated)]"
-                  style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}
+                  className="flex items-center gap-4 px-5 py-4 border-b transition-colors hover:bg-[var(--color-bg-elevated)] bg-[var(--color-bg-surface)] border-[var(--color-border)]"
                 >
                   <Link href={`/aktie/${item.ticker}`} className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+                      <span className="text-sm font-semibold text-[var(--color-text-primary)]">
                         {item.ticker.replace(".ST", "")}
                       </span>
                       {item.entry_signal && (
@@ -146,7 +136,7 @@ export function BevakninarView() {
                         </span>
                       )}
                     </div>
-                    <div className="text-xs mt-0.5 truncate" style={{ color: "var(--color-text-muted)" }}>
+                    <div className="text-xs mt-0.5 truncate text-[var(--color-text-muted)]">
                       {item.name}
                     </div>
                   </Link>
@@ -158,7 +148,7 @@ export function BevakninarView() {
                   )}
 
                   <div className="text-right">
-                    <div className="text-sm tabular" style={{ color: "var(--color-text-primary)" }}>
+                    <div className="text-sm tabular text-[var(--color-text-primary)]">
                       {item.price != null ? formatPrice(item.price) : "—"}
                     </div>
                     {item.change_pct != null && (
@@ -171,13 +161,12 @@ export function BevakninarView() {
                   {/* Larm-knapp */}
                   <button
                     onClick={() => setShowAlertForm(showAlertForm === item.ticker ? null : item.ticker)}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-colors"
-                    style={{
-                      borderColor: alerts.some(a => a.ticker === item.ticker)
-                        ? "var(--color-warn)" : "var(--color-border)",
-                      color: alerts.some(a => a.ticker === item.ticker)
-                        ? "var(--color-warn)" : "var(--color-text-muted)",
-                    }}
+                    className={cn(
+                      "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-colors",
+                      alerts.some(a => a.ticker === item.ticker)
+                        ? "border-[var(--color-warn)] text-[var(--color-warn)]"
+                        : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                    )}
                     title="Sätt prisriktkurslarm"
                   >
                     <Bell size={12} strokeWidth={1.5}
@@ -187,8 +176,7 @@ export function BevakninarView() {
 
                   <button
                     onClick={() => removeWatch.mutate(item.ticker)}
-                    className="transition-colors"
-                    style={{ color: "var(--color-text-muted)" }}
+                    className="transition-colors text-[var(--color-text-muted)]"
                     aria-label="Ta bort bevakning"
                   >
                     <X size={15} strokeWidth={1.5} />
@@ -197,9 +185,8 @@ export function BevakninarView() {
 
                 {/* Inline alarm form */}
                 {showAlertForm === item.ticker && (
-                  <div className="px-5 py-4 border-b"
-                       style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)" }}>
-                    <p className="text-xs font-medium mb-3" style={{ color: "var(--color-text-secondary)" }}>
+                  <div className="px-5 py-4 border-b bg-[var(--color-bg-elevated)] border-[var(--color-border)]">
+                    <p className="text-xs font-medium mb-3 text-[var(--color-text-secondary)]">
                       Skapa prisriktkurslarm för {item.ticker.replace(".ST", "")}
                       <InfoTooltip text="Du får ett meddelande när aktiekursen når din angivna nivå." />
                     </p>
@@ -207,8 +194,7 @@ export function BevakninarView() {
                       <select
                         value={alertCond}
                         onChange={(e) => setAlertCond(e.target.value as "above" | "below")}
-                        className="h-8 px-2 rounded-lg text-xs border focus:outline-none"
-                        style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+                        className="h-8 px-2 rounded-lg text-xs border focus:outline-none bg-[var(--color-bg-surface)] border-[var(--color-border)] text-[var(--color-text-primary)]"
                       >
                         <option value="below">Under</option>
                         <option value="above">Över</option>
@@ -218,15 +204,13 @@ export function BevakninarView() {
                         value={alertPrice}
                         onChange={(e) => setAlertPrice(e.target.value)}
                         placeholder={`Riktkurs (nu ~${item.price ? Math.round(item.price) : "—"})`}
-                        className="h-8 px-3 rounded-lg text-xs border focus:outline-none w-44"
-                        style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+                        className="h-8 px-3 rounded-lg text-xs border focus:outline-none w-44 bg-[var(--color-bg-surface)] border-[var(--color-border)] text-[var(--color-text-primary)]"
                       />
                       <input
                         value={alertNote}
                         onChange={(e) => setAlertNote(e.target.value)}
                         placeholder="Anteckning (valfri)"
-                        className="h-8 px-3 rounded-lg text-xs border focus:outline-none flex-1"
-                        style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+                        className="h-8 px-3 rounded-lg text-xs border focus:outline-none flex-1 bg-[var(--color-bg-surface)] border-[var(--color-border)] text-[var(--color-text-primary)]"
                       />
                       <button
                         disabled={!alertPrice || createAlert.isPending}
@@ -236,14 +220,12 @@ export function BevakninarView() {
                           target_price: parseFloat(alertPrice),
                           note: alertNote || undefined,
                         })}
-                        className="h-8 px-3 rounded-lg text-xs font-medium text-white disabled:opacity-40"
-                        style={{ background: "var(--color-accent)" }}
+                        className="h-8 px-3 rounded-lg text-xs font-medium text-white disabled:opacity-40 bg-[var(--color-accent)]"
                       >
                         Spara larm
                       </button>
                       <button onClick={() => setShowAlertForm(null)}
-                              className="h-8 px-2 rounded-lg text-xs"
-                              style={{ color: "var(--color-text-muted)" }}>
+                              className="h-8 px-2 rounded-lg text-xs text-[var(--color-text-muted)]">
                         <X size={12} />
                       </button>
                     </div>
@@ -259,41 +241,38 @@ export function BevakninarView() {
       {alerts.length > 0 && (
         <section>
           <div className="flex items-center gap-2 mb-4">
-            <Bell size={15} strokeWidth={1.5} style={{ color: "var(--color-warn)" }} />
-            <h2 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+            <Bell size={15} strokeWidth={1.5} className="text-[var(--color-warn)]" />
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
               Aktiva larm
             </h2>
             <InfoTooltip text="Larm aktiveras när aktiekursen når din angivna nivå vid nästa dagliga uppdatering." />
           </div>
-          <div className="rounded-2xl border overflow-hidden"
-               style={{ borderColor: "var(--color-border)" }}>
+          <div className="rounded-2xl border overflow-hidden border-[var(--color-border)]">
             {alerts.map((alert, i) => (
               <div
                 key={alert.id}
-                className="flex items-center gap-4 px-5 py-3.5 border-b last:border-b-0"
-                style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}
+                className="flex items-center gap-4 px-5 py-3.5 border-b last:border-b-0 bg-[var(--color-bg-surface)] border-[var(--color-border)]"
               >
-                <Bell size={13} strokeWidth={1.5} style={{ color: "var(--color-warn)", flexShrink: 0 }} />
+                <Bell size={13} strokeWidth={1.5} className="text-[var(--color-warn)] shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+                  <span className="text-sm font-semibold text-[var(--color-text-primary)]">
                     {alert.ticker.replace(".ST", "")}
                   </span>
-                  <span className="text-xs ml-2" style={{ color: "var(--color-text-muted)" }}>
+                  <span className="text-xs ml-2 text-[var(--color-text-muted)]">
                     {alert.condition === "below" ? "under" : "över"}{" "}
-                    <span className="tabular font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                    <span className="tabular font-medium text-[var(--color-text-secondary)]">
                       {formatPrice(alert.target_price)}
                     </span>
                   </span>
                   {alert.note && (
-                    <span className="text-xs ml-2 italic" style={{ color: "var(--color-text-muted)" }}>
+                    <span className="text-xs ml-2 italic text-[var(--color-text-muted)]">
                       — {alert.note}
                     </span>
                   )}
                 </div>
                 <button
                   onClick={() => deleteAlert.mutate(alert.id)}
-                  className="transition-colors"
-                  style={{ color: "var(--color-text-muted)" }}
+                  className="transition-colors text-[var(--color-text-muted)]"
                 >
                   <Trash2 size={13} strokeWidth={1.5} />
                 </button>

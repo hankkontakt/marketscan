@@ -29,22 +29,19 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center p-4"
-         style={{ background: "var(--color-bg-base)" }}>
+    <div className="min-h-dvh flex items-center justify-center p-4 bg-[var(--color-bg-base)]">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
-               style={{ background: "var(--color-accent-soft)", border: "1px solid var(--color-border)" }}>
-            <TrendingUp size={22} strokeWidth={1.5} style={{ color: "var(--color-accent)" }} />
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 bg-[var(--color-accent-soft)]" style={{ border: "1px solid var(--color-border)" }}>
+            <TrendingUp size={22} strokeWidth={1.5} className="text-[var(--color-accent)]" />
           </div>
           <h1 className="text-xl font-bold text-[var(--color-text-primary)]">MarketScan</h1>
           <p className="text-xs mt-1 text-[var(--color-text-muted)]">Professionell aktieanalys</p>
         </div>
 
         {/* Form */}
-        <div className="rounded-2xl p-6 border"
-             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+        <div className="rounded-2xl p-6 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
           <h2 className="text-sm font-semibold mb-5 text-[var(--color-text-primary)]">Logga in</h2>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -94,14 +91,14 @@ export default function LoginPage() {
               {loading ? "Loggar in..." : "Logga in"}
             </button>
           </form>
-          <p className="mt-4 text-center text-xs" style={{ color: "var(--color-text-muted)" }}>
+          <p className="mt-4 text-center text-xs text-[var(--color-text-muted)]">
             Inget konto?{" "}
-            <Link href="/register" className="hover:underline" style={{ color: "var(--color-accent)" }}>
+            <Link href="/register" className="hover:underline text-[var(--color-accent)]">
               Skapa ett gratis konto
             </Link>
           </p>
           <p className="mt-1 text-center text-xs">
-            <Link href="/reset" className="hover:underline" style={{ color: "var(--color-text-muted)" }}>
+            <Link href="/reset" className="hover:underline text-[var(--color-text-muted)]">
               Glömt lösenordet?
             </Link>
           </p>

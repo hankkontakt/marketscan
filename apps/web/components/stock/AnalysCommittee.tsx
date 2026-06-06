@@ -75,7 +75,7 @@ export function AnalysCommittee({ stock }: Props) {
   if (error || !data) {
     return (
       <div className="flex flex-col items-center py-12 gap-3">
-        <AlertCircle size={20} style={{ color: "var(--color-down)" }} />
+        <AlertCircle size={20} className="text-[var(--color-down)]" />
         <p className="text-xs text-[var(--color-text-muted)]">Analys misslyckades</p>
         <button onClick={() => refetch()}
                 className="text-xs text-[var(--color-accent)] hover:underline">
@@ -91,8 +91,7 @@ export function AnalysCommittee({ stock }: Props) {
   return (
     <div className="space-y-5">
       {/* Synthesis card */}
-      <div className="rounded-xl p-5 border"
-           style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)" }}>
+      <div className="rounded-xl p-5 border bg-[var(--color-bg-elevated)] border-[var(--color-border)]">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -117,8 +116,7 @@ export function AnalysCommittee({ stock }: Props) {
         </div>
 
         {synthesis.disagreement && synthesis.disagreement_note && (
-          <div className="mt-3 px-3 py-2 rounded-lg flex items-start gap-2"
-               style={{ background: "var(--color-warn-soft)", color: "var(--color-warn)" }}>
+          <div className="mt-3 px-3 py-2 rounded-lg flex items-start gap-2 bg-[var(--color-warn-soft)] text-[var(--color-warn)]">
             <AlertCircle size={13} strokeWidth={1.5} className="shrink-0 mt-0.5" />
             <span className="text-xs">{synthesis.disagreement_note}</span>
           </div>
@@ -166,8 +164,7 @@ function AnalystCard({ icon: Icon, name, analysis }: {
   analysis: string;
 }) {
   return (
-    <div className="rounded-xl p-4 border space-y-3"
-         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+    <div className="rounded-xl p-4 border space-y-3 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
       <div className="flex items-center gap-2">
         <Icon size={14} strokeWidth={1.5} />
         <span className="text-xs font-medium text-[var(--color-text-secondary)]">{name}</span>
@@ -179,8 +176,7 @@ function AnalystCard({ icon: Icon, name, analysis }: {
 
 function ConfidenceMeter({ value, color }: { value: number; color: string }) {
   return (
-    <div className="w-16 h-1.5 rounded-full mt-1.5 overflow-hidden"
-         style={{ background: "var(--color-bg-base)" }}>
+    <div className="w-16 h-1.5 rounded-full mt-1.5 overflow-hidden bg-[var(--color-bg-base)]">
       <div
         className="h-full rounded-full transition-all"
         style={{ width: `${value}%`, background: color }}

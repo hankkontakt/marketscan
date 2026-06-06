@@ -66,15 +66,15 @@ export function PortfoljView() {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold" style={{ color: "var(--color-text-primary)" }}>Min portfölj</h1>
-          <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Min portfölj</h1>
+          <p className="text-xs mt-0.5 text-[var(--color-text-muted)]">
             {holdings.length} innehav
           </p>
         </div>
         <div className="flex items-center gap-3">
           {totalValue > 0 && (
             <div className="text-right">
-              <div className="text-2xl font-bold tabular" style={{ color: "var(--color-text-primary)" }}>
+              <div className="text-2xl font-bold tabular text-[var(--color-text-primary)]">
                 {formatPrice(totalValue)}
               </div>
               {totalReturn != null && (
@@ -86,12 +86,12 @@ export function PortfoljView() {
           )}
           <button
             onClick={() => setShowAdd(!showAdd)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors"
-            style={{
-              background: showAdd ? "var(--color-accent)" : "var(--color-bg-surface)",
-              color: showAdd ? "white" : "var(--color-text-secondary)",
-              borderColor: showAdd ? "var(--color-accent)" : "var(--color-border)",
-            }}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors",
+              showAdd
+                ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]"
+                : "bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)]",
+            )}
           >
             <Plus size={14} strokeWidth={1.5} />
             Lägg till
@@ -101,42 +101,38 @@ export function PortfoljView() {
 
       {/* Add holding form */}
       {showAdd && (
-        <div className="rounded-2xl border p-5 space-y-4"
-             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-          <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+        <div className="rounded-2xl border p-5 space-y-4 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
             Lägg till innehav
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
-              <label className="text-xs" style={{ color: "var(--color-text-muted)" }}>Ticker</label>
+              <label className="text-xs text-[var(--color-text-muted)]">Ticker</label>
               <input
                 value={addTicker}
                 onChange={(e) => setAddTicker(e.target.value.toUpperCase())}
                 placeholder="t.ex. VOLV-B.ST"
-                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none uppercase"
-                style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none uppercase bg-[var(--color-bg-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs" style={{ color: "var(--color-text-muted)" }}>Antal aktier</label>
+              <label className="text-xs text-[var(--color-text-muted)]">Antal aktier</label>
               <input
                 type="number" min="0" step="1"
                 value={addShares}
                 onChange={(e) => setAddShares(e.target.value)}
                 placeholder="100"
-                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none"
-                style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none bg-[var(--color-bg-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs" style={{ color: "var(--color-text-muted)" }}>Inköpskurs (valfri)</label>
+              <label className="text-xs text-[var(--color-text-muted)]">Inköpskurs (valfri)</label>
               <input
                 type="number" min="0" step="0.01"
                 value={addCost}
                 onChange={(e) => setAddCost(e.target.value)}
                 placeholder="287,40"
-                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none"
-                style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)", color: "var(--color-text-primary)" }}
+                className="w-full h-9 px-3 rounded-lg text-sm border focus:outline-none bg-[var(--color-bg-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]"
               />
             </div>
           </div>
@@ -156,16 +152,14 @@ export function PortfoljView() {
                   }
                 );
               }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-40"
-              style={{ background: "var(--color-accent)" }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-40 bg-[var(--color-accent)]"
             >
               <Check size={14} strokeWidth={2} />
               {addHolding.isPending ? "Sparar..." : "Lägg till"}
             </button>
             <button
               onClick={() => { setShowAdd(false); setAddTicker(""); setAddShares(""); setAddCost(""); }}
-              className="px-4 py-2 rounded-lg text-sm border"
-              style={{ borderColor: "var(--color-border)", color: "var(--color-text-muted)" }}
+              className="px-4 py-2 rounded-lg text-sm border border-[var(--color-border)] text-[var(--color-text-muted)]"
             >
               Avbryt
             </button>
@@ -177,11 +171,10 @@ export function PortfoljView() {
       {holdings.length === 0 ? (
         <EmptyPortfolio />
       ) : (
-        <div className="rounded-xl overflow-hidden border"
-             style={{ borderColor: "var(--color-border)" }}>
+        <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr style={{ background: "var(--color-bg-surface)", borderBottom: "1px solid var(--color-border)" }}>
+              <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
                 {["Aktie", "Antal", "Kurs", "Idag", "Värde", "Totalbetyg", "Köpläge", ""].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-left text-[11px] font-medium text-[var(--color-text-muted)]">
                     {h}
@@ -193,10 +186,8 @@ export function PortfoljView() {
               {holdings.map((h, i) => (
                 <tr
                   key={h.id}
-                  style={{
-                    background: "var(--color-bg-surface)",
-                    borderBottom: "1px solid var(--color-border)",
-                  }}
+                  className="bg-[var(--color-bg-surface)]"
+                  style={{ borderBottom: "1px solid var(--color-border)" }}
                 >
                   <td className="px-4 py-3">
                     <Link href={`/aktie/${h.ticker}`}
@@ -255,10 +246,9 @@ export function PortfoljView() {
 
       {/* AI Coach */}
       {holdings.length > 0 && (
-        <div className="rounded-xl p-5 border"
-             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+        <div className="rounded-xl p-5 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
           <div className="flex items-center gap-2 mb-4">
-            <MessageSquare size={15} strokeWidth={1.5} style={{ color: "var(--color-accent)" }} />
+            <MessageSquare size={15} strokeWidth={1.5} className="text-[var(--color-accent)]" />
             <h2 className="text-sm font-medium text-[var(--color-text-primary)]">Fråga om din portfölj</h2>
           </div>
 
@@ -325,9 +315,8 @@ export function PortfoljView() {
 
 function EmptyPortfolio() {
   return (
-    <div className="rounded-xl p-12 text-center border"
-         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
-      <Briefcase size={32} strokeWidth={1} style={{ color: "var(--color-text-muted)", margin: "0 auto 12px" }} />
+    <div className="rounded-xl p-12 text-center border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+      <Briefcase size={32} strokeWidth={1} className="text-[var(--color-text-muted)] mx-auto mb-3" />
       <p className="text-sm text-[var(--color-text-secondary)]">Ingen portfölj än</p>
       <p className="text-xs mt-1 text-[var(--color-text-muted)]">
         Lägg till innehav från aktiekort-sidan
@@ -367,10 +356,9 @@ function AllocationDonut({ holdings, totalValue }: {
     .sort((a, b) => b.value - a.value);
 
   return (
-    <div className="rounded-xl p-4 border"
-         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+    <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
       <div className="flex items-center gap-2 mb-4">
-        <PieChart size={14} strokeWidth={1.5} style={{ color: "var(--color-accent)" }} />
+        <PieChart size={14} strokeWidth={1.5} className="text-[var(--color-accent)]" />
         <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">Allokering</h3>
       </div>
       <div className="flex items-center gap-4">
@@ -421,10 +409,9 @@ function RiskPanel({ holdings }: {
   holdings: { ticker: string; name: string | null }[];
 }) {
   return (
-    <div className="rounded-xl p-4 border"
-         style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+    <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
       <div className="flex items-center gap-2 mb-4">
-        <ShieldAlert size={14} strokeWidth={1.5} style={{ color: "var(--color-warn)" }} />
+        <ShieldAlert size={14} strokeWidth={1.5} className="text-[var(--color-warn)]" />
         <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">Riskanalys</h3>
       </div>
       <div className="space-y-3">
@@ -438,8 +425,7 @@ function RiskPanel({ holdings }: {
             {holdings.length <= 3 ? "Hög" : holdings.length <= 7 ? "Medel" : "Låg"}
           </span>
         </div>
-        <p className="text-[11px] text-[var(--color-text-muted)] pt-1 border-t"
-           style={{ borderColor: "var(--color-border)" }}>
+        <p className="text-[11px] text-[var(--color-text-muted)] pt-1 border-t border-[var(--color-border)]">
           Detaljerad riskanalys (beta, sektorkoncentration, korrelation) beräknas av AI-coachen.
           Fråga: &ldquo;Analysera min portföljrisk&rdquo;
         </p>

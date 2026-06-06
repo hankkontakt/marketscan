@@ -23,21 +23,18 @@ export default function ResetPage() {
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center p-4"
-         style={{ background: "var(--color-bg-base)" }}>
+    <div className="min-h-dvh flex items-center justify-center p-4 bg-[var(--color-bg-base)]">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
-               style={{ background: "var(--color-accent-soft)", border: "1px solid var(--color-border)" }}>
-            <TrendingUp size={22} strokeWidth={1.5} style={{ color: "var(--color-accent)" }} />
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 bg-[var(--color-accent-soft)]" style={{ border: "1px solid var(--color-border)" }}>
+            <TrendingUp size={22} strokeWidth={1.5} className="text-[var(--color-accent)]" />
           </div>
           <h1 className="text-xl font-bold text-[var(--color-text-primary)]">MarketScan</h1>
         </div>
-        <div className="rounded-2xl p-6 border"
-             style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border)" }}>
+        <div className="rounded-2xl p-6 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
           {done ? (
             <div className="text-center space-y-3">
-              <p className="text-sm" style={{ color: "var(--color-up)" }}>Länk skickad!</p>
+              <p className="text-sm text-[var(--color-up)]">Länk skickad!</p>
               <p className="text-xs text-[var(--color-text-muted)]">Kontrollera din e-post.</p>
               <Link href="/login" className="block text-xs text-[var(--color-accent)] hover:underline">
                 Tillbaka till inloggning
