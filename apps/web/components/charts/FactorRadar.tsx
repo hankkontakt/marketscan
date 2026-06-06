@@ -4,7 +4,6 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   ResponsiveContainer, Tooltip,
 } from "recharts";
-import { useTheme } from "@/hooks/useTheme";
 import type { ScanRow } from "@/types/scan";
 
 interface Props {
@@ -23,9 +22,6 @@ const FACTORS = [
 ] as const;
 
 export function FactorRadar({ stock }: Props) {
-  const { resolved } = useTheme();
-  const isDark = resolved === "dark";
-
   const data = FACTORS.map(({ key, label }) => ({
     factor: label,
     value: stock[key] ?? 0,
@@ -34,10 +30,10 @@ export function FactorRadar({ stock }: Props) {
   return (
     <ResponsiveContainer width="100%" height={240}>
       <RadarChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
-        <PolarGrid stroke={isDark ? "#262A31" : "#D1D5DB"} />
+        <PolarGrid stroke="var(--color-border)" />
         <PolarAngleAxis
           dataKey="factor"
-          tick={{ fill: isDark ? "#9AA1AC" : "#4A5567", fontSize: 11, fontFamily: "Geist, sans-serif" }}
+          tick={{ fill: "var(--color-text-secondary)", fontSize: 11, fontFamily: "Geist, sans-serif" }}
         />
         <Radar
           dataKey="value"
@@ -48,12 +44,12 @@ export function FactorRadar({ stock }: Props) {
         />
         <Tooltip
           contentStyle={{
-            background: isDark ? "#1B1E24" : "#FFFFFF",
-            border: isDark ? "1px solid #262A31" : "1px solid #D1D5DB",
+            background: "var(--color-bg-elevated)",
+            border: "1px solid var(--color-border)",
             borderRadius: 8,
             fontSize: 12,
             fontFamily: "Geist Mono, monospace",
-            color: isDark ? "#E8EAF0" : "#1E2026",
+            color: "var(--color-text-primary)",
           }}
           formatter={(v: number) => [Math.round(v), "Betyg"]}
         />

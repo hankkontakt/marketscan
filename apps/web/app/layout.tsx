@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import "./globals.css";
@@ -13,20 +13,32 @@ const inter = Inter({
   weight: ["400", "500", "600", "700"],
 });
 
+const geistMono = Geist_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: { default: "MarketScan", template: "%s — MarketScan" },
   description: "Professionell aktieanalys och screening",
   metadataBase: new URL("https://marketscan.vercel.app"),
+  manifest: "/manifest.json",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0A0B0D",
+  themeColor: "#2563eb",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="sv" suppressHydrationWarning>
       <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#2563eb" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="MarketScan" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -44,7 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className={inter.variable}>
+      <body className={`${inter.variable} ${geistMono.variable}`}>
         <QueryProvider>
           {children}
           <Toaster

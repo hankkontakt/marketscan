@@ -7,9 +7,9 @@
    ============================================================ */
 
 @theme {
-  /* Inter för allt — som Lysa. Inga separata mono-fonts. */
+  /* Inter för allt — som Lysa. Geist Mono för tickers/priser. */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", "Fira Code", "SF Mono", monospace;
 
   /* LIGHT theme (default) — clean, Avanza/Lysa-inspired, institutional */
   --color-bg-base:      #F8F9FB;
@@ -45,6 +45,20 @@
   /* Nav */
   --nav-width: 64px;
   --topbar-height: 56px;
+
+  /* Chart palette (shared by donut, sector, etc.) */
+  --color-chart-1: #5B8DEF;
+  --color-chart-2: #3FB68B;
+  --color-chart-3: #D9A441;
+  --color-chart-4: #E0645C;
+  --color-chart-5: #9AA1AC;
+  --color-chart-6: #7B6EF6;
+  --color-chart-7: #4ABDE8;
+  --color-chart-8: #F0A05A;
+  --color-chart-9: #E882D9;
+  --color-chart-10: #6BB59B;
+  --color-chart-11: #C98B6B;
+  --color-chart-12: #A0A4B8;
 }
 
 :root {
@@ -66,7 +80,13 @@ body {
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.01em;
 }
 
 /* Tabular nums — siffror alignar i kolumner utan att byta font (Lysa-stil) */

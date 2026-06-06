@@ -23,12 +23,13 @@ import type { ScanRow } from "@/types/scan";
 interface Props {
   data: ScanRow[];
   loading?: boolean;
+  onReset?: () => void;
 }
 
 type SortKey = "score_total" | "change_pct" | "price" | "market_cap" | "pe_trailing" | "roe";
 type SortDir = "asc" | "desc";
 
-export function ResultTable({ data, loading }: Props) {
+export function ResultTable({ data, loading, onReset }: Props) {
   const router = useRouter();
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({
     key: "score_total",
@@ -218,9 +219,23 @@ export function ResultTable({ data, loading }: Props) {
         </table>
       </div>
 
-      {sorted.length === 0 && (
-        <div className="py-16 text-center text-sm text-[var(--color-text-muted)]">
-          Inga aktier matchade dina filter
+      {sorted.length === 0 && !loading && (
+        <div className="py-16 text-center space-y-2">
+          <div className="text-sm font-semibold text-[var(--color-text-primary)]">
+            Inga aktier matchar dina filter
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Prova att bredda kriterierna eller välj en förinställning ovan.
+          </p>
+          {onReset && (
+            <button
+              onClick={onReset}
+              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                         bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors"
+            >
+              Återställ filter
+            </button>
+          )}
         </div>
       )}
 

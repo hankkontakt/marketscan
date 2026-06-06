@@ -175,7 +175,7 @@ export function PortfoljView() {
 
       {/* Holdings table */}
       {holdings.length === 0 ? (
-        <EmptyPortfolio />
+        <EmptyPortfolio onAddClick={() => setShowAdd(true)} />
       ) : (
         <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
           <table className="w-full text-xs border-collapse">
@@ -320,14 +320,22 @@ export function PortfoljView() {
   );
 }
 
-function EmptyPortfolio() {
+function EmptyPortfolio({ onAddClick }: { onAddClick: () => void }) {
   return (
-    <div className="rounded-xl p-12 text-center border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-      <Briefcase size={32} strokeWidth={1} className="text-[var(--color-text-muted)] mx-auto mb-3" />
-      <p className="text-sm text-[var(--color-text-secondary)]">Ingen portfölj än</p>
-      <p className="text-xs mt-1 text-[var(--color-text-muted)]">
-        Lägg till innehav från aktiekort-sidan
-      </p>
+    <div className="rounded-xl p-12 text-center border bg-[var(--color-bg-surface)] border-[var(--color-border)] space-y-3">
+      <Briefcase size={32} strokeWidth={1} className="text-[var(--color-text-muted)] mx-auto" />
+      <div>
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Inga innehav ännu</h3>
+        <p className="text-xs mt-1 text-[var(--color-text-muted)]">
+          Lägg till dina första aktier för att börja följa portföljen.
+        </p>
+      </div>
+      <button
+        onClick={onAddClick}
+        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors"
+      >
+        Lägg till innehav
+      </button>
     </div>
   );
 }
@@ -336,17 +344,33 @@ function PortfoljSkeleton() {
   return (
     <div className="space-y-4">
       <div className="skeleton h-16 rounded-xl" />
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="skeleton h-12 rounded-xl" />
-      ))}
+      <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
+        <div className="flex gap-4 px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)]">
+          {["Aktie", "Antal", "Kurs", "Idag", "Värde", "Totalbetyg", "Köpläge", ""].map((h) => (
+            <div key={h} className="skeleton h-3 w-12" />
+          ))}
+        </div>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="flex gap-4 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)]">
+            <div className="skeleton h-4 w-24" />
+            <div className="skeleton h-4 w-12" />
+            <div className="skeleton h-4 w-14" />
+            <div className="skeleton h-4 w-12" />
+            <div className="skeleton h-4 w-16" />
+            <div className="skeleton h-4 w-10" />
+            <div className="skeleton h-4 w-14" />
+            <div className="skeleton h-4 w-6 ml-auto" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 // Allocation donut (plan §10: "allokering-donut")
 const DONUT_COLORS = [
-  "#5B8DEF", "#3FB68B", "#D9A441", "#E0645C",
-  "#9AA1AC", "#7B6EF6", "#4ABDE8", "#F0A05A",
+  "var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)",
+  "var(--color-chart-5)", "var(--color-chart-6)", "var(--color-chart-7)", "var(--color-chart-8)",
 ];
 
 function AllocationDonut({ holdings, totalValue }: {
@@ -413,9 +437,9 @@ function AllocationDonut({ holdings, totalValue }: {
 
 // Risk panel (P3-5: portfolio risk endpoint — sector allocation, concentration, avg score)
 const SECTOR_COLORS = [
-  "#5B8DEF", "#3FB68B", "#D9A441", "#E0645C",
-  "#9AA1AC", "#7B6EF6", "#4ABDE8", "#F0A05A",
-  "#E882D9", "#6BB59B", "#C98B6B", "#A0A4B8",
+  "var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)",
+  "var(--color-chart-5)", "var(--color-chart-6)", "var(--color-chart-7)", "var(--color-chart-8)",
+  "var(--color-chart-9)", "var(--color-chart-10)", "var(--color-chart-11)", "var(--color-chart-12)",
 ];
 
 function RiskPanel({ holdings }: {

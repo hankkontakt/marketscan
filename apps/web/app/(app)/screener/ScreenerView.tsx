@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Search, X, Bookmark, BookmarkCheck } from "lucide-react";
 import { useScreener, useScanMeta } from "@/hooks/useScreener";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { SegmentToggle } from "@/components/screener/SegmentToggle";
 import { FilterRail } from "@/components/screener/FilterRail";
 import { ResultTable } from "@/components/screener/ResultTable";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { SCREENER_PRESETS } from "@/lib/labels";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import type { ScanParams } from "@/lib/api";
@@ -31,6 +32,19 @@ export function ScreenerView() {
 
   const { data = [], isLoading } = useScreener(filters);
   const { data: meta } = useScanMeta();
+
+  const buckets = useMemo(() => {
+    const b = new Array(10).fill(0);
+    (data || []).forEach((r) => {
+      const s = r.score_total;
+      if (s != null) {
+        const idx = Math.min(Math.floor(s / 10), 9);
+        b[idx]++;
+      }
+    });
+    return b;
+  }, [data]);
+  const maxBucket = Math.max(...buckets, 1);
 
   const { data: savedScreens = [] } = useQuery<SavedScreen[]>({
     queryKey: ["screens"],
@@ -186,6 +200,24 @@ export function ScreenerView() {
         </div>
       )}
 
+      {/* Screener presets */}
+      <div className="flex gap-1.5 flex-wrap">
+        {SCREENER_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            onClick={() => {
+              setFilters(prev => ({ ...prev, ...preset.params }));
+            }}
+            className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors
+                       border border-[var(--color-border)] text-[var(--color-text-secondary)]
+                       hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]
+                       hover:border-[var(--color-accent)]"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
       {/* Segment + filters in one block */}
       <div className="rounded-xl border p-4 space-y-4 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <SegmentToggle
@@ -203,7 +235,31 @@ export function ScreenerView() {
       </div>
 
       {/* Results */}
-      <ResultTable data={data} loading={isLoading} />
+      <ResultTable data={data} loading={isLoading} onReset={() => { setFilters(DEFAULT_FILTERS); setNlInterpreted(""); setNlQuery(""); }} />
+
+      {/* Score histogram */}
+      {data.length > 0 && (
+        <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)]">
+          <div className="text-xs font-semibold mb-2 text-[var(--color-text-muted)]">
+            Poängfördelning ({data.length} aktier)
+          </div>
+          <div className="flex items-end gap-1 h-16">
+            {buckets.map((b, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full rounded-t"
+                  style={{
+                    height: `${(b / maxBucket) * 100}%`,
+                    background: "var(--color-accent)",
+                    opacity: 0.3 + (b / maxBucket) * 0.5,
+                  }}
+                />
+                <span className="text-[10px] text-[var(--color-text-muted)]">{i * 10}-{i * 10 + 9}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
