@@ -54,6 +54,8 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                autoComplete="email"
+                aria-label="E-post"
                 className="w-full h-9 px-3 rounded-lg text-sm border
                            bg-[var(--color-bg-elevated)] border-[var(--color-border)]
                            text-[var(--color-text-primary)]
@@ -69,6 +71,8 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                autoComplete="current-password"
+                aria-label="Lösenord"
                 className="w-full h-9 px-3 rounded-lg text-sm border
                            bg-[var(--color-bg-elevated)] border-[var(--color-border)]
                            text-[var(--color-text-primary)]
@@ -77,7 +81,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <p className="text-xs text-[var(--color-down)] px-1">{error}</p>
+              <p role="alert" className="text-xs text-[var(--color-down)] px-1">{error}</p>
             )}
 
             <button

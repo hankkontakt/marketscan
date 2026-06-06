@@ -93,7 +93,7 @@ def _generate_mock_score_history(ticker: str, current_score: float, weeks: int =
     return history
 
 from apps.api.schemas.scan import ScanRow
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PriceHistoryOut(BaseModel):
@@ -219,6 +219,60 @@ async def search_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
         .execute()
     )
     return result.data
+
+
+class CompareRequest(BaseModel):
+    tickers: list[str] = Field(..., min_length=2, max_length=5)
+
+
+class CompareMetric(BaseModel):
+    label: str
+    values: dict[str, float | str | None]
+
+
+class CompareResponse(BaseModel):
+    tickers: list[str]
+    metrics: list[CompareMetric]
+
+
+@router.post("/compare", response_model=CompareResponse)
+async def compare_stocks(body: CompareRequest, sb=Depends(get_supabase)):
+    """Compare up to 5 stocks side-by-side."""
+    tickers = [_validate_ticker(t) for t in body.tickers[:5]]
+    result = sb.table("scan_results").select(
+        "ticker,name,score_total,score_value,score_quality,score_momentum,"
+        "score_growth,score_risk,score_dividend,score_sentiment,"
+        "pe_trailing,roe,piotroski_f,market_cap,dividend_yield,beta,"
+        "price,change_pct,entry_signal,trend_signal,sector"
+    ).in_("ticker", tickers).execute()
+
+    rows = result.data or []
+    ticker_map = {r["ticker"]: r for r in rows}
+
+    metric_defs = [
+        ("Totalbetyg", "score_total"),
+        ("Värdering", "score_value"),
+        ("Kvalitet", "score_quality"),
+        ("Momentum", "score_momentum"),
+        ("Tillväxt", "score_growth"),
+        ("Risk", "score_risk"),
+        ("P/E", "pe_trailing"),
+        ("ROE", "roe"),
+        ("Piotroski", "piotroski_f"),
+        ("Dir.avk", "dividend_yield"),
+        ("Beta", "beta"),
+        ("Signal", "entry_signal"),
+    ]
+
+    metrics = []
+    for label, field in metric_defs:
+        values = {}
+        for t in body.tickers:
+            row = ticker_map.get(t.upper())
+            values[t] = row.get(field) if row else None
+        metrics.append(CompareMetric(label=label, values=values))
+
+    return CompareResponse(tickers=body.tickers, metrics=metrics)
 
 
 @router.get("/{ticker}/news", response_model=NewsResponse)

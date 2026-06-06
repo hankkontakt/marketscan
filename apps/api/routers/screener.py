@@ -2,6 +2,7 @@
 GET /scan — hot path, Postgres only (no DuckDB, no pandas).
 Handles segment-toggle, all filters, NL search via AI.
 """
+import csv
 from fastapi import APIRouter, Depends, Query
 from apps.api.dependencies import get_supabase
 from apps.api.schemas.scan import ScanRow
@@ -99,3 +100,38 @@ async def get_scan_meta(sb=Depends(get_supabase)):
             by_segment[s] = by_segment.get(s, 0) + 1
 
     return {"scan_date": scan_date, "total": total, "by_segment": by_segment}
+
+
+@router.get("/export")
+async def export_scan(
+    segments: list[str] = Query(["large_cap", "mid_cap", "small_cap", "micro_cap"]),
+    sb=Depends(get_supabase),
+):
+    """Export scan results as CSV."""
+    from fastapi.responses import StreamingResponse
+    import io
+
+    result = sb.table("scan_results").select(
+        "ticker,name,sector,segment,country,price,change_pct,score_total,"
+        "score_value,score_quality,score_momentum,score_growth,score_risk,"
+        "score_dividend,score_sentiment,entry_signal,trend_signal,"
+        "pe_trailing,roe,piotroski_f,market_cap,dividend_yield,beta"
+    ).in_("segment", segments).order("score_total", desc=True).execute()
+
+    rows = result.data or []
+    if not rows:
+        return {"message": "Inga rader att exportera"}
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    headers = list(rows[0].keys())
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([row.get(h, "") for h in headers])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=marketscan-export.csv"},
+    )

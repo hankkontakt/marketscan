@@ -10,6 +10,9 @@ import {
   Settings,
   TrendingUp,
   Globe,
+  CalendarDays,
+  ArrowLeftRight,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,11 +20,14 @@ const NAV_ITEMS = [
   { href: "/oversikt",      icon: LayoutDashboard,    label: "Översikt" },
   { href: "/screener",      icon: SlidersHorizontal,  label: "Aktier" },
   { href: "/marknad",       icon: Globe,               label: "Marknad" },
+  { href: "/jamfor",        icon: ArrowLeftRight,      label: "Jämför" },
+  { href: "/kalender",      icon: CalendarDays,        label: "Kalender" },
   { href: "/portfolj",      icon: Briefcase,           label: "Min portfölj" },
   { href: "/bevakningar",   icon: Star,                label: "Bevakningar" },
 ] as const;
 
 const BOTTOM_ITEMS = [
+  { href: "/guide",          icon: BookOpen,            label: "Guide" },
   { href: "/installningar", icon: Settings, label: "Inställningar" },
 ] as const;
 

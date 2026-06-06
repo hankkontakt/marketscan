@@ -13,6 +13,7 @@ import {
   scoreColorClass, changeClass,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { EMPTY_STATES } from "@/lib/labels";
 
 interface PriceAlert {
   id: string;
@@ -100,22 +101,61 @@ export function BevakninarView() {
         </div>
 
         {isLoading ? (
-          <div className="space-y-2">
-            {[1,2,3].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}
+          <div className="rounded-2xl border overflow-hidden border-[var(--color-border)]">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)]">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="skeleton h-4 w-24 rounded" />
+                  <div className="skeleton h-3 w-40 rounded" />
+                </div>
+                <div className="skeleton h-4 w-8 rounded" />
+                <div className="space-y-1.5 text-right">
+                  <div className="skeleton h-4 w-16 rounded ml-auto" />
+                  <div className="skeleton h-3 w-12 rounded ml-auto" />
+                </div>
+                <div className="skeleton h-7 w-14 rounded-lg" />
+                <div className="skeleton h-4 w-4 rounded" />
+              </div>
+            ))}
           </div>
         ) : watchlist.length === 0 ? (
-          <div className="rounded-2xl border p-10 text-center bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-            <Star size={28} strokeWidth={1} style={{ color: "var(--color-border-strong)", margin: "0 auto 10px" }} />
-            <p className="text-sm font-medium text-[var(--color-text-secondary)]">
-              Inga bevakningar ännu
-            </p>
-            <p className="text-xs mt-1 text-[var(--color-text-muted)]">
-              Sök efter en aktie och klicka "Bevaka" på aktiekortet
-            </p>
-            <Link href="/screener"
-                  className="inline-flex items-center gap-1 mt-3 text-xs text-[var(--color-accent)]">
-              Gå till aktier <ArrowRight size={11} strokeWidth={1.5} />
-            </Link>
+          <div className="rounded-2xl border overflow-hidden border-[var(--color-border)]">
+            <div className="p-10 text-center bg-[var(--color-bg-surface)]">
+              <Star size={28} strokeWidth={1} style={{ color: "var(--color-border-strong)", margin: "0 auto 10px" }} />
+              <p className="text-sm font-medium text-[var(--color-text-secondary)]">
+                {EMPTY_STATES.watchlist.title}
+              </p>
+              <p className="text-xs mt-1 text-[var(--color-text-muted)]">
+                {EMPTY_STATES.watchlist.description}
+              </p>
+              <Link href={EMPTY_STATES.watchlist.href}
+                    className="inline-flex items-center gap-1 mt-3 text-xs text-[var(--color-accent)]">
+                {EMPTY_STATES.watchlist.action} <ArrowRight size={11} strokeWidth={1.5} />
+              </Link>
+            </div>
+
+            {/* Suggestion row */}
+            <div className="border-t border-[var(--color-border)] px-5 py-3 bg-[var(--color-bg-elevated)]">
+              <p className="text-xs text-[var(--color-text-muted)] mb-2">
+                Förslag på aktier att börja bevaka:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {["INVE-B.ST", "VOLV-B.ST", "ERIC-B.ST", "SEB-A.ST", "ATCO-A.ST"].map((ticker) => (
+                  <button
+                    key={ticker}
+                    onClick={() => addWatch.mutate(ticker)}
+                    disabled={addWatch.isPending}
+                    className="px-3 py-1.5 rounded-lg text-xs border transition-colors
+                               bg-[var(--color-bg-surface)] border-[var(--color-border)]
+                               text-[var(--color-text-secondary)]
+                               hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                  >
+                    <Plus size={10} strokeWidth={2} className="inline mr-1" />
+                    {ticker.replace(".ST", "")}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
           <div className="rounded-2xl border overflow-hidden border-[var(--color-border)]">
