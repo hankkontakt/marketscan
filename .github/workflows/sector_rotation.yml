@@ -1,0 +1,27 @@
+name: Sector Rotation
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"  # Every Monday at 07:00 UTC
+  workflow_dispatch:
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend_worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: hankkontakt/stock-scanner
+          path: stock-scanner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy python-dotenv
+      - name: Run sector rotation
+        run: python sector_rotation.py | tee rotation_output.json

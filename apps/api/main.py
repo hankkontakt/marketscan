@@ -15,6 +15,7 @@ from apps.api.core.rate_limiter import add_rate_limiting
 from apps.api.routers import (
     screener, stocks, portfolio, ai, admin, profile,
     watchlist, alerts, saved_screens, snapshots, markets, calendar,
+    options, prediction, smallcap, backtests, sector_rotation_router, paper_trading_router,
 )
 
 setup_logging()
@@ -54,6 +55,12 @@ app.include_router(saved_screens.router)
 app.include_router(snapshots.router)
 app.include_router(markets.router, prefix="/api")
 app.include_router(calendar.router, prefix="/api")
+app.include_router(options.router, prefix="/api")
+app.include_router(paper_trading_router.router)
+app.include_router(prediction.router, prefix="/api")
+app.include_router(backtests.router, prefix="/api")
+app.include_router(sector_rotation_router.router, prefix="/api")
+app.include_router(smallcap.router, prefix="/api")
 
 
 @app.get("/api/health")

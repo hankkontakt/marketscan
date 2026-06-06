@@ -1,0 +1,36 @@
+name: Options Scanner
+
+on:
+  schedule:
+    - cron: "0 10 * * 1,3,5"  # Mon, Wed, Fri at 10:00 UTC
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Comma-separated tickers to scan"
+        required: true
+        default: "AAPL,MSFT,GOOGL,AMZN,NVDA,TSLA"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend_worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: hankkontakt/stock-scanner
+          path: stock-scanner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy yfinance python-dotenv
+      - name: Scan options
+        run: |
+          IFS=',' read -ra TICKERS <<< "${{ github.event.inputs.tickers || 'AAPL,MSFT,GOOGL,AMZN,NVDA,TSLA' }}"
+          for ticker in "${TICKERS[@]}"; do
+            python options_scanner.py "$ticker" | tee -a options_output.json
+          done

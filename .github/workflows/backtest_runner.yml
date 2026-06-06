@@ -1,0 +1,38 @@
+name: Backtest Runner
+
+on:
+  schedule:
+    - cron: "0 8 * * 0"  # Every Sunday at 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: "Strategy name"
+        required: true
+        default: "momentum"
+        type: choice
+        options:
+          - momentum
+          - mean_reversion
+          - trend_following
+          - factor
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend_worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: hankkontakt/stock-scanner
+          path: stock-scanner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy yfinance python-dotenv
+      - name: Run backtest
+        run: python backtest_runner.py "${{ github.event.inputs.strategy || 'momentum' }}" | tee backtest_output.json

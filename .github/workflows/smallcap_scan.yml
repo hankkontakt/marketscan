@@ -1,0 +1,30 @@
+name: Smallcap Scan
+
+on:
+  schedule:
+    - cron: "30 5 * * 2"  # Every Tuesday at 05:30 UTC
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend_worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: hankkontakt/stock-scanner
+          path: stock-scanner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy yfinance python-dotenv finnhub-python
+      - name: Run smallcap scan
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python smallcap_scanner.py | tee smallcap_output.json
