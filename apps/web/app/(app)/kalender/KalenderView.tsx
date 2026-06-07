@@ -162,19 +162,19 @@ function EconomicCard({ event }: { event: Record<string, unknown> }) {
         <div>
           <span className="text-[var(--color-text-muted)]">Föregående</span>
           <p className="font-mono text-[var(--color-text-secondary)] mt-0.5">
-            {event.previous ?? "—"}
+            {event.previous != null ? String(event.previous) : "—"}
           </p>
         </div>
         <div>
           <span className="text-[var(--color-text-muted)]">Estimat</span>
           <p className="font-mono text-[var(--color-text-secondary)] mt-0.5">
-            {event.estimate ?? "—"}
+            {event.estimate != null ? String(event.estimate) : "—"}
           </p>
         </div>
         <div>
           <span className="text-[var(--color-text-muted)]">Utfall</span>
           <p className="font-mono text-[var(--color-text-secondary)] mt-0.5">
-            {event.actual ?? "—"}
+            {event.actual != null ? String(event.actual) : "—"}
           </p>
         </div>
       </div>
@@ -190,7 +190,7 @@ function DividendsCard({ event }: { event: Record<string, unknown> }) {
           <p className="text-sm font-semibold text-[var(--color-text-primary)]">
             {String(event.symbol ?? "—")}
           </p>
-          {event.frequency && (
+          {event.frequency != null && (
             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
               {String(event.frequency)}
             </p>

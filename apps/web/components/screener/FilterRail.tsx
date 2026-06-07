@@ -70,7 +70,7 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
             Köpläge
             <InfoTooltip text="Välj entry-signal: STARK, OK, VÄNTA, eller EJ AKTUELL." />
           </label>
-          <FilterSelect
+          <FilterSelect label="Entry-signal"
             value={filters.entry_signal ?? ""}
             onChange={(v) => onChange({ entry_signal: v || undefined })}
             options={[{ value: "", label: "Alla" }, ...SIGNALS]}
@@ -81,7 +81,7 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
             Trend
             <InfoTooltip text="Filtrera på trendriktning: upptrend, sidled, eller nedtrend." />
           </label>
-          <FilterSelect
+          <FilterSelect label="Trend"
             value={filters.trend_signal ?? ""}
             onChange={(v) => onChange({ trend_signal: v || undefined })}
             options={[{ value: "", label: "Alla" }, ...TRENDS]}
@@ -97,7 +97,7 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
               Sektor
               <InfoTooltip text="Filtrera på marknadssektor." />
             </label>
-            <FilterSelect
+            <FilterSelect label="Sektor"
               value={filters.sector ?? ""}
               onChange={(v) => onChange({ sector: v || undefined })}
               options={[{ value: "", label: "Alla sektorer" }, ...sectors.map(s => ({ value: s, label: s }))]}
@@ -108,7 +108,7 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
               Totalbetyg min
               <InfoTooltip text="Minsta totalbetyg. 60+ = positivt, 70+ = starkt." />
             </label>
-            <FilterNumber
+            <FilterNumber label="Totalbetyg min"
               value={filters.score_min}
               onChange={(v) => onChange({ score_min: v })}
               min={0} max={100} step={5}
