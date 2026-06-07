@@ -163,13 +163,45 @@ function AnalystCard({ icon: Icon, name, analysis }: {
   name: string;
   analysis: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Extract short verdict (first line or **text**) and detailed analysis
+  const shortMatch = analysis.match(/^\*\*(.+?)\*\*/);
+  const shortVerdict = shortMatch ? shortMatch[1] : "";
+  const detailStart = shortMatch ? analysis.indexOf(shortMatch[0]) + shortMatch[0].length : 0;
+  const detailText = detailStart > 0 ? analysis.slice(detailStart).trim() : analysis;
+
   return (
     <div className="rounded-xl p-4 border space-y-3 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
       <div className="flex items-center gap-2">
         <Icon size={14} strokeWidth={1.5} />
         <span className="text-xs font-medium text-[var(--color-text-secondary)]">{name}</span>
       </div>
-      <p className="text-xs text-[var(--color-text-primary)] leading-relaxed">{analysis}</p>
+
+      {/* Short verdict — always visible */}
+      {shortVerdict && (
+        <p className="text-sm font-semibold text-[var(--color-text-primary)]">
+          {shortVerdict}
+        </p>
+      )}
+
+      {/* Detailed analysis — collapsed by default */}
+      {detailText && (
+        <div className={expanded ? "" : "line-clamp-3"}>
+          <p className="text-xs text-[var(--color-text-primary)] leading-relaxed whitespace-pre-line">
+            {detailText}
+          </p>
+        </div>
+      )}
+
+      {detailText && detailText.length > 150 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-[var(--color-accent)] hover:underline"
+        >
+          {expanded ? "Dölj detaljer" : "Visa detaljerad analys"}
+        </button>
+      )}
     </div>
   );
 }
