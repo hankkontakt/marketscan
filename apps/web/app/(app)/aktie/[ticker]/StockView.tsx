@@ -607,35 +607,11 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
 // ─── AI ─────────────────────────────────────────────────────────────────────
 
 function AITab({ stock }: { stock: ScanRow }) {
-  const [committeeOpen, setCommitteeOpen] = useState(false);
-
   return (
     <div className="space-y-4">
-      {!committeeOpen ? (
-        <div className="rounded-xl border p-6 text-center bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-          <p className="text-sm text-[var(--color-text-secondary)] mb-3">
-            AI-baserad analyskommitté med detaljerad genomgång av aktiens styrkor och svagheter.
-          </p>
-          <button
-            onClick={() => setCommitteeOpen(true)}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors"
-          >
-            Visa analys
-          </button>
-        </div>
-      ) : (
-        <div>
-          <AnalysCommittee stock={stock} />
-          <div className="mt-3 text-center">
-            <button
-              onClick={() => setCommitteeOpen(false)}
-              className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
-            >
-              Dölj analys
-            </button>
-          </div>
-        </div>
-      )}
+      <div>
+        <AnalysCommittee stock={stock} />
+      </div>
     </div>
   );
 }

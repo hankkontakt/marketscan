@@ -35,8 +35,6 @@ const VERDICT_COLORS: Record<string, string> = {
 };
 
 export function AnalysCommittee({ stock }: Props) {
-  const [launched, setLaunched] = useState(false);
-
   const { data, isLoading, error, refetch } = useQuery<CommitteeResult>({
     queryKey: ["committee", stock.ticker],
     queryFn: () =>
@@ -44,33 +42,8 @@ export function AnalysCommittee({ stock }: Props) {
         method: "POST",
         body: JSON.stringify({ ticker: stock.ticker, stock_data: stock }),
       }),
-    enabled: launched,
     staleTime: 8 * 60 * 60_000, // cached for 8h (also cached server-side per day)
   });
-
-  if (!launched) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-4">
-        <div className="flex items-center gap-2 text-[var(--color-text-secondary)]">
-          <Users size={20} strokeWidth={1.5} />
-          <span className="text-sm font-medium">Analyskommittén</span>
-        </div>
-        <p className="text-xs text-center max-w-72 text-[var(--color-text-muted)]">
-          Tre AI-analytiker analyserar aktien parallellt — teknisk, fundamental och sentiment.
-          En ordförande syntetiserar till ett slutgiltigt omdöme.
-        </p>
-        <button
-          onClick={() => setLaunched(true)}
-          className="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors
-                     bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)]"
-        >
-          Starta analys
-        </button>
-      </div>
-    );
-  }
-
-  if (isLoading) return <CommitteeSkeleton />;
 
   if (error || !data) {
     return (
