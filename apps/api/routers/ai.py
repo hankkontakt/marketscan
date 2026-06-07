@@ -3,6 +3,7 @@ AI endpoints: NL screener parser, stock analysis, Analyskommittén, portfolio co
 All responses are cached per ticker/day to minimize token spend.
 """
 import json
+import logging
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -10,6 +11,8 @@ from apps.api.core.ai_cache import get_cached, set_cache
 from apps.api.core.security import get_current_user, User
 from apps.api.dependencies import get_supabase, get_supabase_admin
 from apps.api.core.rate_limiter import limiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
