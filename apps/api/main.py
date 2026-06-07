@@ -48,7 +48,7 @@ add_security_headers(app)
 add_rate_limiting(app)
 
 # Request ID middleware — log structured request info
-app.middleware("http")(RequestIDMiddleware())
+app.middleware("http")(RequestIDMiddleware)  # function, not class — no ()
 
 app.include_router(debug_router)
 app.include_router(screener.router, prefix="/api")
