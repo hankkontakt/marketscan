@@ -157,11 +157,11 @@ export function ResultTable({ data, loading, onReset }: Props) {
                                      className="text-[var(--color-warn)] shrink-0" />
                     )}
                     <div>
-                      <div className="font-mono font-semibold text-[var(--color-text-primary)] text-xs">
-                        {row.ticker}
-                      </div>
-                      <div className="text-[var(--color-text-muted)] text-[11px] truncate max-w-36">
+                      <div className="font-semibold text-[var(--color-text-primary)] text-xs truncate max-w-36">
                         {row.name}
+                      </div>
+                      <div className="font-mono text-[var(--color-text-muted)] text-[11px]">
+                        {row.ticker}
                       </div>
                     </div>
                   </div>

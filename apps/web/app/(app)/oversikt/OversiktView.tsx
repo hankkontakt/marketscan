@@ -330,11 +330,11 @@ function TopPicksCard({
               >
                 {/* Ticker + name */}
                 <div className="flex-1 min-w-0">
-                  <div className="font-mono text-sm font-semibold text-[var(--color-text-primary)]">
-                    {stock.ticker.replace(".ST", "")}
-                  </div>
-                  <div className="text-xs truncate mt-0.5 text-[var(--color-text-muted)]">
+                  <div className="text-sm font-semibold text-[var(--color-text-primary)] truncate">
                     {stock.name}
+                  </div>
+                  <div className="font-mono text-xs mt-0.5 text-[var(--color-text-muted)]">
+                    {stock.ticker.replace(".ST", "")}
                   </div>
                 </div>
 
@@ -428,8 +428,8 @@ function WatchlistCard({ items }: { items: ReturnType<typeof useWatchlist>["data
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-semibold text-[var(--color-text-primary)]">
-                        {item.ticker.replace(".ST", "")}
+                      <span className="text-xs font-semibold text-[var(--color-text-primary)] truncate max-w-40">
+                        {item.name ?? item.ticker.replace(".ST", "")}
                       </span>
                       {item.entry_signal && (
                         <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium",
@@ -437,6 +437,9 @@ function WatchlistCard({ items }: { items: ReturnType<typeof useWatchlist>["data
                           {signalLabel(item.entry_signal)}
                         </span>
                       )}
+                    </div>
+                    <div className="font-mono text-[11px] mt-0.5 text-[var(--color-text-muted)]">
+                      {item.ticker.replace(".ST", "")}
                     </div>
                   </div>
 

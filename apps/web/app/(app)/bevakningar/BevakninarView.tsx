@@ -166,8 +166,8 @@ export function BevakninarView() {
                 >
                   <Link href={`/aktie/${item.ticker}`} className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-                        {item.ticker.replace(".ST", "")}
+                      <span className="text-sm font-semibold text-[var(--color-text-primary)] truncate">
+                        {item.name}
                       </span>
                       {item.entry_signal && (
                         <span className={cn("px-2 py-0.5 rounded text-[11px] font-medium",
@@ -176,8 +176,8 @@ export function BevakninarView() {
                         </span>
                       )}
                     </div>
-                    <div className="text-xs mt-0.5 truncate text-[var(--color-text-muted)]">
-                      {item.name}
+                    <div className="font-mono text-xs mt-0.5 text-[var(--color-text-muted)]">
+                      {item.ticker.replace(".ST", "")}
                     </div>
                   </Link>
 

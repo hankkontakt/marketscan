@@ -248,9 +248,11 @@ export function JamforView() {
                     >
                       <div className="flex flex-col flex-1 min-w-0 text-left">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-semibold">{stock.ticker}</span>
-                          <span className="text-[var(--color-text-secondary)] truncate text-xs">
+                          <span className="text-xs font-semibold text-[var(--color-text-primary)] truncate">
                             {stock.name}
+                          </span>
+                          <span className="font-mono text-[var(--color-text-secondary)] text-[11px]">
+                            {stock.ticker}
                           </span>
                         </div>
                       </div>
