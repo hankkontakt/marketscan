@@ -97,15 +97,14 @@ def _fast_pipeline(report_dir: Path):
     except Exception as exc:
         logger.warning("Price update failed (using stale prices): %s", exc)
 
-    # 3. ML predictions
-    try:
-        from core.ml_predictor import predict_returns_sector
-        df_ml = predict_returns_sector(df, default_universe="universe")
-        if "predicted_return" in df_ml.columns:
-            df = df_ml
-            logger.info("ML predictions added for %d rows", len(df))
-    except Exception as exc:
-        logger.warning("ML predictions skipped: %s", exc)
+    # 3. ML predictions — SKIPPED in fast pipeline.
+    #    predict_returns_sector() fetches 1y of OHLCV history per ticker from
+    #    yfinance when there is no local cache (always the case in a fresh
+    #    GitHub Actions runner). 767 tickers × yfinance download = hangs for
+    #    hours. ml_rank / predicted_return are nice-to-have display columns;
+    #    the app works fine without them. Weekly runs get ML via the full
+    #    run_pipeline() path.
+    logger.info("ML predictions skipped (fast pipeline — no yfinance cache available)")
 
     # 4. Save updated parquet
     try:
