@@ -12,7 +12,9 @@ yfinance==1.4.1
 requests==2.34.2
 httpx>=0.27            # used by supplement_user_requested_tickers
 finnhub-python>=2.4
-ddgs>=9.0.0,<10.0.0    # DuckDuckGo news search (core/news_fetcher.py)
+ddgs>=9.0.0,<10.0.0          # DuckDuckGo news search (core/news_fetcher.py)
+finvizfinance>=1.3.0,<2.0.0  # universe_discovery.py screener
+reticker>=0.2.0               # news_sentiment.py ticker extraction
 
 # ML
 xgboost==3.2.0
