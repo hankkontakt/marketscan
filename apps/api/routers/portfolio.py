@@ -1,13 +1,18 @@
 """Portfolio & holdings CRUD — fully RLS-protected via Supabase."""
+import json
+import logging
 from collections import Counter
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from pydantic import BaseModel
 
 from apps.api.dependencies import get_user_supabase
 from apps.api.core.security import get_current_user, User
 from apps.api.schemas.portfolio import HoldingIn, HoldingOut, PortfolioOut
 from apps.api.core.enrichment import enrich_with_scan_data
+from apps.api.core.avanza_import import parse_avanza_csv, build_preview
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -165,3 +170,87 @@ async def get_portfolio_risk(
         count=len(items),
         score_avg=score_avg,
     )
+
+
+# ─── Avanza Import ────────────────────────────────────────────────────────────
+
+
+class ImportPreviewItem(BaseModel):
+    name: str
+    ticker: str | None = None
+    shares: float | None = None
+    cost_basis: float | None = None
+    current_price: float | None = None
+    mapped: bool = False
+
+
+class ImportPreviewOut(BaseModel):
+    rows: list[ImportPreviewItem]
+    mapped_count: int
+    unmapped_count: int
+    total: int
+
+
+class ImportConfirmIn(BaseModel):
+    rows: list[ImportPreviewItem]
+
+
+@router.post("/import/preview", response_model=ImportPreviewOut)
+async def import_preview(file: UploadFile = File(...)):
+    """Upload Avanza CSV and get preview with ticker mapping."""
+    content = await file.read()
+    try:
+        rows = parse_avanza_csv(content)
+    except Exception as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Kunde inte läsa CSV: {e}")
+
+    preview = build_preview(rows)
+    mapped = [r for r in preview if r["mapped"]]
+    unmapped = [r for r in preview if not r["mapped"]]
+
+    return ImportPreviewOut(
+        rows=[ImportPreviewItem(**r) for r in preview],
+        mapped_count=len(mapped),
+        unmapped_count=len(unmapped),
+        total=len(preview),
+    )
+
+
+@router.post("/import/confirm", status_code=201)
+async def import_confirm(
+    body: ImportConfirmIn,
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Confirm import: create holdings and user_ticker_requests."""
+    port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
+    if not port.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
+    portfolio_id = port.data[0]["id"]
+
+    created = 0
+    for row in body.rows:
+        if not row.ticker or row.shares is None:
+            continue
+
+        ticker = row.ticker.upper()
+
+        # Create user_ticker_request if not in universe
+        exists = sb.table("scan_results").select("ticker").eq("ticker", ticker).limit(1).execute()
+        if not exists.data:
+            sb.table("user_ticker_requests").upsert({
+                "ticker": ticker,
+                "user_id": user.id,
+                "name": row.name,
+                "source": "import",
+            }, on_conflict="ticker").execute()
+
+        sb.table("holdings").insert({
+            "portfolio_id": portfolio_id,
+            "ticker": ticker,
+            "shares": row.shares,
+            "cost_basis": row.cost_basis,
+        }).execute()
+        created += 1
+
+    return {"created": created, "total": len(body.rows)}

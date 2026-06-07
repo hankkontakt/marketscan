@@ -975,6 +975,26 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 - `stocks.py`: `/compare` returnerar nu validerade (stora) ticker-namn istället för rå input.
 - `backend_worker/price_alert_checker.py`: Använder nu `from backend_worker.email.sender import send_notification` (robust import) istället för `sys.path`-manipulation.
 - `backend_worker/email/components.py`: All användardata HTML-escaped (`_escape_html`) för att förhindra self-XSS i e-post. `daily_digest_email` parameterdokumentation förtydligad (`old_score` vs `new_score`).
+- `ai.py`: La till `import logging` + `logger` — saknades sedan Fas 6 och orsakade 500 på AI-slutpunkten.
+
+**Fas 7 — Universum-expansion + Jämför-sida:**
+- `supabase/migrations/017_user_tickers.sql`: Ny tabell `user_ticker_requests` för användarskapade ticker-önskemål. RLS-skyddad.
+- `routers/stocks.py`: Ny `GET /stocks/search`-endpoint som först söker i `scan_results`, faller tillbaka till Finnhub för aktier utanför universum. Returnerar `in_universe: bool` så frontend kan visa rätt meddelande.
+- `routers/portfolio.py`: `POST /holdings` skapar nu automatiskt `user_ticker_request` om tickern inte finns i `scan_results`.
+- `routers/watchlist.py`: `POST /watchlist/{ticker}` skapar nu automatiskt `user_ticker_request` om tickern inte finns i `scan_results`.
+- `schemas/portfolio.py`: La till `name`-fält i `HoldingIn` för att kunna bifoga namn från Finnhub.
+- `routers/ai.py`: Ny `POST /ai/compare`-endpoint — AI jämför 2-5 aktier och rekommenderar den mest attraktiva. Cachas per dag.
+- `routers/ai.py`: Fixad `_call_ai`-signatur att acceptera `max_tokens` som kwarg.
+- `routers/stocks.py`: Bytte etikett "Dir.avk" → "Utdelning" i jämför-endpointen.
+- `lib/format.ts`: La till `signalShortLabel()`, `signalBadgeClass()` för snyggare badge-visning av signaler. `signalLabel()` fixad för "EJ_AKTUELL".
+- `components/command/CommandPalette.tsx`: Sökning använder nu `/api/stocks/search` (med universum-status). Visar "Ny"-badge för aktier utanför universum.
+- `hooks/useCompare.ts`: Ny hook-fil — `useCompare()`, `useStockSearch()`, `useAICompare()`, `useStockDetail()`.
+- `app/(app)/jamfor/JamforView.tsx`: Helt ny jämför-sida:
+  - Faktorradar-grid per aktie (visuell profiljämförelse)
+  - Grupperade metrikkort (Betyg, Fundamentala nyckeltal, Signal) — kollapsbara
+  - Prisutvecklingsgraf (normaliserad till bas=0%)
+  - AI-jämförelsekort med rekommendation, styrkor/svagheter
+  - Stöd för icke-universum-aktier i sökningen
 
 **Fas 1 — Säkerhet (P0):**
 - `dependencies.py`: Lade till `get_user_supabase()` som forwardar JWT till PostgREST → `auth.uid()` fungerar i RLS-policies.

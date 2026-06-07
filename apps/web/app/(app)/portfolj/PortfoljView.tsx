@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { MetricCard } from "@/components/ui/MetricCard";
-import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check, TrendingUp, Building2, Target, Receipt, BarChart3 } from "lucide-react";
+import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check, TrendingUp, Building2, Target, Receipt, BarChart3, Upload, Download, AlertCircle, Loader2 } from "lucide-react";
 import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk, useTransactions, useTWR, useDeleteTransaction } from "@/hooks/usePortfolio";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { ImportModal } from "@/components/portfolio/ImportModal";
 import {
   formatPrice, formatPctChange, formatScore, signalLabel, signalClass,
   scoreColorClass, changeClass,
@@ -23,6 +24,12 @@ export function PortfoljView() {
   const [addTicker, setAddTicker] = useState("");
   const [addShares, setAddShares] = useState("");
   const [addCost, setAddCost] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<any[] | null>(null);
+  const [importOverrides, setImportOverrides] = useState<Record<number, string>>({});
+  const [importLoading, setImportLoading] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState("");
@@ -91,6 +98,14 @@ export function PortfoljView() {
             </div>
           )}
           <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors
+                       bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
+          >
+            <Upload size={14} strokeWidth={1.5} />
+            Importera
+          </button>
+          <button
             onClick={() => setShowAdd(!showAdd)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors",
@@ -104,6 +119,11 @@ export function PortfoljView() {
           </button>
         </div>
       </div>
+
+      {/* Import modal */}
+      {showImport && (
+        <ImportModal onClose={() => { setShowImport(false); }} />
+      )}
 
       {/* Add holding form */}
       {showAdd && (
