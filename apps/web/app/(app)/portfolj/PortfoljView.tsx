@@ -447,7 +447,6 @@ function TransactionSection() {
     </div>
   );
 }
-}
 
 function EmptyPortfolio({ onAddClick }: { onAddClick: () => void }) {
   return (
