@@ -95,7 +95,7 @@ class CommitteeOutput(BaseModel):
     ticker: str
     analysts: dict[str, CommitteeMember]
     synthesis: CommitteeSynthesis
-    cached_date: str────────────────
+    cached_date: str
 
 ANALYST_PROMPTS = {
     "teknisk": """Du är Teknisk Analytiker i en investeringskommitté.
