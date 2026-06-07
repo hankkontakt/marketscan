@@ -3,7 +3,7 @@ import json
 import logging
 from collections import Counter
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from apps.api.dependencies import get_user_supabase
@@ -184,6 +184,14 @@ class ImportPreviewItem(BaseModel):
     mapped: bool = False
 
 
+class ImportPreviewIn(BaseModel):
+    rows: list[dict]
+
+
+class ImportConfirmIn(BaseModel):
+    rows: list[ImportPreviewItem]
+
+
 class ImportPreviewOut(BaseModel):
     rows: list[ImportPreviewItem]
     mapped_count: int
@@ -196,15 +204,10 @@ class ImportConfirmIn(BaseModel):
 
 
 @router.post("/import/preview", response_model=ImportPreviewOut)
-async def import_preview(file: UploadFile = File(...)):
-    """Upload Avanza CSV and get preview with ticker mapping."""
-    content = await file.read()
-    try:
-        rows = parse_avanza_csv(content)
-    except Exception as e:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Kunde inte läsa CSV: {e}")
-
-    preview = build_preview(rows)
+async def import_preview(rows: ImportPreviewIn):
+    """Preview Avanza CSV import with ticker mapping.
+    Accepts parsed rows (sent from frontend after client-side CSV parse)."""
+    preview = build_preview([r.model_dump() for r in rows.rows])
     mapped = [r for r in preview if r["mapped"]]
     unmapped = [r for r in preview if not r["mapped"]]
 

@@ -30,11 +30,15 @@ export function ImportModal({ onClose }: Props) {
     if (!file) return;
     setLoading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
+      // Read CSV client-side and send as JSON
+      const text = await file.text();
+      const rows = text.split("\n").filter(Boolean).map((line) => ({ raw: line }));
       const data = await api<{ rows: ImportPreviewItem[]; mapped_count: number; unmapped_count: number; total: number }>(
         "/api/portfolio/import/preview",
-        { method: "POST", body: form, headers: {} },
+        {
+          method: "POST",
+          body: JSON.stringify({ rows }),
+        },
       );
       setPreview(data.rows);
     } catch (err: any) {
