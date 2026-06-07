@@ -10,3 +10,4 @@ boto3==1.43.1
 python-dotenv>=1.0
 requests==2.34.2
 finnhub-python>=2.4
+mistune>=3.0
