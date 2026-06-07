@@ -297,7 +297,12 @@ def run(mode: str) -> None:
 
         if result is not None and not result.empty:
             tickers_ok = load_scan(result, dsn)
-            upload_score_snapshot(result)
+            try:
+                upload_score_snapshot(result)
+            except Exception as r2_exc:
+                # R2 upload is non-fatal — missing creds or network error
+                # should never kill the pipeline that already loaded Supabase.
+                logger.warning("R2 upload skipped (non-fatal): %s", r2_exc)
         else:
             logger.warning("No scored data to load into scan_results")
 
