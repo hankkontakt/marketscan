@@ -11,6 +11,7 @@ from apps.api.core.config import settings
 from apps.api.core.logging_config import setup_logging
 from apps.api.core.security_headers import add_security_headers
 from apps.api.core.rate_limiter import add_rate_limiting
+from apps.api.core.request_id import RequestIDMiddleware, debug_router
 
 from apps.api.routers import (
     screener, stocks, portfolio, ai, admin, profile,
@@ -46,6 +47,10 @@ app.add_middleware(
 add_security_headers(app)
 add_rate_limiting(app)
 
+# Request ID middleware — log structured request info
+app.middleware("http")(RequestIDMiddleware())
+
+app.include_router(debug_router)
 app.include_router(screener.router, prefix="/api")
 app.include_router(stocks.router, prefix="/api")
 app.include_router(portfolio.router)

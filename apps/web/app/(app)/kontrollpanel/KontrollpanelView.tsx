@@ -1,8 +1,8 @@
 "use client";
 
 import * as Tabs from "@radix-ui/react-tabs";
-import { Activity, RefreshCw, Globe, BarChart2, Settings } from "lucide-react";
-import { StatusSection, PipelineSection, UniversumSection, MattSection, SettingsSection } from "@/components/admin/AdminSections";
+import { Activity, RefreshCw, Globe, BarChart2, Settings, HeartPulse } from "lucide-react";
+import { StatusSection, PipelineSection, UniversumSection, MattSection, SettingsSection, HealthSection } from "@/components/admin/AdminSections";
 import { KpiCard, StatusPill, RunsTable, DistTable } from "@/components/admin/StatusHelpers";
 import { useQuery } from "@tanstack/react-query";
 
@@ -35,6 +35,17 @@ export function KontrollpanelView() {
           >
             <RefreshCw size={13} strokeWidth={1.5} />
             Pipeline
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="Hälsa"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-colors
+                       data-[state=active]:bg-[var(--color-accent)] data-[state=active]:text-white
+                       data-[state=inactive]:bg-[var(--color-bg-surface)] data-[state=inactive]:text-[var(--color-text-secondary)]
+                       data-[state=inactive]:border data-[state=inactive]:border-[var(--color-border)]
+                       data-[state=inactive]:hover:border-[var(--color-border-strong)]"
+          >
+            <HeartPulse size={13} strokeWidth={1.5} />
+            Hälsa
           </Tabs.Trigger>
           <Tabs.Trigger
             value="Universum"
@@ -73,6 +84,7 @@ export function KontrollpanelView() {
 
         <Tabs.Content value="Status"><StatusSection /></Tabs.Content>
         <Tabs.Content value="Pipeline"><PipelineSection /></Tabs.Content>
+        <Tabs.Content value="Hälsa"><HealthSection /></Tabs.Content>
         <Tabs.Content value="Universum"><UniversumSection /></Tabs.Content>
         <Tabs.Content value="Mått"><MattSection /></Tabs.Content>
         <Tabs.Content value="Inställningar"><SettingsSection /></Tabs.Content>

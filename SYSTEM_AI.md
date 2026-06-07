@@ -911,6 +911,42 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 
 > Nyaste överst. Format: `YYYY-MM-DD — beskrivning (fil)`.
 
+### 2026-06-07 — Fas 7: Kalender, Admin, Jämför-cleanup, Felsökningslager & nya features
+
+**§A Bugfixar (finns redan sedan tidigare):**
+- B1 (regex med `\s`) — redan fixad.
+- B2 (Finnhub-fallback i compare) — redan byggd.
+- B3 (f-string URL → params=): Alla 5 Finnhub-anrop i stocks.py bytte till httpx `params=` (price-history, news, earnings, insider-trades, benchmark). `apps/api/routers/stocks.py`
+
+**§B Kalender — månadsrutnät med scope:**
+- `routers/calendar.py`: Alla endpoint fick `scope=mine|all`-param. `mine` (default) filtrerar earnings+dividends till användarens watchlist+portfolio-tickers via `_get_user_tickers()`. IPO/economic alltid globala.
+- `KalenderView.tsx`: Helt omskriven — månadsrutnät med `date-fns` (måndag start, `locale: sv`), färgkodade prickar per dag (blå=rapporter, guld=utdelningar, grön=IPO, cyan=ekonomi), mine/all-toggle, klick-på-dag öppnar detalj-dialog. Tomtillstånd och error-laddning.
+
+**§C Jämför-cleanup:**
+- `JamforView.tsx`: Ny layout — en överlagrad `MultiFactorRadar` (fyllnad ≤3 aktier, linjer 4-5), kompakt nyckeltalstabell (kärnmått alltid synliga, utökade bakom "Visa fler nyckeltal"), konsekvent färgsättning via `tickerColor(i)`. Borttagen gammal radar-per-aktie-grid.
+- `MultiFactorRadar.tsx`: Ny komponent — överlagrad Recharts-radar med stöd för multi-serie, fill/lines-läge, legend, tooltip.
+
+**§D Admin — utökad:**
+- `routers/admin.py`: 8 nya endpoints — pipeline trigger via GitHub API (`POST /admin/pipeline/trigger`), queue-lista (`GET /admin/pipeline/queue`), comprehensive health check (`GET /admin/health`), diagnostics (`POST /admin/diagnostics`), cache-clear (`POST /admin/cache/clear`), candidates approve/reject, GitHub Actions reader (`GET /admin/github-status`).
+- `AdminSections.tsx`: Pipeline-trigger-buttons (6 förvalda lägen + riktade tickers med input), `HealthSection` med env-badges + DB-kort + service-probes, Hälsa-flik.
+- `KontrollpanelView.tsx`: La till "Hälsa"-tab med HeartPulse-ikon.
+
+**§E Felsökningslager:**
+- `core/request_id.py`: Request-ID-middleware (loggar `method path status ms [rid]` + sätter `X-Request-ID` header). Debug-router med `/api/debug/health` (admin-skyddad, env + DB checks) och `/api/debug/client-error` (POST endpoint för klientfel).
+- `components/ErrorBoundary.tsx`: React ErrorBoundary + `installGlobalErrorCapture()` som fångar `window.onerror`/`onunhandledrejection` och POST:ar till `/api/debug/client-error`.
+- `components/providers/QueryProvider.tsx`: Wrappar app i ErrorBoundary + installerar global error capture.
+- `scripts/doctor.py`: CLI-diagnostik — kontrollerar alla env-nycklar (Supabase, Finnhub, R2, DeepSeek, GH_TOKEN), probar Finnhub API, Supabase-anslutning, pipeline-status.
+- `scripts/seed_demo.py`: Fyller `scan_results` med 12 kända aktier för lokal dev utan full pipeline.
+- `DEBUGGING.md`: Runbook med symptom→orsak→fil-tabell, kända fallgropar, verktyg.
+
+**§F Nya features:**
+- F1 Similar stocks: `GET /api/stocks/{ticker}/similar` — cosinus-likhet på score-vektor (8 faktorer) mot hela universum, sektor-boost 10%, returnerar top-6. I `stocks.py`.
+- F3 Diversifierings-hälsa: `GET /api/portfolio/diversification` — score 0-100 (holding count + sector spread + concentration), sektor-allokering, koncentrationsvarning. I `portfolio.py`.
+
+**§G Övrigt:**
+- `scripts/` katalog skapad för CLI-verktyg.
+- `apps/api/main.py`: La till request-id-middleware + debug_router-import.
+
 ### 2026-06-07 — Bugfix: Kalender + universell aktiesökning
 
 **Kalender (dividender fixade):**

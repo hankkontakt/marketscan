@@ -190,6 +190,97 @@ async def get_portfolio_risk(
     )
 
 
+# ─── Diversification Health (F3) ───────────────────────────────────────────────
+
+
+class DiversificationOut(BaseModel):
+    score: float
+    max_holding_pct: float
+    num_holdings: int
+    sector_allocation: list[SectorAllocation]
+    top_holding: str | None = None
+    message: str
+
+
+@router.get("/diversification", response_model=DiversificationOut)
+async def get_diversification(
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Portfolio diversification health score and sector breakdown."""
+    port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
+    if not port.data:
+        return DiversificationOut(score=0, max_holding_pct=0, num_holdings=0, sector_allocation=[], message="Ingen portfölj hittad — lägg till innehav för att se diversifiering")
+
+    holdings = sb.table("holdings").select("*").eq("portfolio_id", port.data[0]["id"]).execute()
+    items = holdings.data or []
+    if not items:
+        return DiversificationOut(score=0, max_holding_pct=0, num_holdings=0, sector_allocation=[], message="Inga innehav — lägg till aktier för att se diversifiering")
+
+    tickers = [h["ticker"] for h in items]
+    scan = sb.table("scan_results").select("ticker,price,sector,score_total").in_("ticker", tickers).execute()
+    scan_map = {r["ticker"]: r for r in (scan.data or [])}
+
+    total_value = 0.0
+    holding_values: list[tuple[str, float]] = []
+    sector_values: dict[str, float] = Counter()
+
+    for h in items:
+        info = scan_map.get(h["ticker"])
+        price = info.get("price") if info else h.get("cost_basis")
+        if price is None:
+            continue
+        val = float(price) * float(h["shares"])
+        total_value += val
+        holding_values.append((h["ticker"], val))
+        sector = (info or {}).get("sector") or "Övrigt"
+        sector_values[sector] += val
+
+    if total_value == 0:
+        return DiversificationOut(score=0, max_holding_pct=0, num_holdings=len(items), sector_allocation=[], message="Portföljvärdet är noll — kontrollera dina priser")
+
+    # Max holding concentration
+    holding_values.sort(key=lambda x: x[1], reverse=True)
+    max_pct = round((holding_values[0][1] / total_value) * 100, 1) if holding_values else 0
+
+    # Sector allocation
+    allocation = [
+        SectorAllocation(sector=s, value=round(v, 2), pct=round(v / total_value * 100, 1))
+        for s, v in sector_values.most_common()
+    ]
+
+    # Score: 0-100
+    # Factors: number of holdings (max 30), sector spread, max holding size
+    n = len(items)
+    holding_score = min(30, n * 6)  # 0-30 points, 5 holdings = 30
+    sector_count = len(sector_values)
+    sector_score = min(25, sector_count * 8)  # 0-25 points, 3+ sectors = 24
+    concentration_penalty = max(0, 25 - (max_pct / 4)) if n > 1 else 0  # 0-25 penalty
+    diversity_score = max_pct > 50 and n > 1 and 0 or 10  # 0 or 10
+    score = min(100, round(holding_score + sector_score + concentration_penalty + diversity_score))
+
+    # Human message
+    if n == 1:
+        msg = f"Endast ett innehav ({holding_values[0][0]}). Överväg att bredda portföljen för att minska risken."
+    elif max_pct > 50:
+        msg = f"Hög koncentration i {holding_values[0][0]} ({max_pct}% av portföljen). Överväg att balansera om."
+    elif n < 5:
+        msg = f"Ganska få innehav ({n} st). Fler aktier kan sprida risken."
+    elif sector_count < 3:
+        msg = f"Portföljen är koncentrerad till {sector_count} sektor(er). Överväg sektorspridning."
+    else:
+        msg = f"Hyfsad diversifiering över {sector_count} sektorer med {n} innehav."
+
+    return DiversificationOut(
+        score=score,
+        max_holding_pct=max_pct,
+        num_holdings=n,
+        sector_allocation=allocation,
+        top_holding=holding_values[0][0] if holding_values else None,
+        message=msg,
+    )
+
+
 # ─── Avanza Import ────────────────────────────────────────────────────────────
 
 

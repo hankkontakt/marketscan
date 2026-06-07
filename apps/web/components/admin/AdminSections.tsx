@@ -1,7 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
-import { api } from "@/lib/api";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  RefreshCw, Play, Activity, Globe, Database, ExternalLink, CheckCircle2,
+  XCircle, AlertTriangle,
+} from "lucide-react";
+import { api, ApiError } from "@/lib/api";
 import { KpiCard, StatusPill, RunsTable, DistTable, type PipelineRun } from "./StatusHelpers";
+import { useState } from "react";
+
+// ─── Status ──────────────────────────────────────────────────────────────────
 
 export function StatusSection() {
   const { data, isLoading, refetch } = useQuery({
@@ -24,15 +30,8 @@ export function StatusSection() {
       {isLoading ? <div className="skeleton h-24 rounded-xl" /> : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <KpiCard label="Aktier i scan" value={String(data?.scan_rows ?? "—")} />
-          <KpiCard
-            label="Senaste körning"
-            value={data?.last_runs[0]?.status ?? "—"}
-            status={data?.last_runs[0]?.status}
-          />
-          <KpiCard
-            label="Körtid"
-            value={data?.last_runs[0]?.duration_s ? `${data.last_runs[0].duration_s}s` : "—"}
-          />
+          <KpiCard label="Senaste status" value={data?.last_runs[0]?.status ?? "—"} status={data?.last_runs[0]?.status} />
+          <KpiCard label="Körtid (senaste)" value={data?.last_runs[0]?.duration_s ? `${data.last_runs[0].duration_s}s` : "—"} />
         </div>
       )}
 
@@ -47,15 +46,15 @@ export function StatusSection() {
               </tr>
             </thead>
             <tbody>
-              {data.last_runs.map((run, i) => (
+              {data.last_runs.map((run) => (
                 <tr key={run.id} className="bg-[var(--color-bg-surface)] border-b border-[var(--color-border)]">
                   <td className="px-4 py-2.5 font-mono">{run.run_type}</td>
-                  <td className="px-4 py-2.5">
-                    <StatusPill status={run.status} />
+                  <td className="px-4 py-2.5"><StatusPill status={run.status} /></td>
+                  <td className="px-4 py-2.5 tabular font-mono text-[var(--color-up)]">{run.tickers_ok ?? "—"}</td>
+                  <td className="px-4 py-2.5 tabular font-mono text-[var(--color-down)]">{run.tickers_err ?? "—"}</td>
+                  <td className="px-4 py-2.5 tabular font-mono text-[var(--color-text-muted)]">
+                    {run.duration_s != null ? `${run.duration_s}s` : "—"}
                   </td>
-                  <td className="px-4 py-2.5 tabular font-mono text-[var(--color-up)]">{run.tickers_ok}</td>
-                  <td className="px-4 py-2.5 tabular font-mono text-[var(--color-down)]">{run.tickers_err}</td>
-                  <td className="px-4 py-2.5 tabular font-mono text-[var(--color-text-muted)]">{run.duration_s}s</td>
                   <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
                     {run.started_at ? new Date(run.started_at).toLocaleString("sv-SE") : "—"}
                   </td>
@@ -69,6 +68,17 @@ export function StatusSection() {
   );
 }
 
+// ─── Pipeline ────────────────────────────────────────────────────────────────
+
+const PIPELINE_MODES = [
+  { mode: "morning", label: "Morgon" },
+  { mode: "evening", label: "Kväll" },
+  { mode: "weekly", label: "Vecka" },
+  { mode: "smallcap", label: "Småbolag" },
+  { mode: "refresh_missing", label: "Fyll saknad data" },
+  { mode: "retry_rate_limited", label: "Kör om rate-limitade" },
+] as const;
+
 export function PipelineSection() {
   const { data: runs = [], isLoading, refetch } = useQuery({
     queryKey: ["pipeline-runs"],
@@ -76,13 +86,110 @@ export function PipelineSection() {
     staleTime: 30_000,
   });
 
+  const triggerMutation = useMutation({
+    mutationFn: (body: { mode: string; tickers?: string[] }) =>
+      api<{ status: string; mode: string; link: string }>("/api/admin/pipeline/trigger", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  });
+
+  const [targetedInput, setTargetedInput] = useState("");
+
+  const handleTrigger = (mode: string) => {
+    triggerMutation.mutate(
+      { mode },
+      { onSuccess: () => { setTimeout(refetch, 2000); } },
+    );
+  };
+
+  const handleTargeted = () => {
+    const tickers = targetedInput.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean);
+    if (tickers.length === 0) return;
+    triggerMutation.mutate(
+      { mode: "targeted", tickers },
+      { onSuccess: () => {
+        setTargetedInput("");
+        setTimeout(refetch, 2000);
+      }},
+    );
+  };
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-sm font-medium text-[var(--color-text-secondary)]">Körningshistorik</h2>
+    <div className="space-y-5">
+      <div className="flex justify-between items-center">
+        <h2 className="text-sm font-medium text-[var(--color-text-secondary)]">Pipeline-kontroll</h2>
+      </div>
+
+      {/* Trigger buttons */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        {PIPELINE_MODES.map(({ mode, label }) => (
+          <button
+            key={mode}
+            onClick={() => handleTrigger(mode)}
+            disabled={triggerMutation.isPending}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium
+                       bg-[var(--color-accent-soft)] text-[var(--color-accent)] border border-[var(--color-accent)]/20
+                       hover:bg-[var(--color-accent)]/20 transition-colors disabled:opacity-40"
+          >
+            <Play size={12} strokeWidth={1.5} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {triggerMutation.isSuccess && (
+        <div className="flex items-center gap-2 text-xs text-[var(--color-up)]">
+          <CheckCircle2 size={14} />
+          Pipeline {triggerMutation.data?.mode} startad —
+          <a href={triggerMutation.data?.link} target="_blank" rel="noopener noreferrer"
+             className="text-[var(--color-accent)] hover:underline flex items-center gap-0.5">
+            visa i GitHub <ExternalLink size={10} />
+          </a>
+        </div>
+      )}
+      {triggerMutation.isError && (
+        <div className="flex items-center gap-2 text-xs text-[var(--color-down)]">
+          <XCircle size={14} />
+          {triggerMutation.error instanceof ApiError
+            ? triggerMutation.error.message
+            : "Kunde inte starta pipeline"}
+        </div>
+      )}
+
+      {/* Targeted tickers */}
+      <div className="rounded-xl p-4 border border-[var(--color-border)] bg-[var(--color-bg-surface)]">
+        <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">Riktade tickers</h3>
+        <p className="text-[10px] text-[var(--color-text-muted)] mb-2">
+          Komma-separerade tickers (max 50). Startar en pipeline som hämtar just dessa.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={targetedInput}
+            onChange={(e) => setTargetedInput(e.target.value)}
+            placeholder="VOLV-B.ST, TSLA, SSAB A.ST"
+            className="flex-1 h-9 px-3 rounded-lg text-xs bg-[var(--color-bg-elevated)]
+                       text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]
+                       outline-none border border-[var(--color-border)] focus:ring-2 focus:ring-[var(--color-accent)]"
+          />
+          <button
+            onClick={handleTargeted}
+            disabled={triggerMutation.isPending || !targetedInput.trim()}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white
+                       hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            Kör
+          </button>
+        </div>
+      </div>
+
+      {/* Runs history */}
       <p className="text-xs text-[var(--color-text-muted)]">
         Pipeline startas automatiskt av GitHub Actions (morgon 06:15, kväll 18:30, veckovis söndag 08:00).
-        Manuell körning triggas via GitHub Actions workflow_dispatch.
+        Manuell körning via knapparna ovan.
       </p>
+
       {isLoading
         ? <div className="skeleton h-48 rounded-xl" />
         : <RunsTable runs={runs} />
@@ -90,6 +197,78 @@ export function PipelineSection() {
     </div>
   );
 }
+
+// ─── Health Check ────────────────────────────────────────────────────────────
+
+export function HealthSection() {
+  const [mode, setMode] = useState<"quick" | "full">("quick");
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["admin-health", mode],
+    queryFn: () => api<{
+      env: Record<string, boolean>;
+      db: Record<string, number | string | null>;
+      checks: { name: string; ok: boolean; detail?: string }[];
+    }>(`/api/admin/health`),
+    staleTime: 10_000,
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-sm font-medium text-[var(--color-text-secondary)]">Hälsokoll</h2>
+        <button onClick={() => refetch()}
+                className="text-xs text-[var(--color-accent)] flex items-center gap-1 hover:underline">
+          <RefreshCw size={11} strokeWidth={1.5} />
+          Kör
+        </button>
+      </div>
+
+      {isLoading ? <div className="skeleton h-32 rounded-xl" /> : data && (
+        <>
+          {/* Env badges */}
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(data.env).map(([key, ok]) => (
+              <span
+                key={key}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium
+                  ${ok ? "bg-[var(--color-up)]/10 text-[var(--color-up)]" : "bg-[var(--color-down)]/10 text-[var(--color-down)]"}`}
+              >
+                {ok ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+                {key}
+              </span>
+            ))}
+          </div>
+
+          {/* DB stats */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {Object.entries(data.db).filter(([, v]) => v != null).map(([key, val]) => (
+              <KpiCard key={key} label={key.replace(/_/g, " ")} value={String(val ?? "—")} />
+            ))}
+          </div>
+
+          {/* Service checks */}
+          <div className="space-y-1.5">
+            {data.checks.map((check) => (
+              <div
+                key={check.name}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-bg-surface)] border border-[var(--color-border)]"
+              >
+                {check.ok
+                  ? <CheckCircle2 size={14} className="text-[var(--color-up)] shrink-0" />
+                  : <XCircle size={14} className="text-[var(--color-down)] shrink-0" />
+                }
+                <span className="text-xs text-[var(--color-text-primary)]">{check.name}</span>
+                <span className="text-[10px] text-[var(--color-text-muted)] ml-auto">{check.detail}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Universum ───────────────────────────────────────────────────────────────
 
 export function UniversumSection() {
   const { data, isLoading } = useQuery({
@@ -115,6 +294,8 @@ export function UniversumSection() {
     </div>
   );
 }
+
+// ─── Mått ────────────────────────────────────────────────────────────────────
 
 export function MattSection() {
   const { data, isLoading } = useQuery({
@@ -178,6 +359,8 @@ export function MattSection() {
     </div>
   );
 }
+
+// ─── Inställningar ───────────────────────────────────────────────────────────
 
 export function SettingsSection() {
   return (

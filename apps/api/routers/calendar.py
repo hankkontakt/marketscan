@@ -1,18 +1,20 @@
-"""Calendar endpoints: earnings, dividends, economic, IPO calendars via Finnhub."""
+"""Calendar endpoints: earnings, dividends, economic, IPO calendars via Finnhub.
+Supports scope=mine|all — mine filters to user's watchlist+portfolio tickers.
+"""
 import asyncio
 import logging
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from httpx import AsyncClient
 from apps.api.core.config import settings
-from apps.api.dependencies import get_supabase
+from apps.api.dependencies import get_supabase, get_user_supabase
+from apps.api.core.security import get_current_user, User
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
-# Max universe tickers to fetch dividends for (avoids hitting rate limits)
-_DIVIDEND_UNIVERSE_LIMIT = 25
+_MAX_TICKER_FANOUT = 30
 
 
 async def _fetch_ticker_dividends(
@@ -45,9 +47,42 @@ async def _fetch_ticker_dividends(
     return []
 
 
+def _get_user_tickers(sb) -> list[str]:
+    """Fetch user's watchlist + portfolio tickers for scope=mine filtering."""
+    try:
+        watch = sb.table("watchlist").select("ticker").execute()
+        portfolio = sb.table("holdings").select("ticker").execute()
+        tickers = set()
+        for r in (watch.data or []):
+            tickers.add(r["ticker"])
+        for r in (portfolio.data or []):
+            tickers.add(r["ticker"])
+        return list(tickers)[:_MAX_TICKER_FANOUT]
+    except Exception as e:
+        logger.debug("Could not fetch user tickers for calendar: %s", e)
+        return []
+
+
+def _filter_by_tickers(events: list[dict], tickers: set[str]) -> list[dict]:
+    """Filter events to only those matching user's tickers."""
+    if not tickers:
+        return []
+    return [e for e in events if e.get("symbol") in tickers]
+
+
 @router.get("/earnings")
-async def get_earnings_calendar(from_date: str | None = None, to_date: str | None = None):
-    """Upcoming earnings reports (free Finnhub tier — global results)."""
+async def get_earnings_calendar(
+    from_date: str | None = None,
+    to_date: str | None = None,
+    scope: str = Query("mine", regex="^(mine|all)$"),
+    user: User | None = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Upcoming earnings reports.
+
+    scope=mine (default): filter to user's watchlist+portfolio tickers only.
+    scope=all: all available earnings (Finnhub global feed, may be sparse).
+    """
     if not settings.FINNHUB_API_KEY:
         return {"events": []}
     today = date.today()
@@ -62,8 +97,14 @@ async def get_earnings_calendar(from_date: str | None = None, to_date: str | Non
             )
             resp.raise_for_status()
             data = resp.json()
-            events = data.get("earningsCalendar", [])
-            return {"events": events[:100]}
+            events = data.get("earningsCalendar", [])[:100]
+
+        if scope == "mine" and user:
+            user_tickers = set(_get_user_tickers(sb))
+            if user_tickers:
+                events = _filter_by_tickers(events, user_tickers)
+
+        return {"events": events}
     except Exception as e:
         logger.warning("Finnhub earnings calendar failed: %s", e)
         return {"events": []}
@@ -71,7 +112,7 @@ async def get_earnings_calendar(from_date: str | None = None, to_date: str | Non
 
 @router.get("/ipo")
 async def get_ipo_calendar(from_date: str | None = None, to_date: str | None = None):
-    """Upcoming IPOs."""
+    """Upcoming IPOs. Always global — no per-ticker filtering."""
     if not settings.FINNHUB_API_KEY:
         return {"events": []}
     today = date.today()
@@ -96,12 +137,14 @@ async def get_ipo_calendar(from_date: str | None = None, to_date: str | None = N
 async def get_dividends_calendar(
     from_date: str | None = None,
     to_date: str | None = None,
-    sb=Depends(get_supabase),
+    scope: str = Query("mine", regex="^(mine|all)$"),
+    user: User | None = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
 ):
-    """Dividend calendar: fetches dividends for top universe stocks.
+    """Dividend calendar.
 
-    Finnhub has no global dividend calendar endpoint on the free tier.
-    We fetch per-ticker dividends for the highest-scoring stocks in the universe.
+    scope=mine (default): fetch dividends for user's watchlist+portfolio tickers.
+    scope=all: fetch for top-scoring universe tickers.
     """
     if not settings.FINNHUB_API_KEY:
         return {"events": []}
@@ -109,24 +152,26 @@ async def get_dividends_calendar(
     f = from_date or today.isoformat()
     t = to_date or (today + timedelta(days=90)).isoformat()
 
-    # Pick the top-scoring tickers from the universe
-    try:
-        tickers_res = (
-            sb.table("scan_results")
-            .select("ticker")
-            .order("score_total", desc=True)
-            .limit(_DIVIDEND_UNIVERSE_LIMIT)
-            .execute()
-        )
-        tickers = [r["ticker"] for r in (tickers_res.data or [])]
-    except Exception as e:
-        logger.warning("Could not fetch universe tickers for dividend calendar: %s", e)
-        return {"events": []}
+    # Determine which tickers to fetch dividends for
+    if scope == "mine" and user:
+        tickers = _get_user_tickers(sb)
+    else:
+        try:
+            tickers_res = (
+                sb.table("scan_results")
+                .select("ticker")
+                .order("score_total", desc=True)
+                .limit(25)
+                .execute()
+            )
+            tickers = [r["ticker"] for r in (tickers_res.data or [])]
+        except Exception as e:
+            logger.warning("Could not fetch universe tickers for dividend calendar: %s", e)
+            return {"events": []}
 
     if not tickers:
         return {"events": []}
 
-    # Parallel-fetch dividends for each ticker
     async with AsyncClient(timeout=15.0) as client:
         results = await asyncio.gather(
             *[_fetch_ticker_dividends(client, ticker, f, t) for ticker in tickers],
@@ -138,7 +183,6 @@ async def get_dividends_calendar(
         if isinstance(result, list):
             events.extend(result)
 
-    # Sort by pay date / ex-date
     events.sort(key=lambda x: x.get("date") or x.get("payDate") or "")
     return {"events": events[:60]}
 
@@ -148,6 +192,7 @@ async def get_economic_calendar(from_date: str | None = None, to_date: str | Non
     """Economic events (requires Finnhub premium plan).
 
     Returns empty list for free-tier users — this is expected behaviour.
+    Always global — no per-ticker filtering.
     """
     if not settings.FINNHUB_API_KEY:
         return {"events": []}

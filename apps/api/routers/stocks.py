@@ -309,16 +309,15 @@ async def get_price_history(ticker: str, sb=Depends(get_supabase)):
     if settings.FINNHUB_API_KEY:
         try:
             today = date.today()
-            one_year_ago = today - timedelta(days=365)
-            url = (
-                f"https://finnhub.io/api/v1/stock/candle"
-                f"?symbol={t}"
-                f"&resolution=D"
-                f"&from={int((today - timedelta(days=400)).timestamp())}"
-                f"&to={int(today.timestamp())}"
-            )
+            url = "https://finnhub.io/api/v1/stock/candle"
+            params = {
+                "symbol": t,
+                "resolution": "D",
+                "from": int((today - timedelta(days=400)).timestamp()),
+                "to": int(today.timestamp()),
+            }
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
+                resp = await client.get(url, params=params, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
                 resp.raise_for_status()
                 data = resp.json()
                 if data.get("s") == "ok" and data.get("t"):
@@ -492,16 +491,16 @@ async def get_stock_news(ticker: str):
     today = date.today()
     one_year_ago = today - timedelta(days=365)
 
-    url = (
-        f"https://finnhub.io/api/v1/company-news"
-        f"?symbol={t}"
-        f"&from={one_year_ago.isoformat()}"
-        f"&to={today.isoformat()}"
-    )
+    url = "https://finnhub.io/api/v1/company-news"
+    params = {
+        "symbol": t,
+        "from": one_year_ago.isoformat(),
+        "to": today.isoformat(),
+    }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
+            resp = await client.get(url, params=params, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -536,14 +535,11 @@ async def get_stock_earnings(ticker: str):
     if not settings.FINNHUB_API_KEY:
         return {"ticker": ticker, "earnings": []}
 
-    url = (
-        f"https://finnhub.io/api/v1/stock/earnings"
-        f"?symbol={t}"
-    )
+    url = "https://finnhub.io/api/v1/stock/earnings"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
+            resp = await client.get(url, params={"symbol": t}, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -590,11 +586,11 @@ async def get_insider_trades(ticker: str):
     if not settings.FINNHUB_API_KEY:
         return {"ticker": ticker, "insider_trades": []}
 
-    url = f"https://finnhub.io/api/v1/stock/insider-transactions?symbol={t}"
+    url = "https://finnhub.io/api/v1/stock/insider-transactions"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
+            resp = await client.get(url, params={"symbol": t}, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -719,15 +715,15 @@ async def get_omxs30_benchmark():
     if settings.FINNHUB_API_KEY:
         try:
             today = date.today()
-            url = (
-                f"https://finnhub.io/api/v1/stock/candle"
-                f"?symbol=^OMX"
-                f"&resolution=D"
-                f"&from={int((today - timedelta(days=400)).timestamp())}"
-                f"&to={int(today.timestamp())}"
-            )
+            url = "https://finnhub.io/api/v1/stock/candle"
+            params = {
+                "symbol": "^OMX",
+                "resolution": "D",
+                "from": int((today - timedelta(days=400)).timestamp()),
+                "to": int(today.timestamp()),
+            }
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
+                resp = await client.get(url, params=params, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
                 resp.raise_for_status()
                 data = resp.json()
                 if data.get("s") == "ok" and data.get("t"):
@@ -769,3 +765,88 @@ def _generate_mock_benchmark_candles(days: int = 400) -> list[dict]:
         price *= (1 + ret)
         candles.append({"time": d.isoformat(), "close": round(price, 2)})
     return candles
+
+
+# ─── Similar stocks (F1) ─────────────────────────────────────────────────────
+
+
+class SimilarStockOut(BaseModel):
+    ticker: str
+    name: str | None = None
+    score_total: float | None = None
+    sector: str | None = None
+    similarity_pct: float
+    price: float | None = None
+    change_pct: float | None = None
+
+
+class SimilarStocksResponse(BaseModel):
+    ticker: str
+    similar: list[SimilarStockOut]
+
+
+@router.get("/{ticker}/similar", response_model=SimilarStocksResponse)
+async def get_similar_stocks(ticker: str, limit: int = 6, sb=Depends(get_supabase)):
+    """Find stocks with similar factor profiles using cosine similarity.
+
+    Compares the target ticker's score vector against the universe.
+    Returns top-N most similar (excluding self), preferring same/near sector.
+    """
+    t = _validate_ticker(ticker)
+
+    # Get target stock
+    target = sb.table("scan_results").select(
+        "ticker,name,score_total,score_value,score_quality,score_momentum,"
+        "score_growth,score_risk,score_dividend,score_sentiment,sector,price,change_pct"
+    ).eq("ticker", t).maybe_single().execute()
+
+    if not target.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte i universum")
+
+    # Build target vector
+    target_fields = ["score_value", "score_quality", "score_momentum", "score_growth", "score_risk", "score_dividend", "score_sentiment"]
+    tv = [float(target.data.get(f, 0) or 0) for f in target_fields]
+    tv_norm = sum(v * v for v in tv) ** 0.5
+    if tv_norm == 0:
+        return SimilarStocksResponse(ticker=ticker, similar=[])
+
+    target_sector = target.data.get("sector", "")
+
+    # Get all universe stocks
+    all_stocks = sb.table("scan_results").select(
+        "ticker,name,score_total,score_value,score_quality,score_momentum,"
+        "score_growth,score_risk,score_dividend,score_sentiment,sector,price,change_pct"
+    ).neq("ticker", t).limit(200).execute()
+
+    rows = all_stocks.data or []
+    scored: list[tuple[float, dict]] = []
+
+    for row in rows:
+        rv = [float(row.get(f, 0) or 0) for f in target_fields]
+        rv_norm = sum(v * v for v in rv) ** 0.5
+        if rv_norm == 0:
+            continue
+        # Cosine similarity
+        dot = sum(a * b for a, b in zip(tv, rv))
+        sim = dot / (tv_norm * rv_norm)
+        # Boost same-sector by 10%
+        if row.get("sector") and target_sector and row["sector"] == target_sector:
+            sim *= 1.1
+        scored.append((sim, row))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    similar = [
+        SimilarStockOut(
+            ticker=r["ticker"],
+            name=r.get("name"),
+            score_total=r.get("score_total"),
+            sector=r.get("sector"),
+            similarity_pct=round(sim * 100, 0),
+            price=r.get("price"),
+            change_pct=r.get("change_pct"),
+        )
+        for sim, r in scored[:limit]
+    ]
+
+    return SimilarStocksResponse(ticker=ticker, similar=similar)

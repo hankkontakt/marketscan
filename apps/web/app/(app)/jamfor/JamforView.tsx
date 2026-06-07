@@ -1,20 +1,18 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import { Search, X, Loader2, AlertCircle, TrendingUp, BarChart3, Brain, ChevronDown, ChevronRight } from "lucide-react";
+import React, { useState, useCallback, useMemo } from "react";
+import { Search, X, Loader2, AlertCircle, TrendingUp, Brain, ChevronDown } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   formatScore,
   formatPrice,
   formatPct,
   scoreColorClass,
-  changeClass,
-  signalLabel,
-  signalShortLabel,
   signalBadgeClass,
+  signalShortLabel,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { FactorRadar } from "@/components/charts/FactorRadar";
+import { MultiFactorRadar, tickerColor } from "@/components/charts/MultiFactorRadar";
 import { useExperience } from "@/components/providers/ExperienceProvider";
 import { useCompare, useStockSearch, useAICompare, type SearchResult, type CompareResponse } from "@/hooks/useCompare";
 import {
@@ -34,129 +32,15 @@ function isUpGood(label: string): boolean {
   return upIsGood.includes(label);
 }
 
-function isBetter(a: number, b: number, upGood: boolean): boolean {
-  return upGood ? a > b : a < b;
-}
-
-// ─── Metric cards (visual, not table-based) ─────────────────────────────────
-
-interface MetricCardsProps {
-  tickers: string[];
-  metrics: CompareResponse["metrics"];
-}
-
-function MetricCards({ tickers, metrics }: MetricCardsProps) {
-  const groups = [
-    { title: "Betyg", keys: ["Totalbetyg", "Värdering", "Kvalitet", "Momentum", "Tillväxt", "Risk"] },
-    { title: "Fundamentala nyckeltal", keys: ["P/E", "ROE", "Piotroski", "Beta"] },
-    { title: "Signal", keys: ["Signal"] },
-  ];
-
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
-    "Fundamentala nyckeltal": true,
-  });
-
-  return (
-    <div className="space-y-4">
-      {groups.map((group) => {
-        const groupMetrics = metrics.filter((m) => group.keys.includes(m.label));
-        if (groupMetrics.length === 0) return null;
-        const isCollapsed = collapsed[group.title] ?? false;
-
-        return (
-          <div key={group.title} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] overflow-hidden">
-            <button
-              onClick={() => setCollapsed((p) => ({ ...p, [group.title]: !isCollapsed }))}
-              className="flex items-center gap-2 w-full px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]
-                         hover:bg-[var(--color-bg-elevated)] transition-colors"
-            >
-              {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-              {group.title}
-            </button>
-
-            {!isCollapsed && (
-              <div className="px-4 pb-4 space-y-3">
-                {groupMetrics.map((metric) => {
-                  const vals = tickers.map((t) => ({
-                    ticker: t,
-                    value: metric.values[t],
-                  }));
-                  const numericVals = vals.filter(
-                    (v): v is { ticker: string; value: number } =>
-                      typeof v.value === "number" && !Number.isNaN(v.value)
-                  );
-                  let bestTicker: string | null = null;
-                  let worstTicker: string | null = null;
-                  if (numericVals.length > 0) {
-                    const upGood = isUpGood(metric.label);
-                    const sorted = [...numericVals].sort((a, b) =>
-                      upGood ? b.value - a.value : a.value - b.value
-                    );
-                    bestTicker = sorted[0].ticker;
-                    worstTicker = sorted[sorted.length - 1].ticker;
-                  }
-
-                  return (
-                    <div key={metric.label}>
-                      <div className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">
-                        {metric.label}
-                      </div>
-                      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${tickers.length}, 1fr)` }}>
-                        {vals.map((v) => {
-                          const isBest = v.ticker === bestTicker;
-                          const isWorst = v.ticker === worstTicker;
-                          const val = v.value;
-
-                          if (metric.label === "Signal" && typeof val === "string") {
-                            return (
-                              <div key={v.ticker} className="text-center">
-                                <span className={cn(
-                                  "inline-block px-2 py-1 rounded-md text-[11px] font-semibold border",
-                                  signalBadgeClass(val),
-                                )}>
-                                  {signalShortLabel(val)}
-                                </span>
-                              </div>
-                            );
-                          }
-
-                          return (
-                            <div
-                              key={v.ticker}
-                              className={cn(
-                                "text-center py-2 px-2 rounded-lg text-sm font-mono tabular",
-                                isBest && "bg-[var(--color-up)]/10 text-[var(--color-up)]",
-                                isWorst && "bg-[var(--color-down)]/10 text-[var(--color-down)]",
-                                !isBest && !isWorst && "text-[var(--color-text-primary)]",
-                              )}
-                            >
-                              {val != null
-                                ? metric.label === "P/E" || metric.label === "Beta"
-                                  ? Number(val).toFixed(1)
-                                  : metric.label === "Piotroski"
-                                  ? `${Number(val).toFixed(0)}/9`
-                                  : metric.label === "ROE"
-                                  ? formatPct(Number(val))
-                                  : typeof val === "number" && val > 100
-                                  ? Math.round(val).toString()
-                                  : typeof val === "number"
-                                  ? val.toFixed(1)
-                                  : String(val)
-                                : "—"}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+function formatMetric(val: number | string | null | undefined, label: string): string {
+  if (val == null) return "—";
+  const n = typeof val === "number" ? val : Number(val);
+  if (isNaN(n)) return String(val);
+  if (label === "P/E" || label === "Beta") return n.toFixed(1);
+  if (label === "Piotroski") return `${n.toFixed(0)}/9`;
+  if (label === "ROE") return formatPct(n);
+  if (n > 100) return Math.round(n).toString();
+  return n.toFixed(1);
 }
 
 // ─── Compare Chart (normalized price) ───────────────────────────────────────
@@ -166,8 +50,6 @@ function ComparePriceChart({ tickers }: { tickers: string[] }) {
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
 
-  const COLORS = ["var(--color-accent)", "var(--color-up)", "var(--color-score-mid)", "var(--color-score-low)", "var(--color-text-muted)"];
-
   React.useEffect(() => {
     if (tickers.length < 2) return;
     let cancelled = false;
@@ -175,15 +57,14 @@ function ComparePriceChart({ tickers }: { tickers: string[] }) {
     setChartError(null);
 
     Promise.all(
-      tickers.map(async (t) => {
+      tickers.map(async (t, i) => {
         const data = await api<{ candles: { time: string; close: number }[] }>(
           `/api/stocks/${t}/price-history`
         );
-        return { ticker: t, candles: data.candles || [] };
+        return { ticker: t, candles: data.candles || [], color: tickerColor(i) };
       })
     ).then((results) => {
       if (cancelled) return;
-      // Build normalized (base=100) chart data
       const timeMap: Record<string, any> = {};
       for (const { ticker, candles } of results) {
         if (candles.length === 0) continue;
@@ -228,7 +109,7 @@ function ComparePriceChart({ tickers }: { tickers: string[] }) {
               key={t}
               type="monotone"
               dataKey={t}
-              stroke={COLORS[i % COLORS.length]}
+              stroke={tickerColor(i)}
               fill="transparent"
               strokeWidth={1.5}
               dot={false}
@@ -264,7 +145,6 @@ function AICompareCard({ tickers, stockDatas }: { tickers: string[]; stockDatas:
       </div>
 
       <div className="space-y-3">
-        {/* Recommendation */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-[var(--color-text-muted)]">Rekommendation:</span>
           <span className="text-sm font-bold font-mono text-[var(--color-accent)]">{data.recommendation}</span>
@@ -272,7 +152,6 @@ function AICompareCard({ tickers, stockDatas }: { tickers: string[]; stockDatas:
 
         <p className="text-sm text-[var(--color-text-primary)] leading-relaxed">{data.reasoning}</p>
 
-        {/* Strengths & Weaknesses */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <span className="text-[11px] font-semibold text-[var(--color-up)]">Styrkor</span>
@@ -293,7 +172,6 @@ function AICompareCard({ tickers, stockDatas }: { tickers: string[]; stockDatas:
         </div>
 
         <p className="text-xs text-[var(--color-text-muted)] italic">{data.summary}</p>
-
         <div className="text-[10px] text-[var(--color-text-muted)]">Analys från {data.cached_date}</div>
       </div>
     </div>
@@ -308,6 +186,7 @@ export function JamforView() {
   const { data: results } = useStockSearch(query, 6);
   const { data: compareData, isLoading, error } = useCompare(tickers);
   const [stockDatas, setStockDatas] = useState<any[]>([]);
+  const [showAllMetrics, setShowAllMetrics] = useState(false);
   const { level } = useExperience();
   const isExpert = level === "expert";
 
@@ -343,6 +222,36 @@ export function JamforView() {
     return () => { cancelled = true; };
   }, [tickers]);
 
+  // Radar data from compare metrics
+  const radarSeries = useMemo(() => {
+    if (!compareData) return [];
+    return compareData.tickers.map((t, i) => {
+      const getVal = (label: string) => {
+        const m = compareData.metrics.find((m) => m.label === label);
+        const v = m?.values[t];
+        return typeof v === "number" ? v : 0;
+      };
+      return {
+        ticker: t,
+        color: tickerColor(i),
+        values: {
+          score_value: getVal("Värdering"),
+          score_quality: getVal("Kvalitet"),
+          score_momentum: getVal("Momentum"),
+          score_growth: getVal("Tillväxt"),
+          score_risk: getVal("Risk"),
+          score_dividend: getVal("Utdelning"),
+          score_sentiment: 50,
+          score_size: 50,
+        },
+      };
+    });
+  }, [compareData]);
+
+  // Core metrics (always visible) vs extended (behind toggle)
+  const coreMetrics = ["Totalbetyg", "Värdering", "Kvalitet", "Momentum", "Tillväxt", "Risk"];
+  const extendedMetrics = ["P/E", "ROE", "Piotroski", "Beta", "Utdelning", "Signal"];
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12">
       <h1 className="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-2">
@@ -358,11 +267,14 @@ export function JamforView() {
         style={{ border: "1px solid var(--color-border-strong)" }}
       >
         <div className="flex flex-wrap gap-2 mb-3">
-          {tickers.map((t) => (
+          {tickers.map((t, i) => (
             <span
               key={t}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-mono font-medium
-                         bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-mono font-medium"
+              style={{
+                background: `${tickerColor(i)}20`,
+                color: tickerColor(i),
+              }}
             >
               {t}
               <button onClick={() => removeTicker(t)} className="hover:opacity-70 transition-opacity" aria-label={`Ta bort ${t}`}>
@@ -393,10 +305,9 @@ export function JamforView() {
             style={{ border: "1px solid var(--color-border)" }}
           />
 
-          {/* Search dropdown */}
           {query.length >= 2 && (
             <div
-              className="absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden shadow-lg z-10
+              className="absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden shadow-lg z-10 max-h-60 overflow-y-auto
                          bg-[var(--color-bg-surface)]"
               style={{ border: "1px solid var(--color-border-strong)" }}
             >
@@ -434,11 +345,6 @@ export function JamforView() {
                             </span>
                           )}
                         </div>
-                        {stock.in_universe === false && (
-                          <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-                            {stock.sector || "Finns ej i universum — läggs till vid nästa scan"}
-                          </span>
-                        )}
                       </div>
                       {stock.score_total != null && (
                         <span className={`tabular text-xs font-mono font-semibold ${scoreColorClass(stock.score_total)}`}>
@@ -484,45 +390,143 @@ export function JamforView() {
       {/* Compare content */}
       {compareData && !isLoading && tickers.length >= 2 && (
         <div className="space-y-6">
-          {/* Factor Radar Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tickers.map((t) => {
-              const metric = compareData.metrics.find((m) => m.label === "Totalbetyg");
-              const score = metric?.values[t];
-              return (
-                <a
-                  key={t}
-                  href={`/aktie/${t}`}
-                  className="block rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <span className="text-sm font-semibold text-[var(--color-text-primary)]">{t}</span>
-                      {score != null && (
-                        <span className={cn("ml-2 text-xs font-mono font-semibold", scoreColorClass(Number(score)))}>
-                          {formatScore(Number(score))}
-                        </span>
-                      )}
-                    </div>
-                    <TrendingUp size={14} className="text-[var(--color-text-muted)]" />
-                  </div>
-                  <FactorRadar stock={{
-                    score_value: Number(compareData.metrics.find(m => m.label === "Värdering")?.values[t] ?? 0),
-                    score_quality: Number(compareData.metrics.find(m => m.label === "Kvalitet")?.values[t] ?? 0),
-                    score_momentum: Number(compareData.metrics.find(m => m.label === "Momentum")?.values[t] ?? 0),
-                    score_growth: Number(compareData.metrics.find(m => m.label === "Tillväxt")?.values[t] ?? 0),
-                    score_risk: Number(compareData.metrics.find(m => m.label === "Risk")?.values[t] ?? 0),
-                    score_dividend: Number(compareData.metrics.find(m => m.label === "Utdelning")?.values[t] ?? 0),
-                    score_sentiment: 50,
-                    score_size: 50,
-                  } as any} />
-                </a>
-              );
-            })}
+          {/* Single overlayed factor radar */}
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-[var(--color-text-secondary)]">Faktorprofil</h3>
+              {tickers.map((t, i) => {
+                const metric = compareData.metrics.find((m) => m.label === "Totalbetyg");
+                const score = metric?.values[t];
+                return (
+                  <span key={t} className="text-xs font-mono" style={{ color: tickerColor(i) }}>
+                    {t}: {score != null ? formatScore(Number(score)) : "—"}
+                  </span>
+                );
+              })}
+            </div>
+            <MultiFactorRadar series={radarSeries} />
           </div>
 
-          {/* Metric cards (grouped) */}
-          <MetricCards tickers={tickers} metrics={compareData.metrics} />
+          {/* Core metric table (simple, scannable) */}
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+                    <th className="px-4 py-2.5 text-left font-medium text-[var(--color-text-muted)] w-32">Nyckeltal</th>
+                    {tickers.map((t, i) => (
+                      <th key={t} className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: tickerColor(i) }}>
+                        {t}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Core metrics */}
+                  {coreMetrics.map((label) => {
+                    const metric = compareData.metrics.find((m) => m.label === label);
+                    if (!metric) return null;
+                    const vals = tickers.map((t) => ({
+                      ticker: t,
+                      value: metric.values[t],
+                    }));
+                    const numericVals = vals.filter(
+                      (v): v is { ticker: string; value: number } =>
+                        typeof v.value === "number" && !Number.isNaN(v.value)
+                    );
+                    const upGood = isUpGood(label);
+                    const best = numericVals.length > 0
+                      ? [...numericVals].sort((a, b) => upGood ? b.value - a.value : a.value - b.value)[0].ticker
+                      : null;
+
+                    return (
+                      <tr key={label} className="border-b border-[var(--color-border)] last:border-0">
+                        <td className="px-4 py-2.5 text-[var(--color-text-secondary)] font-medium">{label}</td>
+                        {vals.map((v) => (
+                          <td
+                            key={v.ticker}
+                            className={cn(
+                              "px-4 py-2.5 text-right font-mono tabular",
+                              v.ticker === best && numericVals.length >= 2
+                                ? "text-[var(--color-up)]"
+                                : "text-[var(--color-text-primary)]",
+                            )}
+                          >
+                            {label === "Signal" && typeof v.value === "string" ? (
+                              <span className={cn("inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold border", signalBadgeClass(v.value))}>
+                                {signalShortLabel(v.value)}
+                              </span>
+                            ) : (
+                              formatMetric(v.value, label)
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+
+                  {/* Extended metrics toggle */}
+                  {extendedMetrics.length > 0 && (
+                    <>
+                      <tr>
+                        <td colSpan={tickers.length + 1} className="px-0 py-0">
+                          <button
+                            onClick={() => setShowAllMetrics(!showAllMetrics)}
+                            className="flex items-center gap-1.5 w-full px-4 py-2.5 text-xs text-[var(--color-text-muted)]
+                                       hover:text-[var(--color-text-secondary)] transition-colors"
+                          >
+                            <ChevronDown size={12} className={cn("transition-transform", showAllMetrics && "rotate-180")} />
+                            {showAllMetrics ? "Dölj" : "Visa fler nyckeltal"}
+                          </button>
+                        </td>
+                      </tr>
+                      {showAllMetrics && extendedMetrics.map((label) => {
+                        const metric = compareData.metrics.find((m) => m.label === label);
+                        if (!metric) return null;
+                        const vals = tickers.map((t) => ({
+                          ticker: t,
+                          value: metric.values[t],
+                        }));
+                        const numericVals = vals.filter(
+                          (v): v is { ticker: string; value: number } =>
+                            typeof v.value === "number" && !Number.isNaN(v.value)
+                        );
+                        const upGood = isUpGood(label);
+                        const best = numericVals.length > 0
+                          ? [...numericVals].sort((a, b) => upGood ? b.value - a.value : a.value - b.value)[0].ticker
+                          : null;
+
+                        return (
+                          <tr key={label} className="border-b border-[var(--color-border)] last:border-0">
+                            <td className="px-4 py-2.5 text-[var(--color-text-secondary)] font-medium">{label}</td>
+                            {vals.map((v) => (
+                              <td
+                                key={v.ticker}
+                                className={cn(
+                                  "px-4 py-2.5 text-right font-mono tabular",
+                                  v.ticker === best && numericVals.length >= 2
+                                    ? "text-[var(--color-up)]"
+                                    : "text-[var(--color-text-primary)]",
+                                )}
+                              >
+                                {label === "Signal" && typeof v.value === "string" ? (
+                                  <span className={cn("inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold border", signalBadgeClass(v.value))}>
+                                    {signalShortLabel(v.value)}
+                                  </span>
+                                ) : (
+                                  formatMetric(v.value, label)
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           {/* Price comparison chart */}
           <ComparePriceChart tickers={tickers} />
@@ -537,7 +541,7 @@ export function JamforView() {
       {/* Empty state */}
       {!compareData && !isLoading && !error && tickers.length >= 2 && (
         <div className="py-16 text-center text-sm text-[var(--color-text-muted)]">
-          <BarChart3 size={24} className="mx-auto mb-3 opacity-40" />
+          <TrendingUp size={24} className="mx-auto mb-3 opacity-40" />
           Kunde inte hitta data för de valda aktierna. Försök med andra tickers.
         </div>
       )}
