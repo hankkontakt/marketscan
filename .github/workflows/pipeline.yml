@@ -40,7 +40,7 @@ jobs:
       # Also check out stock-scanner-fix for core/ pipeline logic
       - uses: actions/checkout@v4
         with:
-          repository: hankkontakt/stock-scanner
+          repository: hankkontakt/stock-scanner-fix
           path: stock-scanner
 
       - uses: actions/setup-python@v5
