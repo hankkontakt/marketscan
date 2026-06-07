@@ -233,7 +233,7 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
         .maybe_single()
         .execute()
     )
-    if not result.data:
+    if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte")
     return result.data
 
@@ -286,8 +286,8 @@ async def get_price_history(ticker: str, sb=Depends(get_supabase)):
 
     # 3. Fallback: mock candles
     try:
-        row = sb.table("scan_results").select("price").eq("ticker", t).single().execute()
-        current_price = row.data.get("price") if row.data else None
+        row = sb.table("scan_results").select("price").eq("ticker", t).maybe_single().execute()
+        current_price = row.data.get("price") if row and row.data else None
     except Exception as inner_e:
         logger.warning("Could not fetch current price for %s: %s", ticker, inner_e)
         current_price = None
@@ -307,8 +307,8 @@ async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabas
     except Exception as e:
         logger.warning("R2 score history unavailable for %s — falling back to mock data: %s", ticker, e)
         try:
-            row = sb.table("scan_results").select("score_total").eq("ticker", t).single().execute()
-            current_score = row.data.get("score_total") if row.data else 65.0
+            row = sb.table("scan_results").select("score_total").eq("ticker", t).maybe_single().execute()
+            current_score = row.data.get("score_total") if row and row.data else 65.0
         except Exception as inner_e:
             logger.warning("Could not fetch current score for %s: %s", ticker, inner_e)
             current_score = 65.0
@@ -602,7 +602,7 @@ async def get_piotroski_detail(ticker: str, sb=Depends(get_supabase)):
     t = _validate_ticker(ticker)
     row = sb.table("scan_results").select(
         "piotroski_f,roa,debt_to_equity,current_ratio,gross_margin,roe,operating_margin"
-    ).eq("ticker", t).single().execute()
+    ).eq("ticker", t).maybe_single().execute()
 
     if not row.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte")

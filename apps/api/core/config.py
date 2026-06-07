@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     # App
     ENVIRONMENT: str = "development"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "https://marketscan.vercel.app"]
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "https://marketscan.vercel.app", "https://web-hankkontakts-projects.vercel.app"]
 
 
 @lru_cache
