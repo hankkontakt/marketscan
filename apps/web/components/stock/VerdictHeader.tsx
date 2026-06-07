@@ -204,9 +204,13 @@ export function VerdictHeader({ stock }: Props) {
           </div>
         )}
 
-        <span className="ml-auto text-xs text-[var(--color-text-muted)]">
-          Tillförlitlighet: {stock.confidence_label ?? "—"}
-        </span>
+        {stock.confidence_label === "Hög" || stock.confidence_label === "Medel" ? (
+          <span className="ml-auto text-xs text-[var(--color-text-muted)]">
+            Tillförlitlighet
+            <InfoTooltip text="Modellens förtroende för sin 30-dagars prisprognos. Hög = stark signal. Låg = osäker prognos (påverkar inte övrig analys)." side="bottom" />
+            : {stock.confidence_label}
+          </span>
+        ) : null}
       </div>
     </div>
   );
