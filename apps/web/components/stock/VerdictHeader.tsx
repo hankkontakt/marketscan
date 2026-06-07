@@ -79,11 +79,11 @@ export function VerdictHeader({ stock }: Props) {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-3">
-            <span className="font-mono font-bold text-lg text-[var(--color-text-primary)]">
-              {stock.ticker}
-            </span>
-            <span className="text-sm text-[var(--color-text-secondary)]">
+            <span className="text-lg font-bold text-[var(--color-text-primary)]">
               {stock.name}
+            </span>
+            <span className="font-mono text-sm text-[var(--color-text-secondary)]">
+              {stock.ticker}
             </span>
           </div>
           <div className="flex items-center gap-3 mt-1.5 flex-wrap">

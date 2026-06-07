@@ -198,8 +198,8 @@ export function PortfoljView() {
                   <td className="px-4 py-3">
                     <Link href={`/aktie/${h.ticker}`}
                           className="hover:text-[var(--color-accent)] transition-colors">
-                      <div className="font-mono font-semibold text-[var(--color-text-primary)]">{h.ticker}</div>
-                      <div className="text-[var(--color-text-muted)] text-[11px] truncate max-w-28">{h.name}</div>
+                      <div className="font-semibold text-[var(--color-text-primary)] truncate max-w-36">{h.name}</div>
+                      <div className="font-mono text-[var(--color-text-muted)] text-[11px] mt-0.5">{h.ticker}</div>
                     </Link>
                   </td>
                   <td className="px-4 py-3 tabular font-mono text-[var(--color-text-secondary)]">
