@@ -168,23 +168,60 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
 
 @router.get("/{ticker}/price-history", response_model=PriceHistoryOut)
 async def get_price_history(ticker: str, sb=Depends(get_supabase)):
-    """OHLCV data from R2 for TradingView Lightweight Charts.
-    Falls back to generated mock data when R2 is not configured."""
+    """OHLCV data from Finnhub API, with fallback to R2/DuckDB then mock data."""
     t = _validate_ticker(ticker)
+
+    # 1. Try Finnhub API for real price data
+    if settings.FINNHUB_API_KEY:
+        try:
+            today = date.today()
+            one_year_ago = today - timedelta(days=365)
+            url = (
+                f"https://finnhub.io/api/v1/stock/candle"
+                f"?symbol={t}"
+                f"&resolution=D"
+                f"&from={int((today - timedelta(days=400)).timestamp())}"
+                f"&to={int(today.timestamp())}"
+            )
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("s") == "ok" and data.get("t"):
+                    candles = [
+                        {
+                            "time": datetime.fromtimestamp(data["t"][i]).strftime("%Y-%m-%d"),
+                            "open": round(data["o"][i], 2),
+                            "high": round(data["h"][i], 2),
+                            "low":  round(data["l"][i], 2),
+                            "close": round(data["c"][i], 2),
+                            "volume": data["v"][i],
+                        }
+                        for i in range(len(data["t"]))
+                        if datetime.fromtimestamp(data["t"][i]).weekday() < 6
+                    ]
+                    if len(candles) >= 10:
+                        return {"ticker": ticker, "candles": candles}
+        except Exception as e:
+            logger.warning("Finnhub price history failed for %s: %s", ticker, e)
+
+    # 2. Try R2/DuckDB
     try:
         data = query_price_history(t)
         return {"ticker": ticker, "candles": data}
     except Exception as e:
         logger.warning("R2 price history unavailable for %s — falling back to mock data: %s", ticker, e)
-        try:
-            row = sb.table("scan_results").select("price").eq("ticker", t).single().execute()
-            current_price = row.data.get("price") if row.data else None
-        except Exception as inner_e:
-            logger.warning("Could not fetch current price for %s: %s", ticker, inner_e)
-            current_price = None
 
-        candles = _generate_mock_candles(t, current_price or 100.0)
-        return {"ticker": ticker, "candles": candles, "is_synthetic": True}
+    # 3. Fallback: mock candles
+    try:
+        row = sb.table("scan_results").select("price").eq("ticker", t).single().execute()
+        current_price = row.data.get("price") if row.data else None
+    except Exception as inner_e:
+        logger.warning("Could not fetch current price for %s: %s", ticker, inner_e)
+        current_price = None
+
+    candles = _generate_mock_candles(t, current_price or 100.0)
+    return {"ticker": ticker, "candles": candles, "is_synthetic": True}
 
 
 @router.get("/{ticker}/score-history", response_model=ScoreHistoryOut)
