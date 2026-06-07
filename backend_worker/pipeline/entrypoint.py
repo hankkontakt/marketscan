@@ -153,15 +153,38 @@ def run(mode: str) -> None:
     error_msg = None
 
     try:
-        # Import existing scoring engine
+        # Import existing scoring engine.
+        # run_pipeline() saves scored data to disk (reports/scored_universe_DATE.parquet)
+        # but does NOT return it. In "manual" mode it only re-generates the AI report
+        # from existing data — it does not re-scan the universe.
+        # We always run "morning" for the actual scoring step so fresh data is fetched,
+        # then fall back to reading the latest parquet from disk.
         from core.daily_pipeline import run_pipeline
-        result = run_pipeline(mode)
+        scan_mode = "morning" if mode == "manual" else mode
+        result = run_pipeline(scan_mode)
+
+        # run_pipeline() returns None — load the parquet it just saved instead.
+        if result is None or not (hasattr(result, "empty") and not result.empty):
+            import core as _core_pkg
+            from pathlib import Path
+            import pandas as pd
+            report_dir = Path(_core_pkg.__file__).parent.parent / "reports"
+            parquet_files = sorted(report_dir.glob("scored_universe_*.parquet"), reverse=True)
+            csv_files = sorted(report_dir.glob("scored_universe_*.csv"), reverse=True)
+            if parquet_files:
+                result = pd.read_parquet(parquet_files[0])
+                logger.info("Loaded %d rows from %s", len(result), parquet_files[0].name)
+            elif csv_files:
+                result = pd.read_csv(csv_files[0])
+                logger.info("Loaded %d rows from %s (CSV fallback)", len(result), csv_files[0].name)
+            else:
+                logger.warning("Pipeline returned no data and no parquet found in %s", report_dir)
 
         if result is not None and hasattr(result, "empty") and not result.empty:
             tickers_ok = load_scan(result, dsn)
             upload_score_snapshot(result)
         else:
-            logger.warning("Pipeline returned no data")
+            logger.warning("No scored data to load into scan_results")
 
     except Exception as exc:
         logger.exception("Pipeline failed")
