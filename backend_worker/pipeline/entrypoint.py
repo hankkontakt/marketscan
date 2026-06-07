@@ -159,9 +159,40 @@ def run(mode: str) -> None:
         # from existing data — it does not re-scan the universe.
         # We always run "morning" for the actual scoring step so fresh data is fetched,
         # then fall back to reading the latest parquet from disk.
+        #
+        # IMPORTANT: run_pipeline() can hang indefinitely on AI/email steps (DeepSeek
+        # timeout, SMTP, etc.). We use SIGALRM on Linux to enforce a hard timeout.
+        # The parquet is saved BEFORE those steps, so we always have data to fall back on.
+        import signal
+
+        _PIPELINE_TIMEOUT = 55 * 60  # 55 minutes — well within the 90-min GitHub limit
+
+        def _timeout_handler(signum, frame):
+            raise RuntimeError("run_pipeline_timeout")
+
         from core.daily_pipeline import run_pipeline
         scan_mode = "morning" if mode == "manual" else mode
-        result = run_pipeline(scan_mode)
+
+        # Install alarm (Linux only — on Windows signal.alarm doesn't exist; skip gracefully)
+        _has_alarm = hasattr(signal, "SIGALRM")
+        if _has_alarm:
+            signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(_PIPELINE_TIMEOUT)
+        try:
+            result = run_pipeline(scan_mode)
+            logger.info("run_pipeline() returned normally")
+        except RuntimeError as _e:
+            if "run_pipeline_timeout" in str(_e):
+                logger.warning(
+                    "run_pipeline() timed out after %d min — reading saved parquet from disk",
+                    _PIPELINE_TIMEOUT // 60,
+                )
+                result = None
+            else:
+                raise
+        finally:
+            if _has_alarm:
+                signal.alarm(0)  # cancel any pending alarm
 
         # run_pipeline() returns None — load the parquet it just saved instead.
         if result is None or not (hasattr(result, "empty") and not result.empty):
