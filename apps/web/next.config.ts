@@ -1,4 +1,5 @@
 import withSerwistInit from "@serwist/next";
+import type { NextConfig } from "next";
 
 const withSerwist = withSerwistInit({
   swSrc: "app/sw.ts",
@@ -6,11 +7,10 @@ const withSerwist = withSerwistInit({
   disable: process.env.NODE_ENV === "development",
 });
 
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
-      { protocol: "https", hostname: "**.supabase.co" },
+      { protocol: "https", hostname: "*.supabase.co" },
     ],
   },
   devIndicators: {
