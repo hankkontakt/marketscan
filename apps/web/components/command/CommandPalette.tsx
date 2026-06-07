@@ -29,6 +29,8 @@ interface SearchResult {
   entry_signal: string | null;
   price: number | null;
   change_pct: number | null;
+  in_universe?: boolean;
+  sector?: string | null;
 }
 
 const QUICK_LINKS = [
@@ -72,7 +74,7 @@ export function CommandPalette() {
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const data = await api<SearchResult[]>(`/api/stocks?q=${encodeURIComponent(query)}&limit=8`);
+        const data = await api<SearchResult[]>(`/api/stocks/search?q=${encodeURIComponent(query)}&limit=8`);
         setResults(data);
       } catch {
         setResults([]);
@@ -136,11 +138,17 @@ export function CommandPalette() {
                     <div className="flex flex-col flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-[var(--color-text-primary)] truncate">
-                          {stock.name}
+                          {stock.name || stock.ticker}
                         </span>
                         <span className="font-mono text-[var(--color-text-secondary)] text-[11px]">
                           {stock.ticker}
                         </span>
+                        {stock.in_universe === false && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium
+                            bg-[var(--color-warn)]/10 text-[var(--color-warn)] border border-[var(--color-warn)]/20">
+                            Ny
+                          </span>
+                        )}
                       </div>
                     </div>
                     {stock.score_total != null && (

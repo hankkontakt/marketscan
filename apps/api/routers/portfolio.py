@@ -50,9 +50,21 @@ async def add_holding(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
     portfolio_id = port.data[0]["id"]
 
+    ticker = body.ticker.upper()
+
+    # If ticker not in universe, create user_ticker_request
+    exists = sb.table("scan_results").select("ticker").eq("ticker", ticker).limit(1).execute()
+    if not exists.data:
+        sb.table("user_ticker_requests").upsert({
+            "ticker": ticker,
+            "user_id": user.id,
+            "name": body.name,
+            "source": "portfolio",
+        }, on_conflict="ticker").execute()
+
     res = sb.table("holdings").insert({
         "portfolio_id": portfolio_id,
-        "ticker": body.ticker.upper(),
+        "ticker": ticker,
         "shares": body.shares,
         "cost_basis": body.cost_basis,
     }).execute()

@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from apps.api.core.ai_cache import get_cached, set_cache
 from apps.api.core.security import get_current_user, User
 from apps.api.dependencies import get_supabase, get_supabase_admin
@@ -232,6 +232,80 @@ SENTIMENTANALYTIKER:
     return response
 
 
+# ─── AI Compare ──────────────────────────────────────────────────────────────
+
+
+AI_COMPARE_SYSTEM = """Du är en analytiker som jämför 2-5 aktier.
+Analysera skillnader i: värdering, kvalitet, momentum, tillväxt, risk, sentiment.
+För varje aktie, nämn dess styrka och svaghet.
+
+Returnera JSON:
+{
+  "recommendation": "ticker för den mest attraktiva aktien just nu",
+  "reasoning": "kort motivering varför (max 200 ord på svenska)",
+  "strengths": { "TICKER": "styrka" },
+  "weaknesses": { "TICKER": "svaghet" },
+  "summary": "en mening som sammanfattar jämförelsen"
+}
+Inga generella disclaimers. Var konkret och datadriven."""
+
+
+class AICompareRequest(BaseModel):
+    tickers: list[str] = Field(..., min_length=2, max_length=5)
+    stock_datas: list[dict]
+
+
+class AICompareResponse(BaseModel):
+    ticker: str
+    recommendation: str
+    reasoning: str
+    strengths: dict[str, str]
+    weaknesses: dict[str, str]
+    summary: str
+    cached_date: str
+
+
+@router.post("/compare")
+async def ai_compare(body: AICompareRequest, sb=Depends(get_supabase), sb_admin=Depends(get_supabase_admin)):
+    """AI that compares 2-5 stocks and recommends the most attractive one."""
+    import asyncio
+
+    key = f"compare:{'-'.join(sorted(body.tickers))}:{date.today().isoformat()}"
+    cached = get_cached(key, sb_admin)
+    if cached:
+        return cached
+
+    context_lines = []
+    for td in body.stock_datas:
+        t = td.get("ticker", "")
+        context_lines.append(_build_stock_context(t, td))
+
+    context = "\n\n---\n\n".join(context_lines) or "Ingen data tillgänglig."
+
+    try:
+        raw = await _call_ai(AI_COMPARE_SYSTEM, context, max_tokens=800)
+        clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        result = json.loads(clean)
+    except Exception as e:
+        logger.warning("AI compare failed: %s", e)
+        result = {
+            "recommendation": body.tickers[0],
+            "reasoning": "Kunde inte genomföra jämförelsen just nu. Försök igen senare.",
+            "strengths": {t: "" for t in body.tickers},
+            "weaknesses": {t: "" for t in body.tickers},
+            "summary": "AI-jämförelse ej tillgänglig.",
+        }
+
+    response = {
+        "ticker": "-".join(sorted(body.tickers)),
+        **result,
+        "cached_date": date.today().isoformat(),
+    }
+
+    set_cache(key, response, sb_admin)
+    return response
+
+
 # ─── Portfolio coach ─────────────────────────────────────────────────────────
 
 PORTFOLIO_COACH_SYSTEM = """Du är en erfaren portföljrådgivare med kvantitativ bakgrund.
@@ -328,11 +402,11 @@ def _build_stock_context(ticker: str, data: dict) -> str:
     return "\n".join(lines)
 
 
-async def _call_ai(system_prompt: str, user_message: str) -> str:
+async def _call_ai(system_prompt: str, user_message: str, max_tokens: int = 500) -> str:
     """Call AI provider — currently DeepSeek."""
     from apps.api.core.deepseek_client import call_deepseek
 
-    return await call_deepseek(system_prompt, user_message, max_tokens=500, temperature=0.3)
+    return await call_deepseek(system_prompt, user_message, max_tokens=max_tokens, temperature=0.3)
 
 
 async def _call_ai_chat(system_prompt: str, context: str, messages: list[dict]) -> str:

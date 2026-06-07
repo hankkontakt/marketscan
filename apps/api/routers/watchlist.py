@@ -19,7 +19,18 @@ async def get_watchlist(user: User = Depends(get_current_user), sb=Depends(get_s
 async def add_to_watchlist(
     ticker: str, user: User = Depends(get_current_user), sb=Depends(get_supabase)
 ):
-    sb.table("watchlist").upsert({"user_id": user.id, "ticker": ticker.upper()}).execute()
+    t = ticker.upper()
+
+    # If ticker not in universe, create user_ticker_request
+    exists = sb.table("scan_results").select("ticker").eq("ticker", t).limit(1).execute()
+    if not exists.data:
+        sb.table("user_ticker_requests").upsert({
+            "ticker": t,
+            "user_id": user.id,
+            "source": "watchlist",
+        }, on_conflict="ticker").execute()
+
+    sb.table("watchlist").upsert({"user_id": user.id, "ticker": t}).execute()
     return {"ok": True}
 
 

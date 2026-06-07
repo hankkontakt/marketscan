@@ -6,6 +6,7 @@ class HoldingIn(BaseModel):
     ticker: str
     shares: float = Field(..., gt=0)
     cost_basis: float | None = None
+    name: str | None = None
 
 
 class HoldingOut(BaseModel):

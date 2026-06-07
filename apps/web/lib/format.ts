@@ -70,8 +70,30 @@ export function signalLabel(signal: string | null | undefined): string {
     OK: "Bra läge",
     VÄNTA: "Avvakta",
     EJ_AKTUELL: "Ej aktuellt",
+    EJ: "Ej aktuellt",
   };
   return map[signal ?? ""] ?? signal ?? "—";
+}
+
+export function signalShortLabel(signal: string | null | undefined): string {
+  const map: Record<string, string> = {
+    STARK: "Starkt",
+    OK: "Bra",
+    VÄNTA: "Vänta",
+    EJ_AKTUELL: "Ej aktuell",
+    EJ: "Ej aktuell",
+  };
+  return map[signal ?? ""] ?? signal ?? "—";
+}
+
+export function signalBadgeClass(signal: string | null | undefined): string {
+  const map: Record<string, string> = {
+    STARK: "bg-[var(--color-up)]/10 text-[var(--color-up)] border-[var(--color-up)]/20",
+    OK: "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border-[var(--color-accent)]/20",
+    VÄNTA: "bg-[var(--color-warn)]/10 text-[var(--color-warn)] border-[var(--color-warn)]/20",
+    EJ_AKTUELL: "bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] border-[var(--color-text-muted)]/20",
+  };
+  return map[signal ?? ""] ?? "bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)]";
 }
 
 export function signalClass(signal: string | null | undefined): string {
