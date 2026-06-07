@@ -37,10 +37,12 @@ jobs:
           # Check out the new marketscan repo
           path: marketscan
 
-      # Also check out stock-scanner-fix for core/ pipeline logic
+      # Also check out stock-scanner for core/ pipeline logic
+      # Requires GH_CHECKOUT_TOKEN secret (PAT with repo scope) to access private repo
       - uses: actions/checkout@v4
         with:
-          repository: hankkontakt/stock-scanner-fix
+          repository: hankkontakt/stock-scanner
+          token: ${{ secrets.GH_CHECKOUT_TOKEN }}
           path: stock-scanner
 
       - uses: actions/setup-python@v5
