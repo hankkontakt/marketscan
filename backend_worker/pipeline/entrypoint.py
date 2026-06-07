@@ -1,17 +1,31 @@
 """
 GitHub Actions entrypoint — bridges existing core/ logic to new storage.
-Imports from stock-scanner-fix/core/ via PYTHONPATH.
-Run: python -m backend_worker.pipeline.entrypoint --mode morning
+Imports from stock-scanner/core/ via PYTHONPATH.
+Run: python -m marketscan.backend_worker.pipeline.entrypoint --mode morning
+
+Design: for morning/evening/manual we run a FAST path that skips the
+slow steps (news fetching for 767 stocks, DeepSeek AI, SMTP email) that
+cause the pipeline to hang indefinitely. We load the existing parquet,
+update today's prices, run ML predictions, and load into Supabase.
+
+For weekly/smallcap we still call the full run_pipeline() (it does a
+real fundamentals refresh) but with a 75-minute SIGALRM hard timeout.
 """
 import sys
 import time
 import logging
 import argparse
 import os
+import signal
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _segment_from_market_cap(market_cap_millions: float | None) -> str:
     """Determine segment from Finnhub marketCapitalization (in USD millions)."""
@@ -26,17 +40,145 @@ def _segment_from_market_cap(market_cap_millions: float | None) -> str:
     return "micro_cap"
 
 
-def supplement_user_requested_tickers(dsn: str) -> None:
-    """After the main pipeline, add basic Finnhub data for user-requested tickers.
+# ---------------------------------------------------------------------------
+# Fast pipeline (morning / evening / manual)
+# ---------------------------------------------------------------------------
 
-    When a user adds a stock outside the current universe to their watchlist or
-    portfolio, it lands in user_ticker_requests. This function fetches profile +
-    quote from Finnhub for each pending ticker and inserts a basic row into
-    scan_results so the stock appears in search results on the next page load.
-
-    Only runs when FINNHUB_API_KEY is set. Non-fatal: a failure here does not
-    roll back the main pipeline run.
+def _fast_pipeline(report_dir: Path):
     """
+    Fast path for morning/evening/manual modes.
+
+    Steps:
+      1. Load latest scored parquet (or CSV) from stock-scanner/reports/
+      2. Update today's prices via yfinance batch  (~10 seconds)
+      3. Run ML predictions (XGBoost)              (~1 second)
+      4. Save updated parquet
+      5. Return the DataFrame for DB loading
+
+    This deliberately skips: news fetching, AI analysis, email — all of
+    which block indefinitely and are not needed to populate scan_results.
+    """
+    import pandas as pd
+    from datetime import date
+
+    # 1. Load latest parquet
+    parquet_files = sorted(report_dir.glob("scored_universe_*.parquet"), reverse=True)
+    csv_files     = sorted(report_dir.glob("scored_universe_*.csv"),     reverse=True)
+
+    if not parquet_files and not csv_files:
+        logger.error("No scored_universe file found in %s — cannot run fast pipeline", report_dir)
+        return None
+
+    if parquet_files:
+        df = pd.read_parquet(parquet_files[0])
+        logger.info("Loaded %d rows from %s", len(df), parquet_files[0].name)
+    else:
+        df = pd.read_csv(csv_files[0])
+        logger.info("Loaded %d rows from %s (CSV)", len(df), csv_files[0].name)
+
+    if df.empty:
+        logger.error("Loaded file is empty")
+        return None
+
+    # 2. Update prices
+    try:
+        from core.data_fetcher import fetch_prices_only, update_scored_with_prices
+        tickers = [
+            t for t in df["ticker"].dropna().unique().tolist()
+            if not str(t).startswith("^")
+        ][:300]
+        logger.info("Fetching prices for %d tickers...", len(tickers))
+        price_data = fetch_prices_only(tickers, period="6mo", max_workers=12)
+        if price_data:
+            df = update_scored_with_prices(df, price_data)
+            logger.info("Prices updated for %d tickers", len(price_data))
+        else:
+            logger.warning("fetch_prices_only returned empty — using yesterday's prices")
+    except Exception as exc:
+        logger.warning("Price update failed (using stale prices): %s", exc)
+
+    # 3. ML predictions
+    try:
+        from core.ml_predictor import predict_returns_sector
+        df_ml = predict_returns_sector(df, default_universe="universe")
+        if "predicted_return" in df_ml.columns:
+            df = df_ml
+            logger.info("ML predictions added for %d rows", len(df))
+    except Exception as exc:
+        logger.warning("ML predictions skipped: %s", exc)
+
+    # 4. Save updated parquet
+    try:
+        today_str = date.today().strftime("%Y-%m-%d")
+        out_pq  = report_dir / f"scored_universe_{today_str}.parquet"
+        out_csv = report_dir / f"scored_universe_{today_str}.csv"
+        df.to_parquet(out_pq, index=False)
+        df.to_csv(out_csv, index=False)
+        logger.info("Saved %s + .csv", out_pq.name)
+    except Exception as exc:
+        logger.warning("Could not save parquet/csv: %s", exc)
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Full pipeline with hard timeout (weekly / smallcap)
+# ---------------------------------------------------------------------------
+
+def _full_pipeline_with_timeout(mode: str, report_dir: Path, timeout_seconds: int = 75 * 60):
+    """
+    Run the full run_pipeline() (real fundamentals refresh) with a SIGALRM
+    hard timeout. On timeout we fall back to reading the latest parquet from
+    disk (which was saved by run_pipeline before it reached the slow steps).
+    """
+    import pandas as pd
+
+    def _alarm_handler(signum, frame):
+        raise RuntimeError("pipeline_sigalrm_timeout")
+
+    has_alarm = hasattr(signal, "SIGALRM")
+    if has_alarm:
+        signal.signal(signal.SIGALRM, _alarm_handler)
+        signal.alarm(timeout_seconds)
+        logger.info("SIGALRM set: %d-minute hard timeout on run_pipeline()", timeout_seconds // 60)
+
+    try:
+        from core.daily_pipeline import run_pipeline
+        result = run_pipeline(mode)
+        logger.info("run_pipeline('%s') returned normally", mode)
+    except RuntimeError as exc:
+        if "pipeline_sigalrm_timeout" in str(exc):
+            logger.warning(
+                "run_pipeline('%s') timed out after %d min — reading saved parquet from disk",
+                mode, timeout_seconds // 60,
+            )
+            result = None
+        else:
+            raise
+    finally:
+        if has_alarm:
+            signal.alarm(0)
+
+    # run_pipeline returns None — read parquet it saved during the run
+    if result is None or not (hasattr(result, "empty") and not result.empty):
+        parquet_files = sorted(report_dir.glob("scored_universe_*.parquet"), reverse=True)
+        csv_files     = sorted(report_dir.glob("scored_universe_*.csv"),     reverse=True)
+        if parquet_files:
+            result = pd.read_parquet(parquet_files[0])
+            logger.info("Loaded %d rows from %s (post-run disk read)", len(result), parquet_files[0].name)
+        elif csv_files:
+            result = pd.read_csv(csv_files[0])
+            logger.info("Loaded %d rows from %s (CSV fallback)", len(result), csv_files[0].name)
+
+    return result if (result is not None and hasattr(result, "empty") and not result.empty) else None
+
+
+# ---------------------------------------------------------------------------
+# User-requested ticker supplement
+# ---------------------------------------------------------------------------
+
+def supplement_user_requested_tickers(dsn: str) -> None:
+    """After the main pipeline, add basic Finnhub data for user-requested tickers."""
     finnhub_key = os.environ.get("FINNHUB_API_KEY", "")
     if not finnhub_key:
         logger.info("Skipping user-ticker supplement — FINNHUB_API_KEY not set")
@@ -45,20 +187,18 @@ def supplement_user_requested_tickers(dsn: str) -> None:
     try:
         import psycopg2
         import httpx
-    except ImportError as e:
-        logger.warning("Cannot run user-ticker supplement — missing dependency: %s", e)
+    except ImportError as exc:
+        logger.warning("Cannot run user-ticker supplement — missing dependency: %s", exc)
         return
 
     try:
         conn = psycopg2.connect(dsn)
-    except Exception as e:
-        logger.warning("Could not connect to DB for user-ticker supplement: %s", e)
+    except Exception as exc:
+        logger.warning("Could not connect to DB for user-ticker supplement: %s", exc)
         return
 
     try:
         cur = conn.cursor()
-
-        # Fetch pending tickers not yet added to the universe
         cur.execute(
             "SELECT DISTINCT ticker FROM user_ticker_requests WHERE added_to_universe = false"
         )
@@ -87,19 +227,17 @@ def supplement_user_requested_tickers(dsn: str) -> None:
                     )
                     quote = quote_resp.json() if quote_resp.is_success else {}
 
-                name = profile.get("name") or ticker
-                sector = profile.get("finnhubIndustry")
-                market_cap = profile.get("marketCapitalization")  # USD millions
-                price = quote.get("c")  # current price
-                change_pct = quote.get("dp")  # day change %
-                segment = _segment_from_market_cap(market_cap)
+                name       = profile.get("name") or ticker
+                sector     = profile.get("finnhubIndustry")
+                market_cap = profile.get("marketCapitalization")
+                price      = quote.get("c")
+                change_pct = quote.get("dp")
+                segment    = _segment_from_market_cap(market_cap)
 
-                # Skip if Finnhub returned no useful data (unknown ticker)
                 if not price and not profile.get("name"):
                     logger.warning("Finnhub returned no data for %s — skipping", ticker)
                     continue
 
-                # Insert basic row — skip if ticker already has a full scored row
                 cur.execute(
                     """
                     INSERT INTO scan_results
@@ -108,31 +246,23 @@ def supplement_user_requested_tickers(dsn: str) -> None:
                     ON CONFLICT (ticker) DO NOTHING
                     """,
                     (
-                        ticker,
-                        name,
-                        segment,
-                        sector,
-                        price,
-                        change_pct,
-                        (market_cap * 1_000_000) if market_cap else None,  # store in USD
+                        ticker, name, segment, sector, price, change_pct,
+                        (market_cap * 1_000_000) if market_cap else None,
                     ),
                 )
-
-                # Mark request as processed
                 cur.execute(
                     "UPDATE user_ticker_requests SET added_to_universe = true WHERE ticker = %s",
                     (ticker,),
                 )
                 conn.commit()
-                logger.info("Added user-requested ticker %s (%s, %s) to scan_results", ticker, name, segment)
+                logger.info("Added user-requested ticker %s (%s, %s)", ticker, name, segment)
 
-            except Exception as e:
-                logger.warning("Failed to supplement ticker %s: %s", ticker, e)
+            except Exception as exc:
+                logger.warning("Failed to supplement ticker %s: %s", ticker, exc)
                 try:
                     conn.rollback()
                 except Exception:
                     pass
-
     finally:
         try:
             conn.close()
@@ -140,78 +270,33 @@ def supplement_user_requested_tickers(dsn: str) -> None:
             pass
 
 
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
 def run(mode: str) -> None:
     from backend_worker.db_loader import load_scan, log_pipeline_run
     from backend_worker.r2_uploader import upload_score_snapshot
 
-    # Start pipeline run log
     dsn = os.environ["DATABASE_URL"]
     log_pipeline_run(mode, "running", dsn=dsn)
 
     t0 = time.time()
     tickers_ok = tickers_err = 0
-    error_msg = None
+    error_msg  = None
 
     try:
-        # Import existing scoring engine.
-        # run_pipeline() saves scored data to disk (reports/scored_universe_DATE.parquet)
-        # but does NOT return it. In "manual" mode it only re-generates the AI report
-        # from existing data — it does not re-scan the universe.
-        # We always run "morning" for the actual scoring step so fresh data is fetched,
-        # then fall back to reading the latest parquet from disk.
-        #
-        # IMPORTANT: run_pipeline() can hang indefinitely on AI/email steps (DeepSeek
-        # timeout, SMTP, etc.). We use SIGALRM on Linux to enforce a hard timeout.
-        # The parquet is saved BEFORE those steps, so we always have data to fall back on.
-        import signal
+        import core as _core_pkg
+        report_dir = Path(_core_pkg.__file__).parent.parent / "reports"
 
-        _PIPELINE_TIMEOUT = 55 * 60  # 55 minutes — well within the 90-min GitHub limit
+        if mode in ("morning", "evening", "manual"):
+            # Fast path: prices + ML only, no news/AI/email
+            result = _fast_pipeline(report_dir)
+        else:
+            # weekly / smallcap: full pipeline with hard timeout
+            result = _full_pipeline_with_timeout(mode, report_dir, timeout_seconds=75 * 60)
 
-        def _timeout_handler(signum, frame):
-            raise RuntimeError("run_pipeline_timeout")
-
-        from core.daily_pipeline import run_pipeline
-        scan_mode = "morning" if mode == "manual" else mode
-
-        # Install alarm (Linux only — on Windows signal.alarm doesn't exist; skip gracefully)
-        _has_alarm = hasattr(signal, "SIGALRM")
-        if _has_alarm:
-            signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(_PIPELINE_TIMEOUT)
-        try:
-            result = run_pipeline(scan_mode)
-            logger.info("run_pipeline() returned normally")
-        except RuntimeError as _e:
-            if "run_pipeline_timeout" in str(_e):
-                logger.warning(
-                    "run_pipeline() timed out after %d min — reading saved parquet from disk",
-                    _PIPELINE_TIMEOUT // 60,
-                )
-                result = None
-            else:
-                raise
-        finally:
-            if _has_alarm:
-                signal.alarm(0)  # cancel any pending alarm
-
-        # run_pipeline() returns None — load the parquet it just saved instead.
-        if result is None or not (hasattr(result, "empty") and not result.empty):
-            import core as _core_pkg
-            from pathlib import Path
-            import pandas as pd
-            report_dir = Path(_core_pkg.__file__).parent.parent / "reports"
-            parquet_files = sorted(report_dir.glob("scored_universe_*.parquet"), reverse=True)
-            csv_files = sorted(report_dir.glob("scored_universe_*.csv"), reverse=True)
-            if parquet_files:
-                result = pd.read_parquet(parquet_files[0])
-                logger.info("Loaded %d rows from %s", len(result), parquet_files[0].name)
-            elif csv_files:
-                result = pd.read_csv(csv_files[0])
-                logger.info("Loaded %d rows from %s (CSV fallback)", len(result), csv_files[0].name)
-            else:
-                logger.warning("Pipeline returned no data and no parquet found in %s", report_dir)
-
-        if result is not None and hasattr(result, "empty") and not result.empty:
+        if result is not None and not result.empty:
             tickers_ok = load_scan(result, dsn)
             upload_score_snapshot(result)
         else:
@@ -219,26 +304,25 @@ def run(mode: str) -> None:
 
     except Exception as exc:
         logger.exception("Pipeline failed")
-        error_msg = str(exc)[:500]
+        error_msg  = str(exc)[:500]
         tickers_err = 1
         raise
     finally:
         duration = round(time.time() - t0, 1)
-        status = "failed" if error_msg else "success"
+        status   = "failed" if error_msg else "success"
         log_pipeline_run(mode, status, tickers_ok, tickers_err, duration, error_msg, dsn)
         logger.info("Pipeline %s finished in %ss", mode, duration)
 
-    # After successful main run: add basic data for user-requested tickers
     if not error_msg:
         try:
             supplement_user_requested_tickers(dsn)
-        except Exception as e:
-            logger.warning("User-ticker supplement step failed (non-fatal): %s", e)
+        except Exception as exc:
+            logger.warning("User-ticker supplement failed (non-fatal): %s", exc)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", default="morning",
-                        choices=["morning", "evening", "weekly", "manual"])
+                        choices=["morning", "evening", "weekly", "manual", "smallcap"])
     args = parser.parse_args()
     run(args.mode)
