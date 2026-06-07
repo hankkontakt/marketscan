@@ -57,6 +57,16 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
     for col in [c for c in df.columns if c.startswith("score_")]:
         df[col] = df[col].clip(0, 100)
 
+    # Cast integer columns — parquet stores these as float (e.g. 12.8 → 13)
+    # Postgres INTEGER columns reject non-integer strings from COPY.
+    for int_col in ("ml_rank", "piotroski_f"):
+        if int_col in df.columns:
+            df[int_col] = (
+                pd.to_numeric(df[int_col], errors="coerce")
+                .round()
+                .astype("Int64")   # nullable int — NaN stays NULL, not "nan"
+            )
+
     # Map legacy entry_signal strings — must match CHECK constraint values
     signal_map = {
         "STARK": "STARK", "OK": "OK",
