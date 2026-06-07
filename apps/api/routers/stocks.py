@@ -3,6 +3,7 @@ GET /stocks/{ticker} — detailed stock view.
 Hot data from Postgres, cold (price history, score history) from R2/DuckDB.
 Falls back to generated mock data when R2 is not configured.
 """
+import asyncio
 import re
 import random
 import math
@@ -197,35 +198,60 @@ async def lookup_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
             for row in universe_res.data
         ]
 
-    # 2. Try Finnhub profile lookup for ticker not in universe
+    # 2. Finnhub symbol search — supports partial ticker AND company name
     if settings.FINNHUB_API_KEY:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(
-                    f"https://finnhub.io/api/v1/stock/profile2?symbol={safe_q.upper()}",
+                    "https://finnhub.io/api/v1/search",
+                    params={"q": safe_q},
                     headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
                 )
                 resp.raise_for_status()
-                profile = resp.json()
-                if profile and profile.get("ticker"):
-                    return [StockLookupResult(
-                        ticker=profile["ticker"].upper(),
-                        name=profile.get("name"),
-                        sector=profile.get("finnhubIndustry"),
-                        market_cap=profile.get("marketCapitalization"),
-                        in_universe=False,
-                    )]
+                data = resp.json()
+                symbol_results = data.get("result", [])
+                if symbol_results:
+                    return [
+                        StockLookupResult(
+                            ticker=r["symbol"],
+                            name=r.get("description"),
+                            in_universe=False,
+                        )
+                        for r in symbol_results[:limit]
+                        if r.get("symbol")
+                    ]
         except Exception as e:
-            logger.debug("Finnhub lookup failed for %s: %s", safe_q, e)
+            logger.debug("Finnhub symbol search failed for %s: %s", safe_q, e)
 
     # 3. No match anywhere
     return []
 
 
+def _segment_from_market_cap(market_cap_millions: float | None) -> str:
+    """Determine segment string from Finnhub marketCapitalization (USD millions)."""
+    if market_cap_millions is None:
+        return "small_cap"
+    if market_cap_millions >= 10_000:
+        return "large_cap"
+    if market_cap_millions >= 1_000:
+        return "mid_cap"
+    if market_cap_millions >= 100:
+        return "small_cap"
+    return "micro_cap"
+
+
 @router.get("/{ticker}", response_model=ScanRow)
 async def get_stock(ticker: str, sb=Depends(get_supabase)):
-    """Current scan data for a single ticker."""
+    """Current scan data for a single ticker.
+
+    Returns full scored data when ticker is in the universe.
+    Falls back to basic Finnhub profile data when ticker is unknown —
+    so the stock page still loads with name/price/sector while the user
+    waits for the next pipeline run to add it properly.
+    """
     t = _validate_ticker(ticker)
+
+    # 1. Try universe (scan_results) — fast path, most requests
     result = (
         sb.table("scan_results")
         .select("*")
@@ -233,9 +259,45 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
         .maybe_single()
         .execute()
     )
-    if result is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte")
-    return result.data
+    if result is not None and result.data:
+        return result.data
+
+    # 2. Ticker not in universe — fetch basic profile from Finnhub
+    if settings.FINNHUB_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                profile_resp, quote_resp = await asyncio.gather(
+                    client.get(
+                        "https://finnhub.io/api/v1/stock/profile2",
+                        params={"symbol": t},
+                        headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
+                    ),
+                    client.get(
+                        "https://finnhub.io/api/v1/quote",
+                        params={"symbol": t},
+                        headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
+                    ),
+                )
+            profile = profile_resp.json() if profile_resp.is_success else {}
+            quote = quote_resp.json() if quote_resp.is_success else {}
+
+            if profile.get("name"):
+                cap_m = profile.get("marketCapitalization")
+                return {
+                    "ticker": t,
+                    "name": profile["name"],
+                    "segment": _segment_from_market_cap(cap_m),
+                    "sector": profile.get("finnhubIndustry"),
+                    "country": profile.get("country", ""),
+                    "price": quote.get("c"),
+                    "change_pct": quote.get("dp"),
+                    "market_cap": cap_m * 1_000_000 if cap_m else None,
+                    # All score fields left as None — stock not yet scored
+                }
+        except Exception as e:
+            logger.debug("Finnhub fallback for get_stock(%s) failed: %s", t, e)
+
+    raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte")
 
 
 @router.get("/{ticker}/price-history", response_model=PriceHistoryOut)
@@ -314,58 +376,6 @@ async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabas
             current_score = 65.0
         history = _generate_mock_score_history(t, float(current_score or 65), limit)
         return {"ticker": ticker, "history": history, "is_synthetic": True}
-
-
-@router.get("/search", response_model=list[StockLookupResult])
-async def lookup_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
-    """Search stocks across universe AND external sources.
-
-    First searches scan_results (the universe). If no matches found,
-    falls back to Finnhub to look up the ticker by symbol.
-    Returns in_universe flag so frontend can show appropriate messaging.
-    """
-    safe_q = safe_search(q)
-    if not safe_q:
-        return []
-
-    # 1. Search universe first
-    universe_res = (
-        sb.table("scan_results")
-        .select("ticker, name, segment, sector, score_total, entry_signal, price, change_pct, market_cap")
-        .or_(f"ticker.ilike.%{safe_q}%,name.ilike.%{safe_q}%")
-        .order("score_total", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    if universe_res.data:
-        return [
-            StockLookupResult(**row, in_universe=True)
-            for row in universe_res.data
-        ]
-
-    # 2. Try Finnhub profile lookup for ticker not in universe
-    if settings.FINNHUB_API_KEY:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(
-                    f"https://finnhub.io/api/v1/stock/profile2?symbol={safe_q.upper()}",
-                    headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
-                )
-                resp.raise_for_status()
-                profile = resp.json()
-                if profile and profile.get("ticker"):
-                    return [StockLookupResult(
-                        ticker=profile["ticker"].upper(),
-                        name=profile.get("name"),
-                        sector=profile.get("finnhubIndustry"),
-                        market_cap=profile.get("marketCapitalization"),
-                        in_universe=False,
-                    )]
-        except Exception as e:
-            logger.debug("Finnhub lookup failed for %s: %s", safe_q, e)
-
-    # 3. No match anywhere
-    return []
 
 
 @router.get("", response_model=list[StockSearchResult])

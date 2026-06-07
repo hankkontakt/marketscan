@@ -911,6 +911,24 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 
 > Nyaste överst. Format: `YYYY-MM-DD — beskrivning (fil)`.
 
+### 2026-06-07 — Bugfix: Kalender + universell aktiesökning
+
+**Kalender (dividender fixade):**
+- `routers/calendar.py`: `GET /calendar/dividends` — bytt från `dividend-calendar` (finns ej i Finnhub) till `dividend2?symbol={ticker}` per-ticker. Hämtar top-25 universe-tickers parallellt med asyncio.gather och aggregerar resultat. Lade till `get_supabase`-dependency för att läsa tickers.
+- `routers/calendar.py`: `GET /calendar/earnings` — tog bort `symbol: ""` (onödig parameter), låter Finnhub returnera globala resultat (fungerar på free tier).
+- `routers/calendar.py`: `GET /calendar/economic` — behåller endpoint men kommenterar att premium Finnhub krävs; returnerar tomt med graceful fallback.
+
+**Universell sökning (aktier utanför universum):**
+- `routers/stocks.py`: Finnhub-fallback i `GET /stocks/search` bytt från `profile2?symbol=` (kräver exakt ticker) till `/search?q=` (fuzzy-sökning på namn + ticker — works for any stock globally).
+- `routers/stocks.py`: `GET /stocks/{ticker}` — faller nu tillbaka på Finnhub profile2+quote för okända aktier, returnerar partial ScanRow (utan scores) istället för 404. Sidan laddas för alla aktier.
+- `routers/stocks.py`: Duplicerad `@router.get("/search")` (linje ~319) borttagen — FastAPI använde bara den första; den andra var död kod.
+- Lade till `import asyncio` i stocks.py.
+
+**Auto-kö för universe-expansion:**
+- `routers/watchlist.py`: Bytt till admin-klient (`get_supabase_admin`) för `user_ticker_requests` upsert — user-klienten saknar UPDATE-policy (bara INSERT) vilket orsakade tyst fel vid konflikt. Lade till logging.
+- `routers/portfolio.py`: Samma fix — importerade `get_supabase_admin`, använder den för `user_ticker_requests` upsert med non-fatal error handling.
+- `backend_worker/pipeline/entrypoint.py`: Ny funktion `supplement_user_requested_tickers(dsn)` — körs efter main pipeline, hämtar Finnhub profile+quote för varje pending user_ticker_request, insertar basic row i scan_results (ON CONFLICT DO NOTHING), markerar `added_to_universe=true`. Kräver `FINNHUB_API_KEY` och `psycopg2` i worker.
+
 ### 2026-06-07 — Fas 6: Funktionell expansion (stor)
 
 **Arkitektur-grund:**

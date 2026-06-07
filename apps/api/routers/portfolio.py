@@ -6,7 +6,7 @@ from collections import Counter
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from apps.api.dependencies import get_user_supabase
+from apps.api.dependencies import get_user_supabase, get_supabase_admin
 from apps.api.core.security import get_current_user, User
 from apps.api.schemas.portfolio import HoldingIn, HoldingOut, PortfolioOut
 from apps.api.core.enrichment import enrich_with_scan_data
@@ -46,6 +46,7 @@ async def add_holding(
     body: HoldingIn,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
+    sb_admin=Depends(get_supabase_admin),
 ):
     port = (
         sb.table("portfolios").select("id").eq("user_id", user.id)
@@ -57,15 +58,32 @@ async def add_holding(
 
     ticker = body.ticker.upper()
 
-    # If ticker not in universe, create user_ticker_request
-    exists = sb.table("scan_results").select("ticker").eq("ticker", ticker).limit(1).execute()
-    if not exists.data:
-        sb.table("user_ticker_requests").upsert({
-            "ticker": ticker,
-            "user_id": user.id,
-            "name": body.name,
-            "source": "portfolio",
-        }, on_conflict="ticker").execute()
+    # If ticker not in universe, queue it for the next pipeline run.
+    # Uses admin client because regular users lack the UPDATE policy on
+    # user_ticker_requests (needed for upsert on conflict).
+    try:
+        exists = (
+            sb.table("scan_results")
+            .select("ticker")
+            .eq("ticker", ticker)
+            .limit(1)
+            .execute()
+        )
+        if not exists.data:
+            sb_admin.table("user_ticker_requests").upsert(
+                {
+                    "ticker": ticker,
+                    "user_id": user.id,
+                    "name": body.name,
+                    "source": "portfolio",
+                    "added_to_universe": False,
+                },
+                on_conflict="ticker",
+            ).execute()
+            logger.info("Queued out-of-universe ticker %s (portfolio) for next pipeline run", ticker)
+    except Exception as e:
+        # Non-fatal — holding is still saved
+        logger.debug("Could not queue ticker request for %s: %s", ticker, e)
 
     res = sb.table("holdings").insert({
         "portfolio_id": portfolio_id,
