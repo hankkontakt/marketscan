@@ -5,12 +5,8 @@
 
 import { createClient } from "@/lib/supabase/client";
 
-// In production, frontend and API are on the same domain via vercel.json rewrites.
-// NEXT_PUBLIC_API_URL should only be set in local dev (localhost:8000).
-const API_BASE =
-  process.env.NODE_ENV === "production"
-    ? ""
-    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
+// Production: API and frontend are separate Vercel projects
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   constructor(
