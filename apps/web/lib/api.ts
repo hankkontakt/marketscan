@@ -5,8 +5,10 @@
 
 import { createClient } from "@/lib/supabase/client";
 
-// Production: API and frontend are separate Vercel projects
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// API is served at /api/* on the same Vercel deployment as the frontend.
+// Empty string → relative URLs work in both production and SSR.
+// For local dev, set NEXT_PUBLIC_API_URL=http://localhost:8000 in .env.local.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export class ApiError extends Error {
   constructor(
