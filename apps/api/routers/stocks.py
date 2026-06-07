@@ -18,7 +18,7 @@ from apps.api.core.search_utils import safe_search
 
 logger = logging.getLogger(__name__)
 
-_TICKER_RE = re.compile(r"^[A-Za-z0-9.\-]{1,20}$")
+_TICKER_RE = re.compile(r"^[A-Za-z0-9.\-\s]{1,20}$")
 
 
 def _validate_ticker(ticker: str) -> str:
@@ -425,8 +425,36 @@ async def compare_stocks(body: CompareRequest, sb=Depends(get_supabase)):
     # Get snapshot data for each validated ticker
     row_map = {r["ticker"]: r for r in rows}
 
-    # Return validated & uppercased tickers
+    # For tickers not in scan_results, try Finnhub
     validated = [t.upper() for t in tickers]
+    missing = [t for t in validated if t not in row_map]
+    if missing and settings.FINNHUB_API_KEY:
+        for t in missing:
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(
+                        "https://finnhub.io/api/v1/stock/profile2",
+                        params={"symbol": t},
+                        headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
+                    )
+                    profile = resp.json()
+                    quote_resp = await client.get(
+                        "https://finnhub.io/api/v1/quote",
+                        params={"symbol": t},
+                        headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
+                    )
+                    quote = quote_resp.json()
+                if profile and profile.get("ticker"):
+                    row_map[t] = {
+                        "ticker": t,
+                        "name": profile.get("name"),
+                        "sector": profile.get("finnhubIndustry"),
+                        "price": quote.get("c"),
+                        "change_pct": quote.get("dp"),
+                        "market_cap": profile.get("marketCapitalization"),
+                    }
+            except Exception:
+                pass  # leave as None — compare will show empty for this ticker
 
     metric_defs = [
         ("Totalbetyg", "score_total"),
