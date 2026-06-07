@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { MetricCard } from "@/components/ui/MetricCard";
-import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check, TrendingUp, Building2, Target } from "lucide-react";
-import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk } from "@/hooks/usePortfolio";
+import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check, TrendingUp, Building2, Target, Receipt, BarChart3 } from "lucide-react";
+import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk, useTransactions, useTWR, useDeleteTransaction } from "@/hooks/usePortfolio";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import {
@@ -316,8 +316,117 @@ export function PortfoljView() {
           </div>
         </div>
       )}
+
+      {/* TWR Section */}
+      {holdings.length > 0 && (
+        <TWRSection />
+      )}
+
+      {/* Transaction Log */}
+      {holdings.length > 0 && (
+        <TransactionSection />
+      )}
     </div>
   );
+}
+
+function TWRSection() {
+  const { data: twr, isLoading } = useTWR();
+
+  if (isLoading) return <div className="skeleton h-20 rounded-xl" />;
+
+  return (
+    <div className="rounded-xl p-5 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+      <div className="flex items-center gap-2 mb-4">
+        <BarChart3 size={15} strokeWidth={1.5} className="text-[var(--color-accent)]" />
+        <h2 className="text-sm font-medium text-[var(--color-text-primary)]">Avkastning</h2>
+        <InfoTooltip text="Tidsviktad avkastning (TWR) — visar portföljens prestation utan att snedvridas av insättningar och uttag." />
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <MetricCard
+          label="TWR (total)"
+          value={twr?.twr != null ? `${twr.twr >= 0 ? "+" : ""}${twr.twr.toFixed(1)}%` : "—"}
+          tooltip="Tidsviktad avkastning sedan start. Den mest rättvisande metoden."
+          variant={twr?.twr != null ? (twr.twr >= 0 ? "positive" : "negative") : "default"}
+        />
+        {twr?.periods && Object.entries(twr.periods).map(([label, value]) => (
+          <MetricCard
+            key={label}
+            label={label}
+            value={value != null ? `${value >= 0 ? "+" : ""}${value.toFixed(1)}%` : "—"}
+            variant={value != null ? (value >= 0 ? "positive" : "negative") : "default"}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TransactionSection() {
+  const { data: txData } = useTransactions();
+  const deleteTx = useDeleteTransaction();
+  const transactions = txData?.transactions ?? [];
+
+  if (transactions.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border overflow-hidden border-[var(--color-border)]">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)]">
+        <Receipt size={15} strokeWidth={1.5} className="text-[var(--color-accent)]" />
+        <h2 className="text-sm font-medium text-[var(--color-text-primary)]">Transaktionslogg</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
+              {["Datum", "Typ", "Ticker", "Antal", "Pris", "Belopp", "Anteckning", ""].map((h) => (
+                <th key={h} className="px-4 py-2.5 text-left text-[11px] font-medium text-[var(--color-text-muted)]">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.slice(0, 20).map((tx) => (
+              <tr key={tx.id} className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
+                <td className="px-4 py-3 text-[var(--color-text-secondary)]">
+                  {new Date(tx.traded_at).toLocaleDateString("sv-SE")}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={cn(
+                    "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                    tx.type === "buy" || tx.type === "deposit" ? "text-[var(--color-up)]" : "text-[var(--color-down)]",
+                  )}>
+                    {tx.type === "buy" ? "Köp" : tx.type === "sell" ? "Sälj" : tx.type === "deposit" ? "Insättning" : "Uttag"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 font-mono text-[var(--color-text-primary)]">{tx.ticker}</td>
+                <td className="px-4 py-3 font-mono tabular text-[var(--color-text-secondary)]">
+                  {tx.shares != null ? tx.shares : "—"}
+                </td>
+                <td className="px-4 py-3 font-mono tabular text-[var(--color-text-secondary)]">
+                  {tx.price != null ? `${tx.price.toFixed(2)} kr` : "—"}
+                </td>
+                <td className="px-4 py-3 font-mono tabular text-[var(--color-text-primary)]">
+                  {tx.amount != null ? `${tx.amount.toFixed(2)} kr` : "—"}
+                </td>
+                <td className="px-4 py-3 text-[var(--color-text-muted)] max-w-24 truncate">{tx.note ?? "—"}</td>
+                <td className="px-4 py-3">
+                  <button
+                    onClick={() => deleteTx.mutate(tx.id)}
+                    className="text-[var(--color-text-muted)] hover:text-[var(--color-down)] transition-colors"
+                    aria-label="Ta bort transaktion"
+                  >
+                    <Trash2 size={12} strokeWidth={1.5} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 }
 
 function EmptyPortfolio({ onAddClick }: { onAddClick: () => void }) {

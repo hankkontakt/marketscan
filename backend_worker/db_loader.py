@@ -57,7 +57,7 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
     for col in [c for c in df.columns if c.startswith("score_")]:
         df[col] = df[col].clip(0, 100)
 
-    # Map legacy entry_signal strings
+    # Map legacy entry_signal strings — must match CHECK constraint values
     signal_map = {
         "STARK": "STARK", "OK": "OK",
         "VÄNTA": "VÄNTA", "EJ AKTUELL": "EJ_AKTUELL",
@@ -65,6 +65,28 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
     }
     if "entry_signal" in df.columns:
         df["entry_signal"] = df["entry_signal"].map(signal_map).fillna("EJ_AKTUELL")
+
+    # P1-2: Normalize confidence_label — raw pipeline uses caps Swedish ('HÖG', 'MEDEL', 'LÅG')
+    # CHECK constraint requires title-case ('Hög', 'Medel', 'Låg')
+    confidence_map = {
+        "HÖG": "Hög", "MEDEL": "Medel", "LÅG": "Låg",
+        "Hög": "Hög", "Medel": "Medel", "Låg": "Låg",
+    }
+    if "confidence_label" in df.columns:
+        df["confidence_label"] = df["confidence_label"].map(confidence_map)
+        # NULL is allowed — leave unknown values as None (NaN)
+
+    # P1-2: Normalize trend_signal — raw pipeline uses 'UPPTREND', 'NEDTREND', 'VARNING', 'SIDLED'
+    # CHECK constraint requires 'Upptrend', 'Nedtrend', 'Sidled'; VARNING has no valid mapping → NULL
+    trend_map = {
+        "UPPTREND": "Upptrend", "NEDTREND": "Nedtrend",
+        "SIDLED": "Sidled",
+        "Upptrend": "Upptrend", "Nedtrend": "Nedtrend", "Sidled": "Sidled",
+        "VARNING": None,  # No valid CHECK value — store as NULL
+    }
+    if "trend_signal" in df.columns:
+        df["trend_signal"] = df["trend_signal"].map(trend_map)
+        # Values not in map become NaN → NULL in Postgres (allowed by schema)
 
     # Keep only known columns; add missing ones as NULL
     for col in SCAN_COLUMNS:

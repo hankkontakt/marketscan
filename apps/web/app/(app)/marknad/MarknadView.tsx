@@ -2,6 +2,7 @@
 
 import { TrendingUp, Globe, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { scoreColorClass } from "@/lib/format";
 import { SectorHeatmap, GlobalIndexPanel, useSectorOverview, useGlobalIndices } from "@/hooks/useMarkets";
 
 export function MarknadView() {
@@ -112,8 +113,4 @@ export function MarknadView() {
   );
 }
 
-function scoreColorClass(score: number): string {
-  if (score >= 70) return "text-[var(--color-score-high)]";
-  if (score >= 50) return "text-[var(--color-score-mid)]";
-  return "text-[var(--color-score-low)]";
-}
+// P2-3: Removed local duplicate — using shared scoreColorClass from @/lib/format

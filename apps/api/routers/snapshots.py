@@ -1,7 +1,7 @@
 """Portfolio snapshots — daily value tracking for period returns."""
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from apps.api.dependencies import get_supabase
+from apps.api.dependencies import get_user_supabase as get_supabase
 from apps.api.core.security import get_current_user, User
 from apps.api.schemas.portfolio import PeriodReturn, PortfolioHistoryOut, SnapshotOut
 

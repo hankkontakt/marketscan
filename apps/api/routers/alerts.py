@@ -1,7 +1,7 @@
 """Price alerts — create, list, delete, and manual trigger."""
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
-from apps.api.dependencies import get_supabase, get_supabase_admin
+from apps.api.dependencies import get_user_supabase, get_supabase_admin
 from apps.api.core.security import get_current_user, require_admin, User
 from apps.api.schemas.portfolio import PriceAlertIn, PriceAlertOut
 
@@ -9,14 +9,14 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
 @router.get("", response_model=list[PriceAlertOut])
-async def get_alerts(user: User = Depends(get_current_user), sb=Depends(get_supabase)):
+async def get_alerts(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
     res = sb.table("price_alerts").select("*").eq("user_id", user.id).eq("active", True).execute()
     return res.data or []
 
 
 @router.post("", response_model=PriceAlertOut, status_code=201)
 async def create_alert(
-    body: PriceAlertIn, user: User = Depends(get_current_user), sb=Depends(get_supabase)
+    body: PriceAlertIn, user: User = Depends(get_current_user), sb=Depends(get_user_supabase)
 ):
     res = sb.table("price_alerts").insert({
         "user_id": user.id,
@@ -30,9 +30,15 @@ async def create_alert(
 
 @router.delete("/{alert_id}", status_code=204)
 async def delete_alert(
-    alert_id: str, user: User = Depends(get_current_user), sb=Depends(get_supabase)
+    alert_id: str, user: User = Depends(get_current_user), sb=Depends(get_user_supabase)
 ):
-    res = sb.table("price_alerts").delete().eq("id", alert_id).execute()
+    # P0-2: Add user_id ownership check to prevent IDOR
+    res = (
+        sb.table("price_alerts").delete()
+        .eq("id", alert_id)
+        .eq("user_id", user.id)
+        .execute()
+    )
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Larmet hittades inte")
 

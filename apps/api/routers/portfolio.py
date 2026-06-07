@@ -4,7 +4,7 @@ from collections import Counter
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from apps.api.dependencies import get_supabase
+from apps.api.dependencies import get_user_supabase
 from apps.api.core.security import get_current_user, User
 from apps.api.schemas.portfolio import HoldingIn, HoldingOut, PortfolioOut
 from apps.api.core.enrichment import enrich_with_scan_data
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 # ─── Portfolio ──────────────────────────────────────────────────────────────
 
 @router.get("", response_model=PortfolioOut)
-async def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_supabase)):
+async def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
     port = (
         sb.table("portfolios").select("*").eq("user_id", user.id)
         .order("created_at").limit(1).execute()
@@ -40,7 +40,7 @@ async def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_s
 async def add_holding(
     body: HoldingIn,
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase),
+    sb=Depends(get_user_supabase),
 ):
     port = (
         sb.table("portfolios").select("id").eq("user_id", user.id)
@@ -63,9 +63,23 @@ async def add_holding(
 async def remove_holding(
     holding_id: str,
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase),
+    sb=Depends(get_user_supabase),
 ):
-    res = sb.table("holdings").delete().eq("id", holding_id).execute()
+    # P0-2: Verify ownership — delete only if holding belongs to user's own portfolio
+    port = (
+        sb.table("portfolios").select("id").eq("user_id", user.id)
+        .limit(1).execute()
+    )
+    if not port.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
+    portfolio_id = port.data[0]["id"]
+
+    res = (
+        sb.table("holdings").delete()
+        .eq("id", holding_id)
+        .eq("portfolio_id", portfolio_id)  # ownership check
+        .execute()
+    )
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Innehavet hittades inte")
 
@@ -91,7 +105,7 @@ class PortfolioRiskOut(BaseModel):
 @router.get("/risk", response_model=PortfolioRiskOut)
 async def get_portfolio_risk(
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase),
+    sb=Depends(get_user_supabase),
 ):
     """Portfolio risk metrics: sector allocation, concentration, avg score."""
     port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()

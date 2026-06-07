@@ -1,10 +1,10 @@
 """
-Profile endpoints — user settings, display name, etc.
+Profile endpoints — user settings, display name, experience level, etc.
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from apps.api.dependencies import get_supabase, get_supabase_admin
+from pydantic import BaseModel, Field
+from apps.api.dependencies import get_user_supabase, get_supabase_admin
 from apps.api.core.security import get_current_user, User
 
 logger = logging.getLogger(__name__)
@@ -14,26 +14,42 @@ router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 class ProfileUpdate(BaseModel):
     display_name: str | None = None
+    experience_level: str | None = Field(None, pattern="^(beginner|expert)$")
+    onboarding_completed: bool | None = None
+    theme: str | None = Field(None, pattern="^(light|dark|auto)$")
+    email_opt_in: bool | None = None
 
 
 class ProfileOut(BaseModel):
     id: str
     email: str | None = None
     display_name: str | None = None
+    experience_level: str = "beginner"
+    onboarding_completed: bool = False
+    theme: str = "light"
+    email_opt_in: bool = False
 
 
 @router.put("", response_model=ProfileOut)
 async def update_profile(
     body: ProfileUpdate,
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase),
+    sb=Depends(get_user_supabase),
 ):
-    """Update the current user's profile (display name)."""
+    """Update the current user's profile."""
     updates: dict = {}
     if body.display_name is not None:
         if not body.display_name.strip():
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Visningsnamn kan inte vara tomt")
         updates["display_name"] = body.display_name.strip()
+    if body.experience_level is not None:
+        updates["experience_level"] = body.experience_level
+    if body.onboarding_completed is not None:
+        updates["onboarding_completed"] = body.onboarding_completed
+    if body.theme is not None:
+        updates["theme"] = body.theme
+    if body.email_opt_in is not None:
+        updates["email_opt_in"] = body.email_opt_in
 
     try:
         if updates:
@@ -47,32 +63,36 @@ async def update_profile(
     res = sb.table("profiles").select("*").eq("id", user.id).limit(1).execute()
     profile = res.data[0] if res.data else {"id": user.id}
 
-    return ProfileOut(
-        id=profile["id"],
-        email=user.email,
-        display_name=profile.get("display_name"),
-    )
+    return _build_profile_out(profile, user.email)
 
 
 @router.get("", response_model=ProfileOut)
 async def get_profile(
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase),
+    sb=Depends(get_user_supabase),
 ):
     """Get the current user's profile."""
     res = sb.table("profiles").select("*").eq("id", user.id).limit(1).execute()
     profile = res.data[0] if res.data else {"id": user.id}
+    return _build_profile_out(profile, user.email)
+
+
+def _build_profile_out(profile: dict, email: str | None) -> ProfileOut:
     return ProfileOut(
         id=profile["id"],
-        email=user.email,
+        email=email,
         display_name=profile.get("display_name"),
+        experience_level=profile.get("experience_level", "beginner"),
+        onboarding_completed=profile.get("onboarding_completed", False),
+        theme=profile.get("theme", "light"),
+        email_opt_in=profile.get("email_opt_in", False),
     )
 
 
 @router.delete("/account", status_code=204)
 async def delete_account(
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase),
+    sb=Depends(get_user_supabase),
     sb_admin=Depends(get_supabase_admin),
 ):
     """Delete the user's account and all associated data (GDPR)."""
@@ -84,6 +104,9 @@ async def delete_account(
         sb.table("price_alerts").delete().eq("user_id", uid).execute()
         sb.table("watchlist").delete().eq("user_id", uid).execute()
         sb.table("portfolio_snapshots").delete().eq("user_id", uid).execute()
+        sb.table("notification_preferences").delete().eq("user_id", uid).execute()
+        sb.table("notifications").delete().eq("user_id", uid).execute()
+        sb.table("transactions").delete().eq("user_id", uid).execute()
 
         # Delete holdings then portfolio
         port = sb.table("portfolios").select("id").eq("user_id", uid).limit(1).execute()

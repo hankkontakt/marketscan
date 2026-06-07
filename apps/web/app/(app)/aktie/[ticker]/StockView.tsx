@@ -125,9 +125,18 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
       {/* Price chart */}
       <div className="xl:col-span-2 rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-        <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">
-          Prisutveckling
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">
+            Prisutveckling
+          </h3>
+          {/* U-11: Synthetic data label — shown when real price data is unavailable */}
+          {priceData?.is_synthetic && (
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium
+                             bg-[var(--color-warn-soft)] text-[var(--color-warn)]">
+              Exempeldata — verklig historik kopplas när R2 är konfigurerat
+            </span>
+          )}
+        </div>
         {isLoading
           ? <div className="skeleton" style={{ height: 300 }} />
           : priceData?.candles?.length
@@ -212,7 +221,7 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
         </dl>
       </div>
 
-      {/* AI summary */}
+      {/* Sammanfattning (U-10: döpte om från "AI-sammanfattning" — detta är en mall, inte AI) */}
       {stock.score_total != null && (
         <div className="xl:col-span-3 rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
           <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">

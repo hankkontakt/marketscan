@@ -2,14 +2,16 @@
 
 /* ============================================================
    MarketScan 2.0 — Design tokens
-   "Mörk terminal, men mänsklig"
-   Bloomberg-täthet + Avanza-tydlighet + Lysa-lugn
+   Lysa-lugn + Avanza-handlingsbar. Inter överallt.
+   Ljust tema som standard — rent, institutionellt, förtroendeskapande.
    ============================================================ */
 
 @theme {
-  /* Inter för allt — som Lysa. Geist Mono för tickers/priser. */
+  /* Inter för allt — som Lysa. Tabular-nums via .tabular-klass för sifferalignment. */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  /* P2-1: font-mono → samma som font-sans; Geist Mono laddas aldrig (se layout.tsx).
+     Sifferjustering hanteras av .tabular (font-variant-numeric: tabular-nums). */
+  --font-mono: var(--font-sans);
 
   /* LIGHT theme (default) — clean, Avanza/Lysa-inspired, institutional */
   --color-bg-base:      #F8F9FB;

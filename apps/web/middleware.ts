@@ -29,19 +29,15 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isAppRoute = request.nextUrl.pathname.startsWith("/oversikt") ||
-    request.nextUrl.pathname.startsWith("/screener") ||
-    request.nextUrl.pathname.startsWith("/aktie") ||
-    request.nextUrl.pathname.startsWith("/portfolj") ||
-    request.nextUrl.pathname.startsWith("/bevakningar") ||
-    request.nextUrl.pathname.startsWith("/kontrollpanel") ||
-    request.nextUrl.pathname.startsWith("/installningar") ||
-    request.nextUrl.pathname.startsWith("/marknad") ||
-    request.nextUrl.pathname.startsWith("/kalender") ||
-    request.nextUrl.pathname.startsWith("/jamfor") ||
-    request.nextUrl.pathname.startsWith("/guide");
+  // P3-7: Auth-protect everything except known public paths.
+  // This way, adding a new app route doesn't require a middleware change.
+  const PUBLIC_PREFIXES = ["/", "/login", "/register", "/reset", "/api", "/_next"];
+  const pathname = request.nextUrl.pathname;
+  const isPublic =
+    pathname === "/" ||
+    PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix) && prefix !== "/");
 
-  if (!user && isAppRoute) {
+  if (!user && !isPublic) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("redirect", request.nextUrl.pathname);

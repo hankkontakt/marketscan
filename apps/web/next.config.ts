@@ -1,12 +1,18 @@
-import type { NextConfig } from "next";
+import withSerwistInit from "@serwist/next";
 
-const config: NextConfig = {
+const withSerwist = withSerwistInit({
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
+  disable: process.env.NODE_ENV === "development",
+});
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**.supabase.co" },
     ],
   },
-  // Disable ALL Next.js dev indicators and the floating dev toolbar
   devIndicators: {
     buildActivity: false,
     buildActivityPosition: "bottom-right",
@@ -14,4 +20,4 @@ const config: NextConfig = {
   },
 };
 
-export default config;
+export default withSerwist(nextConfig);

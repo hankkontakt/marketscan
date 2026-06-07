@@ -6,6 +6,7 @@ import csv
 from fastapi import APIRouter, Depends, Query
 from apps.api.dependencies import get_supabase
 from apps.api.schemas.scan import ScanRow
+from apps.api.core.search_utils import safe_search
 
 router = APIRouter(prefix="/scan", tags=["screener"])
 
@@ -57,8 +58,10 @@ async def get_scan(
     if exclude_low_liquidity:
         q = q.eq("low_liquidity", False)
     if search:
-        # Supabase ilike on ticker or name
-        q = q.or_(f"ticker.ilike.%{search}%,name.ilike.%{search}%")
+        # P0-4: sanitize before interpolating into PostgREST filter
+        safe_term = safe_search(search)
+        if safe_term:
+            q = q.or_(f"ticker.ilike.%{safe_term}%,name.ilike.%{safe_term}%")
 
     result = q.execute()
     return result.data

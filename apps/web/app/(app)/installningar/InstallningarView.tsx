@@ -3,19 +3,21 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as Tabs from "@radix-ui/react-tabs";
-import { User, Palette, KeyRound, ShieldAlert } from "lucide-react";
+import { User, Palette, KeyRound, ShieldAlert, GraduationCap } from "lucide-react";
 import { ProfileSection } from "@/components/settings/ProfileSection";
 import { ThemeSection } from "@/components/settings/ThemeSection";
 import { PasswordSection } from "@/components/settings/PasswordSection";
 import { AccountSection } from "@/components/settings/AccountSection";
+import { ExperienceSection } from "@/components/settings/ExperienceSection";
 
 // ─── Sektioner ─────────────────────────────────────────────────────────────────
 
 const SECTIONS = [
-  { id: "profil",    icon: User,       label: "Profil" },
-  { id: "tema",      icon: Palette,    label: "Tema" },
-  { id: "losenord",  icon: KeyRound,   label: "Lösenord" },
-  { id: "konto",     icon: ShieldAlert, label: "Konto" },
+  { id: "profil",    icon: User,          label: "Profil" },
+  { id: "erfarenhet", icon: GraduationCap, label: "Erfarenhet" },
+  { id: "tema",      icon: Palette,       label: "Tema" },
+  { id: "losenord",  icon: KeyRound,      label: "Lösenord" },
+  { id: "konto",     icon: ShieldAlert,   label: "Konto" },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -63,6 +65,7 @@ export function InstallningarView() {
         </Tabs.List>
 
         <Tabs.Content value="profil"><ProfileSection /></Tabs.Content>
+        <Tabs.Content value="erfarenhet"><ExperienceSection /></Tabs.Content>
         <Tabs.Content value="tema"><ThemeSection /></Tabs.Content>
         <Tabs.Content value="losenord"><PasswordSection /></Tabs.Content>
         <Tabs.Content value="konto"><AccountSection /></Tabs.Content>

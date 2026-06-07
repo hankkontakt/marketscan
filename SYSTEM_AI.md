@@ -869,15 +869,22 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 | # | Problem | Allvar | Fil | Detalj |
 |---|---|---|---|---|
 | 1 | **"Aktie hittades inte" när man klickar från vissa vyer** | HÖG | `lib/api.ts` | Om NEXT_PUBLIC_API_URL pekar på fel domän (gammal deployment) returnerar API 404. Lösning: redeploya frontend-projektet i Vercel efter API-ändringar. |
-| 2 | **Prishistorik kan vara mock** | MEDIUM | `stocks.py:169-224` | Tre nivåer: Finnhub → R2 → mock. Finnhub fungerar för de flesta tickers. Vissa ticker-format (t.ex. med `.ST`) kan misslyckas och falla till mock. |
-| 3 | **AI-analys tar ~10-15s** | MEDIUM | `ai.py:132-191` | Tre parallella DeepSeek-anrop. Inget timeouthantering i frontend — användaren ser skeleton hela tiden. |
+| 2 | **Prishistorik kan vara mock** | MEDIUM | `stocks.py:169-224` | Tre nivåer: Finnhub → R2 → mock. Finnhub fungerar för de flesta tickers. Vissa ticker-format (t.ex. med `.ST`) kan misslyckas och falla till mock. `is_synthetic: true` signaleras nu till frontend. |
+| 3 | **AI-analys tar ~10-15s** | MEDIUM | `ai.py:132-191` | Tre parallella DeepSeek-anrop (numera med return_exceptions=True). Inget timeouthantering i frontend — användaren ser skeleton hela tiden. |
 | 4 | **R2 ej konfigurerat** | MEDIUM | `duckdb_r2.py` | Cloudflare betalningsproblem. Score-historik och price-historik från Parquet fungerar inte. |
 | 5 | **Pipeline kör ej automatiskt** | HÖG | `.github/workflows/` | Workflow-filer finns men GitHub Secrets ej konfigurerade. Data laddas just nu manuellt via `load_data.py`. |
 | 6 | **DATABASE_URL pooler-port fungerar ej** | HÖG | `.env` | Port 6543 svarar inte. Blockar pipeline-koppling och backend_worker-crons. |
-| 7 | **Admin-panelen är öppen för alla inloggade** | LÅG | `admin.py` | Använder `get_current_user` istället för `require_admin`. Alla inloggade kan se pipeline-status och användarlista. |
+| 7 | **Admin-panelen** | MEDIUM | `security.py` | DONE ✅ `require_admin` läser nu `profiles.role` (inte JWT-claim). Admin-länk döljs i NavRail för icke-admin. |
 | 8 | **React 18.3 (inte 19)** | Permanent | `package.json` | Radix UI kräver React 18. Uppgradera INTE till 19. |
 | 9 | **Ingen timeout på AI-anrop i frontend** | LÅG | `AnalysCommittee.tsx` | Om DeepSeek svarar långsamt visas skeleton tills timeout. |
 | 10 | **Frontend deployas inte automatiskt** | MEDIUM | `.vercel/project.json` | Endast API-projektet deployas via git push. Frontend måste deployas manuellt. |
+| 11 | **IDOR i delete-endpoints** | KRITISK | `portfolio.py, alerts.py, saved_screens.py` | DONE ✅ Alla delete-endpoints kräver nu ägarkoll (user_id + id). |
+| 12 | **Supabase-token nådde aldrig Postgres/RLS** | KRITISK | `dependencies.py` | DONE ✅ `get_user_supabase()` skapad — forward:ar JWT till PostgREST. Alla user-routers uppdaterade. |
+| 13 | **Paper trading GET/POST använde olika klienter** | HÖG | `paper_trading_router.py` | DONE ✅ Båda använder nu get_supabase_admin (user_id-scoping appliceras i queries). |
+| 14 | **Missing await på DuckDB-anrop** | HÖG | `stocks.py:210,232` | DONE ✅ Båda anrop korrekt awaitade nu. Mock-fallback nås korrekt. |
+| 15 | **db_loader normaliserade inte confidence/trend** | HÖG | `db_loader.py:46-74` | DONE ✅ confidence_map och trend_map tillagda — matchar CHECK-constraints. |
+| 16 | **Rate limiting var en no-op** | MEDIUM | `rate_limiter.py, requirements.txt` | DONE ✅ SlowAPIMiddleware wired, slowapi tillagd i requirements.txt. |
+| 17 | **PostgREST filter-injektion via sökterm** | MEDIUM | `screener.py:61, stocks.py:253` | DONE ✅ `safe_search()` i `core/search_utils.py` — sanerar innan interpolation. |
 
 ---
 
@@ -903,6 +910,106 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 ## 19. Ändringslogg
 
 > Nyaste överst. Format: `YYYY-MM-DD — beskrivning (fil)`.
+
+### 2026-06-07 — Fas 6: Funktionell expansion (stor)
+
+**Arkitektur-grund:**
+- Ny `lib/features.ts` — feature flag-konstant för att gömma datalösa vyer.
+- SQL migrations 012 (profile_extensions), 013 (notifications), 014 (transactions), 015 (insider_trades), 016 (ai_journal).
+
+**6B — Erfarenhetsläge + onboarding:**
+- `components/providers/ExperienceProvider.tsx`: Ny React-kontext `useExperience()` + `<ExpertOnly>`-helper.
+- `components/onboarding/OnboardingModal.tsx`: 3-stegs onboarding (välkommen → erfarenhetsnivå → klart).
+- `app/(app)/layout.tsx`: Wrappar app i ExperienceProvider + OnboardingModal.
+- `routers/profile.py`: Utökade fält `experience_level`, `onboarding_completed`, `theme`, `email_opt_in`. **Kritisk bugfix:** använder nu `get_user_supabase()` (ej anon) så RLS fungerar.
+- `components/settings/ExperienceSection.tsx`: Växel Nybörjare/Erfaren.
+- `components/settings/ProfileSection.tsx`: E-postopt-in toggle.
+- `components/settings/ThemeSection.tsx`: Synkar tema till Supabase-profil.
+
+**6C — Notiser (in-app + e-post):**
+- `routers/notifications.py`: GET /notifications, /notifications/unread, POST /notifications/{id}/read, /notifications/read-all.
+- `components/notifications/NotificationCenter.tsx`: Klock-ikon + panel i TopBar med oläst-räknare.
+- `components/layout/TopBar.tsx`: La till NotificationBell + scan_date-badge.
+- `backend_worker/email/layout.py`: Ren HTML-mail-wrapper (ingen emoji, Lysa-stil).
+- `backend_worker/email/components.py`: Återanvändbara mallar (price_alert, earnings_reminder, score_change, daily_digest).
+- `backend_worker/email/sender.py`: Resend-integration med send() och send_notification().
+- `backend_worker/price_alert_checker.py`: Uppdaterad — skapar nu in-app-notis + skickar e-post vid larm.
+- `hooks/useNotifications.ts`: React Query-hooks för notiser.
+
+**6D — Transaktionslogg + TWR:**
+- `routers/transactions.py`: CRUD transaktioner + TWR-beräkning endpoint. RLS-skyddad.
+- `routers/stocks.py`: La till OMXS30 benchmark-endpoint.
+- `app/(app)/portfolj/PortfoljView.tsx`: TWR-sektion + transaktionslogg-tabell.
+- `hooks/usePortfolio.ts`: Nya hooks useTransactions, useAddTransaction, useDeleteTransaction, useTWR.
+
+**3A/3B — Makroregim + Insiderdata:**
+- `routers/macro_regime.py`: Marknadsregimdetektion från scan-data (tjur/björn/osäker).
+- `routers/insider.py`: Insiderdata från FI-databas + Finnhub-fallback.
+
+**4A/4B — Earnings + AI-journal:**
+- `routers/ai.py`: AI-journal sparas vid varje kommittékörning. GET /ai/journal/{ticker} endpoint.
+
+**6F — Dagens marknad + UX:**
+- `routers/markets.py`: GET /markets/top-movers — dagens vinnare/förlorare + betygsvinnare.
+- `app/(app)/oversikt/OversiktView.tsx`: "Dagens marknad"-widget + betygsvinnare.
+- `components/command/CommandPalette.tsx`: La till åtgärder (växla tema, logga ut, inställningar).
+- `TopBar.tsx`: "Senast uppdaterad"-badge från scan_date.
+
+**6E — PWA:**
+- La till @serwist/next + @serwist/sw som dependencies.
+- `next.config.ts`: Serwist-konfiguration (SW avstängd i dev).
+- `app/sw.ts`: Service worker med network-first för finansiella endpoints.
+- `app/offline/page.tsx`: Ren offline-sida.
+- `public/manifest.json`: Uppdaterad med korrekta färger.
+
+**Säkerhetsfixar (från code review):**
+- `profile.py`: Använder nu `get_user_supabase()` (med JWT) istället för `get_supabase()` (anon) — alla profil-operationer fungerar nu med RLS.
+- `OnboardingModal.tsx`: useState → useEffect för att visa modalen efter profilladdning.
+- `PortfoljView.tsx`: La till `useDeleteTransaction` i import.
+- `markets.py`: Top-movers använder nu PostgREST LIMIT istället för full tabellscan. `get_global_indices` har nu 5-minuters in-memory cache för att minska Finnhub-förbrukning.
+- `OversiktView.tsx`: Division-by-zero-skydd för portföljvärde.
+- `macro_regime.py`: Använder aggregate COUNT-frågor istället för att hämta alla rader.
+- `insider.py`: role-fältet från Finnhub (`position`) mappas nu korrekt i insider-trades.
+- `transactions.py`: TWR-beräkning använder nu date-normaliserad transaction grouping. Snapshots begränsade till 100 för prestanda.
+- `stocks.py`: `_generate_mock_candles` använder stabil byte-sum-seed (inte Pythons randomiserade `hash()`).
+- `stocks.py`: `/compare` returnerar nu validerade (stora) ticker-namn istället för rå input.
+- `backend_worker/price_alert_checker.py`: Använder nu `from backend_worker.email.sender import send_notification` (robust import) istället för `sys.path`-manipulation.
+- `backend_worker/email/components.py`: All användardata HTML-escaped (`_escape_html`) för att förhindra self-XSS i e-post. `daily_digest_email` parameterdokumentation förtydligad (`old_score` vs `new_score`).
+
+**Fas 1 — Säkerhet (P0):**
+- `dependencies.py`: Lade till `get_user_supabase()` som forwardar JWT till PostgREST → `auth.uid()` fungerar i RLS-policies.
+- `core/security.py`: `require_admin` läser nu `profiles.role` via service-klient (inte JWT-claim). Tog bort tom `AdminUser`-subklass.
+- `portfolio.py, alerts.py, saved_screens.py, watchlist.py, snapshots.py`: Alla user-routers använder nu `get_user_supabase`. Delete-endpoints får ägar-villkor (`eq("user_id", user.id)` eller portfolio-id-koll).
+- `core/search_utils.py`: Ny fil med `safe_search()` — sanerar söktermer innan PostgREST ilike-interpolation.
+- `screener.py, stocks.py`: Sökning saniteras via `safe_search()`.
+
+**Fas 2 — Trasiga flöden (P1):**
+- `stocks.py`: Lade till `await` på `query_price_history(t)` och `query_score_history(t)` — 500-fel fixat.
+- `db_loader.py`: `_prepare_df` normaliserar nu `confidence_label` (HÖG→Hög etc.) och `trend_signal` (UPPTREND→Upptrend, VARNING→None).
+- `rate_limiter.py`: Lade till `SlowAPIMiddleware` — rate limiting faktiskt aktiv nu.
+- `apps/api/requirements.txt`: Lade till `slowapi>=0.1.9`.
+- `stocks.py`: `/piotroski` selectar nu bara befintliga kolumner — 400/500-fel undvikt.
+- `stocks.py`: `EarningsItem` fick `quarter`/`year`/`surprise_pct` fält; Finnhub-mappning explicit.
+- `paper_trading_router.py`: GET använder nu `get_supabase_admin` (samma som POST) — köp visas korrekt.
+
+**Fas 3 — Kvalitet (P2):**
+- `ai.py`: `asyncio.gather` med `return_exceptions=True` — enskild analytiker-timeout kraschar inte kommittén. Admin-klient för cache-skrivning (P2-5).
+- `markets.py`: Globala index hämtas parallellt via asyncio.gather + gemensam httpx-klient.
+- `globals.css`: `--font-mono` → `var(--font-sans)` — inga siffror faller till systemets monospace. Stale kommentarer uppdaterade.
+- `JamforView.tsx`: `<>` → `<React.Fragment key={metric.label}>`, `--color-bg` → `--color-bg-surface`.
+- `MarknadView.tsx, useMarkets.tsx`: Lokala `scoreColorClass`/`scoreColor`-dubbletter borttagna. Importerar från `lib/format`.
+- `stocks.py`: Döda variabler `current_signal` och `one_year_ago` borttagna.
+
+**Fas 4 — Städning (P3):**
+- `middleware.ts`: Handunderhållen ruttlista → prefix-baserad logik (`!isPublic`).
+- `apps/api/requirements.txt`: `slowapi>=0.1.9` tillagd.
+- `core/search_utils.py`: Ny delad utility för sök-sanitering.
+
+**Fas 5 — UX (U-):**
+- `ResultTable.tsx`: InfoTooltip på kolumnrubriker (Totalbetyg, Köpläge, Trend, Börsvärde, P/E, ROE). Importerar InfoTooltip.
+- `FilterRail.tsx`: SCREENER_PRESETS chips (Värde, Tillväxt, Hög kvalitet, Momentum, Översåld) ovanför filter.
+- `StockView.tsx`: "AI summary" → "Sammanfattning"-kommentar (P2-9 hederlig namngivning). is_synthetic-etikett vid prisgrafen.
+- `useStock.ts`: `is_synthetic` i returtypen för `usePriceHistory` och `useScoreHistory`.
 
 ### 2026-06-07 — Fullständig SYSTEM_AI.md-omskrivning
 Komplett uppdaterad systemdokumentation för MarketScan 2.0. Inkluderar alla nya routes (calendar, prediction, options, backtests, sector_rotation, paper_trading), Vercel-deployment med två projekt, GitHub Actions workflows, migrations 004-011, backend_worker-filer, kända buggar med "Aktie hittades inte"-felet och API_BASE-konfiguration.

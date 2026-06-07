@@ -5,6 +5,7 @@ import { ChevronDown, Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { useSectors } from "@/hooks/useScreener";
+import { SCREENER_PRESETS } from "@/lib/labels";
 import type { ScanParams } from "@/lib/api";
 
 interface Props {
@@ -38,6 +39,22 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
 
   const inner = (
     <>
+      {/* U-9: Quick preset chips — using SCREENER_PRESETS from labels.ts */}
+      <div className="flex flex-wrap gap-1.5 pb-1">
+        {SCREENER_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            onClick={() => onChange(preset.params as Partial<ScanParams>)}
+            className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border
+                       border-[var(--color-border)] text-[var(--color-text-secondary)]
+                       hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]
+                       hover:bg-[var(--color-accent-soft)]"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
           <Filter size={14} strokeWidth={1.5} />

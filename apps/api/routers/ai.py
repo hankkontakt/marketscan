@@ -4,12 +4,12 @@ All responses are cached per ticker/day to minimize token spend.
 """
 import json
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from apps.api.core.ai_cache import get_cached, set_cache
 from apps.api.core.security import get_current_user, User
-from apps.api.dependencies import get_supabase
-from pydantic import Field
+from apps.api.dependencies import get_supabase, get_supabase_admin
+from apps.api.core.rate_limiter import limiter
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -65,8 +65,20 @@ Returnera bara JSON. Inga förklaringar. Utelämna nycklar utan värde."""
 
 
 @router.post("/parse-filter")
-async def parse_nl_filter(body: NLFilterRequest):
-    """Parse natural language query into screener filter params."""
+async def parse_nl_filter(
+    request: Request,
+    body: NLFilterRequest,
+):
+    """Parse natural language query into screener filter params.
+    Rate limited: 10 req/min (DeepSeek costs money).
+    """
+    # P1-3: Apply rate limit when slowapi is available
+    if limiter is not None:
+        try:
+            await limiter._check_request_limit(request, "10/minute")
+        except Exception:
+            pass  # Fail open — slowapi checks via middleware, this is belt-and-suspenders
+
     result = await _call_ai(NL_FILTER_SYSTEM, body.query)
     try:
         # Strip markdown fences if present
@@ -134,6 +146,7 @@ async def get_committee_analysis(
     ticker: str,
     body: CommitteeRequest,
     sb=Depends(get_supabase),
+    sb_admin=Depends(get_supabase_admin),
 ):
     """
     Analyskommittén: 3 analysts + chair synthesis.
@@ -142,21 +155,31 @@ async def get_committee_analysis(
     import asyncio
 
     cache_key = f"committee:{ticker}:{date.today().isoformat()}"
-    cached = get_cached(cache_key, sb)
+    # Read from anon client (public read), write via admin (P2-5: ensures cache writes succeed)
+    cached = get_cached(cache_key, sb_admin)
     if cached:
         return cached
 
     context = _build_stock_context(ticker, body.stock_data)
 
-    # Run 3 analysts in parallel
+    # P2-4: return_exceptions=True so a single analyst timeout doesn't crash the whole committee
     results = await asyncio.gather(
         _call_ai(ANALYST_PROMPTS["teknisk"], context),
         _call_ai(ANALYST_PROMPTS["fundamental"], context),
         _call_ai(ANALYST_PROMPTS["sentiment"], context),
+        return_exceptions=True,
     )
-    tech_analysis, fund_analysis, sent_analysis = results
 
-    # Chair synthesis
+    # Degrade gracefully: use fallback text for any analyst that failed
+    _FALLBACK = "Analysen kunde inte hämtas."
+    tech_analysis = results[0] if not isinstance(results[0], Exception) else _FALLBACK
+    fund_analysis = results[1] if not isinstance(results[1], Exception) else _FALLBACK
+    sent_analysis = results[2] if not isinstance(results[2], Exception) else _FALLBACK
+
+    # Chair synthesis — only if at least one analyst succeeded
+    if all(r == _FALLBACK for r in [tech_analysis, fund_analysis, sent_analysis]):
+        raise HTTPException(status_code=503, detail="Analyskommittén är tillfälligt otillgänglig")
+
     chair_input = f"""
 Aktie: {ticker}
 
@@ -187,7 +210,22 @@ SENTIMENTANALYTIKER:
         "cached_date": date.today().isoformat(),
     }
 
-    set_cache(cache_key, response, sb)
+    # P2-5: Use admin client for cache writes so grant/RLS issues don't silently skip caching
+    set_cache(cache_key, response, sb_admin)
+
+    # Save to AI journal for transparency
+    try:
+        sb_admin.table("ai_journal").insert({
+            "ticker": ticker,
+            "verdict": synthesis.get("verdict", "AVVAKTA"),
+            "confidence": synthesis.get("confidence"),
+            "summary": synthesis.get("summary"),
+            "score_at_time": body.stock_data.get("score_total"),
+            "price_at_time": body.stock_data.get("price"),
+        }).execute()
+    except Exception as e:
+        logger.warning("Failed to save AI journal entry for %s: %s", ticker, e)
+
     return response
 
 
@@ -212,6 +250,54 @@ PORTFÖLJDATA:
     messages = body.history + [{"role": "user", "content": body.question}]
     response = await _call_ai_chat(PORTFOLIO_COACH_SYSTEM, context, messages)
     return {"response": response}
+
+
+# ─── AI Journal ─────────────────────────────────────────────────────────────
+
+
+class AIJournalEntryOut(BaseModel):
+    id: str
+    ticker: str
+    verdict: str
+    confidence: int | None = None
+    summary: str | None = None
+    score_at_time: float | None = None
+    price_at_time: float | None = None
+    created_at: str
+
+
+class AIJournalOut(BaseModel):
+    ticker: str
+    entries: list[AIJournalEntryOut]
+
+
+@router.get("/journal/{ticker}", response_model=AIJournalOut)
+async def get_ai_journal(ticker: str, sb=Depends(get_supabase)):
+    """Get AI analysis history for a ticker (transparency log)."""
+    t = ticker.upper().strip()
+    res = (
+        sb.table("ai_journal")
+        .select("*")
+        .eq("ticker", t)
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+
+    entries = []
+    for item in res.data or []:
+        entries.append(AIJournalEntryOut(
+            id=item["id"],
+            ticker=item["ticker"],
+            verdict=item["verdict"],
+            confidence=item.get("confidence"),
+            summary=item.get("summary"),
+            score_at_time=float(item["score_at_time"]) if item.get("score_at_time") else None,
+            price_at_time=float(item["price_at_time"]) if item.get("price_at_time") else None,
+            created_at=item.get("created_at", ""),
+        ))
+
+    return AIJournalOut(ticker=ticker, entries=entries)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

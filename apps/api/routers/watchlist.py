@@ -1,6 +1,6 @@
 """Watchlist CRUD — fully RLS-protected via Supabase."""
 from fastapi import APIRouter, Depends, HTTPException, status
-from apps.api.dependencies import get_supabase
+from apps.api.dependencies import get_user_supabase as get_supabase
 from apps.api.core.security import get_current_user, User
 from apps.api.schemas.portfolio import WatchlistItem
 from apps.api.core.enrichment import enrich_with_scan_data

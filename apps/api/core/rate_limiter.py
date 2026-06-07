@@ -34,8 +34,20 @@ except ImportError:
 
 
 def add_rate_limiting(app: FastAPI) -> None:
-    """Wire rate limiting into a FastAPI application (no-op if slowapi unavailable)."""
+    """Wire rate limiting into a FastAPI application (no-op if slowapi unavailable).
+
+    NOTE: On Vercel serverless, each function instance has its own counter,
+    so the effective limit is multiplied by the number of concurrent instances.
+    For strict AI-endpoint protection, consider Supabase or Upstash as a
+    shared counter. This implementation still catches naive abuse (same instance).
+    """
     if not _slowapi_available or limiter is None:
         return
     app.state.limiter = limiter
+    # P1-3: Actually wire SlowAPIMiddleware so limits take effect
+    try:
+        from slowapi.middleware import SlowAPIMiddleware
+        app.add_middleware(SlowAPIMiddleware)
+    except ImportError:
+        pass
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

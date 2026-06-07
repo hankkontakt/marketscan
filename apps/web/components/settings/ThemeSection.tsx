@@ -2,6 +2,7 @@ import { Palette, Sun, Moon, Monitor } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import type { Theme } from "@/hooks/useTheme";
 import { SectionCard, SectionTitle } from "./SectionCard";
+import { api } from "@/lib/api";
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Ljust",  icon: Sun },
@@ -11,6 +12,15 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
 
 export function ThemeSection() {
   const { theme, setTheme, resolved } = useTheme();
+
+  function handleThemeChange(value: Theme) {
+    setTheme(value);
+    // Sync to Supabase profile
+    api("/api/profile", {
+      method: "PUT",
+      body: JSON.stringify({ theme: value }),
+    }).catch(() => {});
+  }
 
   return (
     <SectionCard>
@@ -30,7 +40,7 @@ export function ThemeSection() {
             return (
               <button
                 key={opt.value}
-                onClick={() => setTheme(opt.value)}
+                onClick={() => handleThemeChange(opt.value)}
                 className={`flex flex-col items-center gap-2 px-6 py-4 rounded-xl border text-xs transition-all ${
                   active
                     ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"

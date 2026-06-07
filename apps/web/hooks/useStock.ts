@@ -13,10 +13,11 @@ export function useStock(ticker: string) {
   });
 }
 
+// U-11: Include is_synthetic in response type so UI can show "Exempeldata" label
 export function usePriceHistory(ticker: string, enabled = true) {
   return useQuery({
     queryKey: ["price-history", ticker],
-    queryFn: () => api<{ ticker: string; candles: unknown[] }>(`/api/stocks/${ticker}/price-history`),
+    queryFn: () => api<{ ticker: string; candles: unknown[]; is_synthetic?: boolean }>(`/api/stocks/${ticker}/price-history`),
     staleTime: 30 * 60_000,
     enabled: !!ticker && enabled,
   });
@@ -25,7 +26,7 @@ export function usePriceHistory(ticker: string, enabled = true) {
 export function useScoreHistory(ticker: string, enabled = true) {
   return useQuery({
     queryKey: ["score-history", ticker],
-    queryFn: () => api<{ ticker: string; history: { date: string; score: number; signal: string }[] }>(
+    queryFn: () => api<{ ticker: string; history: { date: string; score: number; signal: string }[]; is_synthetic?: boolean }>(
       `/api/stocks/${ticker}/score-history`,
     ),
     staleTime: 30 * 60_000,

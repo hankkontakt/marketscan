@@ -6,6 +6,8 @@ import { useCommandPalette } from "@/hooks/useCommandPalette";
 import { useTheme } from "@/hooks/useTheme";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { NotificationBell } from "@/components/notifications/NotificationCenter";
+import { useScanMeta } from "@/hooks/useScreener";
 
 export function TopBar() {
   const open = useCommandPalette((s) => s.open);
@@ -14,6 +16,7 @@ export function TopBar() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { data: scanMeta } = useScanMeta();
 
   // Fetch current user on mount
   useEffect(() => {
@@ -57,6 +60,16 @@ export function TopBar() {
 
       <div className="flex-1" />
 
+      {/* Scan date badge */}
+      {scanMeta?.scan_date && (
+        <span className="text-[11px] text-[var(--color-text-muted)] hidden sm:block">
+          Uppdaterad: {new Date(scanMeta.scan_date).toLocaleDateString("sv-SE")}
+        </span>
+      )}
+
+      {/* Notification bell */}
+      <NotificationBell />
+
       {/* Theme toggle */}
       <button
         onClick={toggle}
@@ -94,9 +107,7 @@ export function TopBar() {
           >
             {/* User info */}
             {userEmail && (
-              <div
-                className="px-4 py-3 border-b border-[var(--color-border)]"
-              >
+              <div className="px-4 py-3 border-b border-[var(--color-border)]">
                 <p className="text-xs text-[var(--color-text-muted)]">Inloggad som</p>
                 <p className="text-sm font-medium text-[var(--color-text-primary)] truncate mt-0.5">
                   {userEmail}

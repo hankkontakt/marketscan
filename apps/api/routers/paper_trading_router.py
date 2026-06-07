@@ -1,7 +1,7 @@
 """Paper trading — simulated portfolio."""
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from apps.api.dependencies import get_supabase, get_supabase_admin
+from apps.api.dependencies import get_supabase_admin
 from apps.api.core.security import get_current_user, User
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/paper", tags=["paper-trading"])
 @router.get("/portfolio")
 async def get_paper_portfolio(
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase),
+    sb=Depends(get_supabase_admin),  # P1-6: use same client tier as POST so reads are consistent
 ):
     """Get current user's paper trading portfolio."""
     port = sb.table("paper_portfolios").select("*").eq("user_id", user.id).limit(1).execute()

@@ -10,13 +10,17 @@ import {
   Star,
   Settings,
   TrendingUp,
-  TrendingDown,
   Search,
   ArrowRight,
+  Sun,
+  Moon,
+  GraduationCap,
+  LogOut,
 } from "lucide-react";
 import { useCommandPalette } from "@/hooks/useCommandPalette";
 import { api } from "@/lib/api";
 import { formatPctChange, scoreColorClass } from "@/lib/format";
+import { useTheme } from "@/hooks/useTheme";
 
 interface SearchResult {
   ticker: string;
@@ -45,6 +49,7 @@ export function CommandPalette() {
   const isOpen = useCommandPalette((s) => s.isOpen);
   const close = useCommandPalette((s) => s.close);
   const toggle = useCommandPalette((s) => s.toggle);
+  const { theme, setTheme, resolved } = useTheme();
 
   // Global ⌘K / Ctrl+K shortcut
   useEffect(() => {
@@ -155,6 +160,7 @@ export function CommandPalette() {
 
             {/* Quick navigation */}
             {!query && (
+              <>
               <Command.Group heading="Vyer" className="px-2">
                 {QUICK_LINKS.map((link) => (
                   <Command.Item
@@ -173,6 +179,52 @@ export function CommandPalette() {
                   </Command.Item>
                 ))}
               </Command.Group>
+
+              {/* Actions */}
+              <Command.Group heading="Åtgärder" className="px-2">
+                <Command.Item
+                  value="Växla tema"
+                  onSelect={() => {
+                    const next = theme === "light" ? "dark" : theme === "dark" ? "auto" : "light";
+                    setTheme(next);
+                    close();
+                  }}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer
+                             data-[selected=true]:bg-[var(--color-bg-elevated)]
+                             text-[var(--color-text-secondary)] text-sm"
+                >
+                  <Sun size={15} strokeWidth={1.5} className="text-[var(--color-text-muted)]" />
+                  <span>Växla tema ({resolved === "dark" ? "mörkt" : "ljust"})</span>
+                </Command.Item>
+
+                <Command.Item
+                  value="Inställningar"
+                  onSelect={() => { close(); setQuery(""); router.push("/installningar"); }}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer
+                             data-[selected=true]:bg-[var(--color-bg-elevated)]
+                             text-[var(--color-text-secondary)] text-sm"
+                >
+                  <Settings size={15} strokeWidth={1.5} className="text-[var(--color-text-muted)]" />
+                  <span>Inställningar</span>
+                </Command.Item>
+
+                <Command.Item
+                  value="Logga ut"
+                  onSelect={async () => {
+                    close();
+                    const supabase = (await import("@/lib/supabase/client")).createClient();
+                    await supabase.auth.signOut();
+                    router.push("/login");
+                  }}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer
+                             data-[selected=true]:bg-[var(--color-bg-elevated)]
+                             text-[var(--color-down)] text-sm"
+                >
+                  <LogOut size={15} strokeWidth={1.5} />
+                  <span>Logga ut</span>
+                </Command.Item>
+              </Command.Group>
+              </>
             )}
 
             {loading && (

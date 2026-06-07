@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { scoreColorClass } from "@/lib/format";
 import { TrendingUp, Globe } from "lucide-react";
 
 export interface SectorSummary {
@@ -52,11 +53,8 @@ export function useGlobalIndices() {
   });
 }
 
-function scoreColor(val: number): string {
-  if (val >= 70) return "text-[var(--color-score-high)]";
-  if (val >= 50) return "text-[var(--color-score-mid)]";
-  return "text-[var(--color-score-low)]";
-}
+// P2-3: Removed local duplicate — using shared scoreColorClass from @/lib/format
+// Usage: scoreColorClass(val)  (same signature)
 
 export function SectorHeatmap({ sectors }: { sectors: SectorSummary[] }) {
   const maxScore = Math.max(...sectors.map(s => s.avg_score), 1);
@@ -75,7 +73,7 @@ export function SectorHeatmap({ sectors }: { sectors: SectorSummary[] }) {
               >
                 {s.sector}
               </a>
-              <span className={`font-mono tabular ${scoreColor(s.avg_score)}`}>
+              <span className={`font-mono tabular ${scoreColorClass(s.avg_score)}`}>
                 {s.avg_score.toFixed(0)}
               </span>
             </div>
@@ -103,6 +101,32 @@ export function SectorHeatmap({ sectors }: { sectors: SectorSummary[] }) {
       })}
     </div>
   );
+}
+
+// ─── Top Movers ─────────────────────────────────────────────
+
+export interface TopMover {
+  ticker: string;
+  name: string | null;
+  score_total: number | null;
+  change_pct: number | null;
+  entry_signal: string | null;
+  price: number | null;
+}
+
+interface TopMoversResponse {
+  up: TopMover[];
+  down: TopMover[];
+  score_winners: TopMover[];
+  score_losers: TopMover[];
+}
+
+export function useTopMovers() {
+  return useQuery<TopMoversResponse>({
+    queryKey: ["top-movers"],
+    queryFn: () => api<TopMoversResponse>("/api/markets/top-movers"),
+    staleTime: 60_000,
+  });
 }
 
 export function GlobalIndexPanel({ indices }: { indices: GlobalIndex[] }) {

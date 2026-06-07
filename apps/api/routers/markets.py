@@ -3,6 +3,7 @@ Sector and global market data endpoints.
 Sector heatmap from scan_results, global indices via Finnhub.
 """
 import logging
+import time
 import httpx
 from fastapi import APIRouter, Depends
 from apps.api.dependencies import get_supabase
@@ -12,6 +13,20 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/markets", tags=["markets"])
+
+# Simple in-memory cache for Finnhub indices (300s = 5 min)
+_indices_cache: dict = {"data": None, "expires": 0}
+
+
+def _get_cached_indices() -> list | None:
+    if _indices_cache["data"] and time.time() < _indices_cache["expires"]:
+        return _indices_cache["data"]
+    return None
+
+
+def _set_cached_indices(data: list):
+    _indices_cache["data"] = data
+    _indices_cache["expires"] = time.time() + 300
 
 
 class SectorSummary(BaseModel):
@@ -141,29 +156,103 @@ INDEX_SYMBOLS = [
 
 @router.get("/indices", response_model=GlobalMarketsOut)
 async def get_global_indices():
-    """Global index snapshot."""
+    """Global index snapshot.
+    P2-6: Fetches all indices in parallel (asyncio.gather) instead of sequentially.
+    Total latency = slowest single call, not sum of all calls.
+    Cached 5 minutes to reduce Finnhub API usage.
+    """
+    # Check cache first
+    cached = _get_cached_indices()
+    if cached is not None:
+        return GlobalMarketsOut(indices=cached)
+
     if not settings.FINNHUB_API_KEY:
-        # Fallback to scan_results countries
         return GlobalMarketsOut(indices=[])
 
-    indices = []
-    for finnhub_symbol, name in INDEX_SYMBOLS:
+    import asyncio
+
+    async def _fetch_index(client: httpx.AsyncClient, finnhub_symbol: str, name: str):
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(
-                    f"https://finnhub.io/api/v1/quote"
-                    f"?symbol={finnhub_symbol}",
-                    headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
+            resp = await client.get(
+                f"https://finnhub.io/api/v1/quote?symbol={finnhub_symbol}",
+                headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("c"):
+                return GlobalIndexOut(
+                    name=name,
+                    price=data["c"],
+                    change_pct=(
+                        round(((data["c"] - data["pc"]) / data["pc"]) * 100, 2)
+                        if data.get("pc")
+                        else None
+                    ),
                 )
-                resp.raise_for_status()
-                data = resp.json()
-                if data.get("c"):
-                    indices.append(GlobalIndexOut(
-                        name=name,
-                        price=data["c"],
-                        change_pct=round(((data["c"] - data["pc"]) / data["pc"]) * 100, 2) if data.get("pc") else None,
-                    ))
         except Exception as e:
             logger.debug("Finnhub index %s failed: %s", finnhub_symbol, e)
+        return None
 
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        results = await asyncio.gather(
+            *[_fetch_index(client, sym, name) for sym, name in INDEX_SYMBOLS],
+            return_exceptions=True,
+        )
+
+    indices = [r for r in results if isinstance(r, GlobalIndexOut)]
+    _set_cached_indices(indices)
     return GlobalMarketsOut(indices=indices)
+
+
+class TopMover(BaseModel):
+    ticker: str
+    name: str | None = None
+    score_total: float | None = None
+    change_pct: float | None = None
+    entry_signal: str | None = None
+    price: float | None = None
+    reason: str | None = None
+
+
+class TopMoversOut(BaseModel):
+    up: list[TopMover]
+    down: list[TopMover]
+    score_winners: list[TopMover]
+    score_losers: list[TopMover]
+
+
+@router.get("/top-movers", response_model=TopMoversOut)
+async def get_top_movers(sb=Depends(get_supabase)):
+    """Today's top movers by price change and score winners/losers."""
+    # Use PostgREST ordering to avoid fetching all rows
+    up_res = (
+        sb.table("scan_results").select("ticker,name,score_total,change_pct,entry_signal,price")
+        .not_.is_("change_pct", "null")
+        .order("change_pct", desc=True)
+        .limit(5).execute()
+    )
+    down_res = (
+        sb.table("scan_results").select("ticker,name,score_total,change_pct,entry_signal,price")
+        .not_.is_("change_pct", "null")
+        .order("change_pct", desc=False)
+        .limit(5).execute()
+    )
+    score_winners_res = (
+        sb.table("scan_results").select("ticker,name,score_total,change_pct,entry_signal,price")
+        .not_.is_("score_total", "null")
+        .order("score_total", desc=True)
+        .limit(5).execute()
+    )
+    score_losers_res = (
+        sb.table("scan_results").select("ticker,name,score_total,change_pct,entry_signal,price")
+        .not_.is_("score_total", "null")
+        .order("score_total", desc=False)
+        .limit(5).execute()
+    )
+
+    up = [TopMover(**r) for r in (up_res.data or [])]
+    down = [TopMover(**r) for r in (down_res.data or [])]
+    score_winners = [TopMover(**r) for r in (score_winners_res.data or [])]
+    score_losers = [TopMover(**r) for r in (score_losers_res.data or [])]
+
+    return TopMoversOut(up=up, down=down, score_winners=score_winners, score_losers=score_losers)

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { ArrowRight, TrendingUp, TrendingDown, Minus, Star, Globe } from "lucide-react";
+import { ArrowRight, TrendingUp, TrendingDown, Minus, Star, Globe, BarChart3 } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, Tooltip as ReTooltip,
 } from "recharts";
@@ -15,7 +15,7 @@ import {
   scoreColorClass, formatScore, changeClass, formatNumber,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useGlobalIndices, GlobalIndexPanel } from "@/hooks/useMarkets";
+import { useGlobalIndices, GlobalIndexPanel, useTopMovers, type TopMover, useSectorOverview } from "@/hooks/useMarkets";
 
 // ─── Mock portfolio chart data (fallback when no real history) ────
 const MOCK_CHART = [
@@ -126,6 +126,9 @@ export function OversiktView() {
           <GlobalIndexPanel indices={markets.indices} />
         </div>
       )}
+
+      {/* ── Dagens marknad ─────────────────────────────── */}
+      <DayMarketSection />
     </div>
   );
 }
@@ -180,7 +183,7 @@ function PortfolioCard({
             <span className="text-xs text-[var(--color-text-muted)]">Idag</span>
             <InfoTooltip text="Portföljens värdeförändring under dagens handelsdag." side="left" />
           </div>
-          <div className={cn("font-mono tabular text-sm font-medium", changeClass(todayChange / totalValue))}>
+          <div className={cn("font-mono tabular text-sm font-medium", totalValue > 0 ? changeClass(todayChange / totalValue) : "")}>
             {todayChange >= 0 ? "+" : ""}{formatPrice(todayChange)}
           </div>
         </div>
@@ -465,5 +468,98 @@ function WatchlistCard({ items }: { items: ReturnType<typeof useWatchlist>["data
             })}
       </div>
     </div>
+  );
+}
+
+
+// ─── Dagens marknad widget ──────────────────────────────────────────────
+
+function DayMarketSection() {
+  const { data: movers, isLoading } = useTopMovers();
+
+  if (isLoading) return <div className="skeleton h-32 rounded-xl" />;
+  if (!movers) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {/* Top movers */}
+      <div className="rounded-xl border overflow-hidden bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+          <div className="flex items-center gap-2">
+            <BarChart3 size={15} strokeWidth={1.5} className="text-[var(--color-accent)]" />
+            <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+              Dagens marknad
+            </span>
+          </div>
+        </div>
+        <div className="divide-y divide-[var(--color-border)]">
+          <div className="px-5 py-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <TrendingUp size={12} strokeWidth={1.5} className="text-[var(--color-up)]" />
+              <span className="text-[11px] font-medium text-[var(--color-up)]">Störst upp</span>
+            </div>
+            {movers.up.slice(0, 3).map((m) => <MoverRow key={m.ticker} item={m} />)}
+          </div>
+          <div className="px-5 py-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <TrendingDown size={12} strokeWidth={1.5} className="text-[var(--color-down)]" />
+              <span className="text-[11px] font-medium text-[var(--color-down)]">Störst ned</span>
+            </div>
+            {movers.down.slice(0, 3).map((m) => <MoverRow key={m.ticker} item={m} />)}
+          </div>
+        </div>
+      </div>
+
+      {/* Score winners/losers */}
+      <div className="rounded-xl border overflow-hidden bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+          <div className="flex items-center gap-2">
+            <Star size={15} strokeWidth={1.5} className="text-[var(--color-warn)]" />
+            <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+              Betygsvinnare
+            </span>
+            <InfoTooltip text="Aktier med högst respektive lägst Marketscan-betyg just nu." />
+          </div>
+        </div>
+        <div className="divide-y divide-[var(--color-border)]">
+          <div className="px-5 py-3">
+            <div className="text-[11px] font-medium text-[var(--color-up)] mb-2">Högst betyg</div>
+            {movers.score_winners.slice(0, 3).map((m) => <MoverRow key={m.ticker} item={m} />)}
+          </div>
+          <div className="px-5 py-3">
+            <div className="text-[11px] font-medium text-[var(--color-text-muted)] mb-2">Lägst betyg</div>
+            {movers.score_losers.slice(0, 3).map((m) => <MoverRow key={m.ticker} item={m} />)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MoverRow({ item }: { item: TopMover }) {
+  return (
+    <Link
+      href={`/aktie/${item.ticker}`}
+      className="flex items-center gap-2 py-1.5 group hover:bg-[var(--color-bg-elevated)] -mx-1 px-1 rounded transition-colors"
+    >
+      <div className="flex-1 min-w-0">
+        <span className="text-xs font-medium text-[var(--color-text-primary)] truncate">
+          {item.name ?? item.ticker}
+        </span>
+        <span className="font-mono text-[10px] text-[var(--color-text-muted)] ml-1">
+          {item.ticker}
+        </span>
+      </div>
+      {item.score_total != null && (
+        <span className={cn("tabular text-xs font-mono", scoreColorClass(item.score_total))}>
+          {formatScore(item.score_total)}
+        </span>
+      )}
+      {item.change_pct != null && (
+        <span className={cn("font-mono tabular text-xs w-16 text-right", changeClass(item.change_pct))}>
+          {formatPctChange(item.change_pct)}
+        </span>
+      )}
+    </Link>
   );
 }

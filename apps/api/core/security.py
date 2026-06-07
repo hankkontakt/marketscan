@@ -1,6 +1,9 @@
 """
 Local JWT validation — no network roundtrip per request.
 Validates Supabase-issued HS256 tokens against SUPABASE_JWT_SECRET.
+
+Admin check reads role from profiles table (not from JWT, where it is
+always "authenticated"). Requires a supabase-admin client to bypass RLS.
 """
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -15,10 +18,6 @@ class User(BaseModel):
     id: str
     email: str | None = None
     role: str = "user"
-
-
-class AdminUser(User):
-    pass
 
 
 def _decode(token: str) -> dict:
@@ -58,7 +57,26 @@ async def get_optional_user(
         return None
 
 
-async def require_admin(user: User = Depends(get_current_user)) -> AdminUser:
-    if user.role != "admin":
+async def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Verify that the authenticated user has the 'admin' role in profiles table.
+
+    Reads from profiles (via service-role client) so the check is against the
+    database value — not the JWT claim, which is always 'authenticated'.
+    """
+    from apps.api.dependencies import get_supabase_admin
+    sb_admin = get_supabase_admin()
+    try:
+        profile = (
+            sb_admin.table("profiles")
+            .select("role")
+            .eq("id", user.id)
+            .single()
+            .execute()
+        )
+        if not profile.data or profile.data.get("role") != "admin":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin-behörighet krävs")
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin-behörighet krävs")
-    return AdminUser(**user.model_dump())
+    return user

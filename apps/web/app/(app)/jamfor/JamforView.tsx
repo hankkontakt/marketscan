@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Search, X, Loader2, Plus, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -353,9 +353,10 @@ export function JamforView() {
               }
 
               return (
-                <>
+                // P2-2: React.Fragment with key (plain <> can't carry key prop)
+                <React.Fragment key={metric.label}>
                   {/* Label */}
-                  <div className="p-3 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-bg)]">
+                  <div className="p-3 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-bg-surface)]">
                     {metric.label}
                   </div>
 
@@ -370,7 +371,8 @@ export function JamforView() {
                       <div
                         key={`${metric.label}-${t}`}
                         className={cn(
-                          "p-3 text-center text-xs font-mono tabular bg-[var(--color-bg)]",
+                          // P2-2: --color-bg is undefined; use --color-bg-surface
+                          "p-3 text-center text-xs tabular bg-[var(--color-bg-surface)]",
                           isBest && "bg-[var(--color-up)]/10",
                           isWorst && "bg-[var(--color-down)]/10",
                           metric.label === "Signal" && typeof v === "string"
@@ -393,7 +395,7 @@ export function JamforView() {
                       </div>
                     );
                   })}
-                </>
+                </React.Fragment>
               );
             })}
           </div>

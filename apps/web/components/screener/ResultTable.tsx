@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { ScoreSparkline } from "@/components/charts/ScoreSparkline";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { cn } from "@/lib/utils";
 import {
   formatPctChange,
@@ -251,6 +252,16 @@ export function ResultTable({ data, loading, onReset }: Props) {
   );
 }
 
+// U-8: Column header tooltips — explanations for each metric
+const COL_TIPS: Partial<Record<string, string>> = {
+  Totalbetyg: "Systemets samlade betyg (0–100) baserat på 8 faktorer: Värde, Kvalitet, Momentum, Tillväxt, Risk, Storlek, Utdelning och Sentiment. Över 70 är starkt.",
+  Köpläge: "Köpsignalen baseras på tekniska faktorer: trend, momentum och marknadsläge. STARK = starka tekniska signaler. OK = neutralt. VÄNTA = avvakta.",
+  Trend: "Aktiens pristrend de senaste 3–6 månaderna. Upptrend = stigande mönster. Nedtrend = fallande. Sidled = utan tydlig riktning.",
+  Börsvärde: "Aktiekursen multiplicerat med antalet aktier — hur mycket hela bolaget värderas till på börsen.",
+  "P/E": "Price/Earnings — aktiekursen delat med vinst per aktie (senaste 12 mån). Lägre = billigare relativt vinsten. Negativt = bolaget går med förlust.",
+  ROE: "Return on Equity — hur mycket vinst bolaget genererar per investerad krona av eget kapital. Högt ROE tyder på effektiv kapitalanvändning.",
+};
+
 function Th({
   label, width, sortKey, sort, onSort, align = "left",
 }: {
@@ -262,6 +273,7 @@ function Th({
   align?: "left" | "right";
 }) {
   const active = sortKey && sort?.key === sortKey;
+  const tip = COL_TIPS[label];
   return (
     <th
       style={{ width }}
@@ -273,8 +285,11 @@ function Th({
       )}
       onClick={() => sortKey && onSort?.(sortKey)}
     >
-      {label}
-      {active && <span className="ml-1">{sort?.dir === "desc" ? "↓" : "↑"}</span>}
+      <span className="inline-flex items-center gap-0.5">
+        {label}
+        {tip && <InfoTooltip text={tip} side="bottom" />}
+        {active && <span className="ml-1">{sort?.dir === "desc" ? "↓" : "↑"}</span>}
+      </span>
     </th>
   );
 }

@@ -67,3 +67,21 @@ export interface PortfolioRisk {
   count: number;
   score_avg: number | null;
 }
+
+export interface Transaction {
+  id: string;
+  ticker: string;
+  type: "buy" | "sell" | "deposit" | "withdrawal";
+  shares: number | null;
+  price: number | null;
+  amount: number | null;
+  traded_at: string;
+  note: string | null;
+  created_at: string;
+}
+
+export interface TWResponse {
+  twr: number | null;
+  total_return_pct: number | null;
+  periods: Record<string, number | null>;
+}

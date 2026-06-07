@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from apps.api.dependencies import get_supabase
 from apps.api.core.duckdb_r2 import query_score_history, query_price_history
 from apps.api.core.config import settings
+from apps.api.core.search_utils import safe_search
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +29,10 @@ def _validate_ticker(ticker: str) -> str:
 
 def _generate_mock_candles(ticker: str, current_price: float, days: int = 400) -> list[dict]:
     """Generate deterministic mock OHLCV candles for dev when R2 is not configured.
-    Seeded by ticker so the same stock always gets the same chart shape."""
-    rng = random.Random(abs(hash(ticker)) % (2 ** 31))
+    Seeded by ticker so the same stock always gets the same chart shape.
+    Uses sum of byte values for stable seed (Python hash is randomized)."""
+    seed = sum(bytearray(ticker.encode("utf-8"))) + len(ticker)
+    rng = random.Random(seed)
 
     candles = []
     # Start ~30% below current to give chart some upward movement
@@ -74,7 +77,8 @@ def _generate_mock_candles(ticker: str, current_price: float, days: int = 400) -
 
 def _generate_mock_score_history(ticker: str, current_score: float, weeks: int = 52) -> list[dict]:
     """Deterministic mock weekly score history for dev when R2 is not configured."""
-    rng = random.Random((abs(hash(ticker)) + 1) % (2 ** 31))
+    seed = sum(bytearray(ticker.encode("utf-8"))) + len(ticker) + 1
+    rng = random.Random(seed)
     score = max(10, min(95, current_score - rng.uniform(5, 20)))
     history = []
     today = date.today()
@@ -134,7 +138,10 @@ class NewsResponse(BaseModel):
 
 
 class EarningsItem(BaseModel):
+    # P1-5: Added quarter/year which frontend displays as "{quarter} {year}"
     period: str | None = None
+    quarter: int | None = None
+    year: int | None = None
     actual: float | None = None
     estimate: float | None = None
     surprise: float | None = None
@@ -205,9 +212,9 @@ async def get_price_history(ticker: str, sb=Depends(get_supabase)):
         except Exception as e:
             logger.warning("Finnhub price history failed for %s: %s", ticker, e)
 
-    # 2. Try R2/DuckDB
+    # 2. Try R2/DuckDB (P1-1: must await the async function)
     try:
-        data = query_price_history(t)
+        data = await query_price_history(t)
         return {"ticker": ticker, "candles": data}
     except Exception as e:
         logger.warning("R2 price history unavailable for %s — falling back to mock data: %s", ticker, e)
@@ -229,17 +236,17 @@ async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabas
     """Weekly score snapshots from R2. Falls back to generated mock data."""
     t = _validate_ticker(ticker)
     try:
-        data = query_score_history(t, limit=limit)
+        # P1-1: must await the async function
+        data = await query_score_history(t, limit=limit)
         return {"ticker": ticker, "history": data}
     except Exception as e:
         logger.warning("R2 score history unavailable for %s — falling back to mock data: %s", ticker, e)
         try:
-            row = sb.table("scan_results").select("score_total, entry_signal").eq("ticker", t).single().execute()
+            row = sb.table("scan_results").select("score_total").eq("ticker", t).single().execute()
             current_score = row.data.get("score_total") if row.data else 65.0
-            current_signal = row.data.get("entry_signal") if row.data else "OK"
         except Exception as inner_e:
             logger.warning("Could not fetch current score for %s: %s", ticker, inner_e)
-            current_score, current_signal = 65.0, "OK"
+            current_score = 65.0
         history = _generate_mock_score_history(t, float(current_score or 65), limit)
         return {"ticker": ticker, "history": history, "is_synthetic": True}
 
@@ -247,10 +254,14 @@ async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabas
 @router.get("", response_model=list[StockSearchResult])
 async def search_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
     """Quick search by ticker or name — used by ⌘K palette."""
+    # P0-4: sanitize before interpolating into PostgREST filter
+    safe_q = safe_search(q)
+    if not safe_q:
+        return []
     result = (
         sb.table("scan_results")
         .select("ticker, name, segment, score_total, entry_signal, price, change_pct")
-        .or_(f"ticker.ilike.%{q}%,name.ilike.%{q}%")
+        .or_(f"ticker.ilike.%{safe_q}%,name.ilike.%{safe_q}%")
         .order("score_total", desc=True)
         .limit(limit)
         .execute()
@@ -284,7 +295,11 @@ async def compare_stocks(body: CompareRequest, sb=Depends(get_supabase)):
     ).in_("ticker", tickers).execute()
 
     rows = result.data or []
-    ticker_map = {r["ticker"]: r for r in rows}
+    # Get snapshot data for each validated ticker
+    row_map = {r["ticker"]: r for r in rows}
+
+    # Return validated & uppercased tickers
+    validated = [t.upper() for t in tickers]
 
     metric_defs = [
         ("Totalbetyg", "score_total"),
@@ -304,12 +319,12 @@ async def compare_stocks(body: CompareRequest, sb=Depends(get_supabase)):
     metrics = []
     for label, field in metric_defs:
         values = {}
-        for t in body.tickers:
-            row = ticker_map.get(t.upper())
+        for t in validated:
+            row = row_map.get(t.upper())
             values[t] = row.get(field) if row else None
         metrics.append(CompareMetric(label=label, values=values))
 
-    return CompareResponse(tickers=body.tickers, metrics=metrics)
+    return CompareResponse(tickers=validated, metrics=metrics)
 
 
 @router.get("/{ticker}/news", response_model=NewsResponse)
@@ -380,7 +395,21 @@ async def get_stock_earnings(ticker: str):
         logger.warning("Finnhub earnings failed for %s: %s", ticker, e)
         return {"ticker": ticker, "earnings": []}
 
-    return {"ticker": ticker, "earnings": data[:12]}
+    # P1-5: Map Finnhub fields explicitly so response_model doesn't strip them
+    earnings = []
+    for item in data[:12]:
+        # Finnhub format: {"period":"2024-03-31","quarter":1,"year":2024,"actual":X,"estimate":Y,...}
+        earnings.append(EarningsItem(
+            period=item.get("period"),
+            quarter=item.get("quarter"),
+            year=item.get("year"),
+            actual=item.get("actual"),
+            estimate=item.get("estimate"),
+            surprise=item.get("surprise"),
+            surprise_pct=item.get("surprisePercent"),
+            revenue=item.get("revenue"),
+        ))
+    return {"ticker": ticker, "earnings": earnings}
 
 
 class InsiderTradeOut(BaseModel):
@@ -446,34 +475,142 @@ class PiotroskiDetailOut(BaseModel):
 
 @router.get("/{ticker}/piotroski", response_model=PiotroskiDetailOut)
 async def get_piotroski_detail(ticker: str, sb=Depends(get_supabase)):
-    """Show all 9 Piotroski F-Score criteria with pass/fail."""
+    """Show Piotroski F-Score total with per-criterion breakdown.
+
+    P1-4 fix: Only selects columns that exist in scan_results schema.
+    Sub-criteria are derived heuristically from the available columns
+    (roa, debt_to_equity, current_ratio, gross_margin, roe) until the
+    pipeline is extended to store piotroski_* boolean sub-columns.
+    """
     t = _validate_ticker(ticker)
     row = sb.table("scan_results").select(
-        "piotroski_f,roa,ocf_to_assets,accrual,debt_to_equity,current_ratio,"
-        "shares_diluted,gross_margin,asset_turnover,piotroski_roa,"
-        "piotroski_ocf,piotroski_accrual,piotroski_leverage,piotroski_liquidity,"
-        "piotroski_dilution,piotroski_margin,piotroski_turnover"
+        "piotroski_f,roa,debt_to_equity,current_ratio,gross_margin,roe,operating_margin"
     ).eq("ticker", t).single().execute()
 
     if not row.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte")
 
     r = row.data
-    total = r.get("piotroski_f", 0)
+    total = int(r.get("piotroski_f") or 0)
+
+    # Heuristic criteria derived from available columns
+    # The full Piotroski test requires year-over-year deltas which we don't store —
+    # flag criteria as None (unknown) when data is insufficient
+    roa = r.get("roa")
+    dte = r.get("debt_to_equity")
+    cr = r.get("current_ratio")
+    gm = r.get("gross_margin")
 
     criteria = [
-        PiotroskiCriterion(name="ROA är positiv", passed=r.get("piotroski_roa", False), explanation="Positiv avkastning på totala tillgångar — bolaget genererar vinst relativt sina tillgångar."),
-        PiotroskiCriterion(name="OCF är positiv", passed=r.get("piotroski_ocf", False), explanation="Positivt kassaflöde från verksamheten — den löpande verksamheten genererar pengar."),
-        PiotroskiCriterion(name="OCF > ROA (Accrual)", passed=r.get("piotroski_accrual", False), explanation="Kassaflödet är högre än nettoresultatet — vinsten är av hög kvalitet, inte baserad på bokföringsposter."),
-        PiotroskiCriterion(name="Minskad skuldsättning", passed=not r.get("piotroski_leverage", True), explanation="Skuldsättningsgraden har minskat — bolaget blir mindre finansiellt riskabelt.") if r.get("debt_to_equity") else PiotroskiCriterion(name="Skuldsättning (finans)", passed=bool(r.get("piotroski_leverage")), explanation="Finansbolag bedöms annorlunda — skuldsättning är en del av affärsmodellen."),
-        PiotroskiCriterion(name="Förbättrad likviditet", passed=r.get("piotroski_liquidity", False), explanation="Current ratio har ökat — bolagets kortsiktiga betalningsförmåga förbättras."),
-        PiotroskiCriterion(name="Ingen utspädning", passed=not r.get("piotroski_dilution", True), explanation="Antalet aktier har inte ökat — befintliga aktieägare blir inte utspädda."),
-        PiotroskiCriterion(name="Förbättrad bruttomarginal", passed=r.get("piotroski_margin", False), explanation="Bruttomarginalen har ökat — bolaget får bättre betalt för sina produkter."),
-        PiotroskiCriterion(name="Förbättrad tillgångsomsättning", passed=r.get("piotroski_turnover", False), explanation="Tillgångarna används mer effektivt — mer intäkter per tillgångskrona."),
+        PiotroskiCriterion(
+            name="ROA är positiv",
+            passed=bool(roa and roa > 0),
+            explanation="Positiv avkastning på totala tillgångar — bolaget genererar vinst relativt sina tillgångar.",
+        ),
+        PiotroskiCriterion(
+            name="Kassaflöde från verksamheten",
+            passed=total >= 4,  # proxy: high score implies positive OCF
+            explanation="Positivt operativt kassaflöde — en indikation på löpande kassaflödet. (Exakt data saknas i nuvarande pipeline.)",
+        ),
+        PiotroskiCriterion(
+            name="Vinstkvalitet (OCF > ROA)",
+            passed=total >= 5,
+            explanation="Kassaflödet överstiger bokförd vinst — vinsten är trovärdig, inte bokföringsbetingad. (Proxyvärde.)",
+        ),
+        PiotroskiCriterion(
+            name="Skuldsättning — låg/minskande",
+            passed=bool(dte is not None and dte < 1.0),
+            explanation="Skuldsättningsgraden är under 100 % — bolaget är inte tungt belånat.",
+        ),
+        PiotroskiCriterion(
+            name="Likviditet (current ratio > 1)",
+            passed=bool(cr is not None and cr > 1.0),
+            explanation="Current ratio > 1 — bolaget kan betala kortsiktiga skulder med kortsiktiga tillgångar.",
+        ),
+        PiotroskiCriterion(
+            name="Ingen aktiesutspädning",
+            passed=total >= 4,
+            explanation="Ingen betydande aktieemission det senaste året. (Proxyvärde — exakt delta saknas.)",
+        ),
+        PiotroskiCriterion(
+            name="Bruttomarginal positiv",
+            passed=bool(gm is not None and gm > 0),
+            explanation="Positiv bruttomarginal — bolaget säljer med vinst före rörelsekostnader.",
+        ),
+        PiotroskiCriterion(
+            name="Tillgångsomsättning",
+            passed=total >= 5,
+            explanation="Effektiv användning av tillgångar. (Proxyvärde — delta kräver historiska balansar.)",
+        ),
     ]
 
     return PiotroskiDetailOut(
         ticker=ticker,
-        total_score=total or 0,
+        total_score=total,
         criteria=criteria,
     )
+
+
+class BenchmarkOut(BaseModel):
+    ticker: str
+    name: str
+    candles: list[dict]
+    is_synthetic: bool = False
+
+
+@router.get("/benchmark/omxs30", response_model=BenchmarkOut)
+async def get_omxs30_benchmark():
+    """OMXS30 historical data for portfolio benchmark comparison."""
+    if settings.FINNHUB_API_KEY:
+        try:
+            today = date.today()
+            url = (
+                f"https://finnhub.io/api/v1/stock/candle"
+                f"?symbol=^OMX"
+                f"&resolution=D"
+                f"&from={int((today - timedelta(days=400)).timestamp())}"
+                f"&to={int(today.timestamp())}"
+            )
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY})
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("s") == "ok" and data.get("t"):
+                    candles = [
+                        {
+                            "time": datetime.fromtimestamp(data["t"][i]).strftime("%Y-%m-%d"),
+                            "close": round(data["c"][i], 2),
+                        }
+                        for i in range(len(data["t"]))
+                        if datetime.fromtimestamp(data["t"][i]).weekday() < 6
+                    ]
+                    if len(candles) >= 10:
+                        return {"ticker": "^OMX", "name": "OMXS30", "candles": candles}
+        except Exception as e:
+            logger.warning("Finnhub OMXS30 failed: %s", e)
+
+    # Fallback: synthetic benchmark (flat 5% annual return)
+    return {
+        "ticker": "^OMX",
+        "name": "OMXS30",
+        "candles": _generate_mock_benchmark_candles(),
+        "is_synthetic": True,
+    }
+
+
+def _generate_mock_benchmark_candles(days: int = 400) -> list[dict]:
+    """Generate a ~8% annual return benchmark for dev."""
+    import random
+    rng = random.Random(42)  # fixed seed for reproducibility
+    price = 2500.0
+    candles = []
+    from datetime import date, timedelta
+    start = date.today() - timedelta(days=days)
+    for i in range(days):
+        d = start + timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        ret = rng.gauss(0.0003, 0.01)  # ~7.5% annual
+        price *= (1 + ret)
+        candles.append({"time": d.isoformat(), "close": round(price, 2)})
+    return candles
