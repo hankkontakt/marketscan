@@ -45,6 +45,8 @@ export function AnalysCommittee({ stock }: Props) {
     staleTime: 8 * 60 * 60_000, // cached for 8h (also cached server-side per day)
   });
 
+  if (isLoading) return <CommitteeSkeleton />;
+
   if (error || !data) {
     return (
       <div className="flex flex-col items-center py-12 gap-3">
