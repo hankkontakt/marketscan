@@ -7,7 +7,8 @@ import sys
 import os
 
 # Add repo root to path so 'apps.api.main' is importable
-_repo_root = os.path.dirname(os.path.abspath(__file__))
+# __file__ is <repo>/api/main.py, so we need two dirname() calls to reach <repo>
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 

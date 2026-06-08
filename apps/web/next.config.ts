@@ -18,6 +18,15 @@ const nextConfig: NextConfig = {
     buildActivityPosition: "bottom-right",
     appIsrStatus: false,
   },
+  // Proxy /api/* → marketscan-api.vercel.app so browser sees one origin (no CORS needed)
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: "https://marketscan-api.vercel.app/api/:path*",
+      },
+    ];
+  },
 };
 
 export default withSerwist(nextConfig);
