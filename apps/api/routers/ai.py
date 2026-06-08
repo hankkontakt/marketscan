@@ -71,6 +71,7 @@ Returnera bara JSON. Inga förklaringar. Utelämna nycklar utan värde."""
 async def parse_nl_filter(
     request: Request,
     body: NLFilterRequest,
+    user: User = Depends(get_current_user),
 ):
     """Parse natural language query into screener filter params.
     Rate limited: 10 req/min (DeepSeek costs money).
@@ -150,6 +151,7 @@ async def get_committee_analysis(
     body: CommitteeRequest,
     sb=Depends(get_supabase),
     sb_admin=Depends(get_supabase_admin),
+    user: User = Depends(get_current_user),
 ):
     """
     Analyskommittén: 3 analysts + chair synthesis.
@@ -266,7 +268,7 @@ class AICompareResponse(BaseModel):
 
 
 @router.post("/compare")
-async def ai_compare(body: AICompareRequest, sb=Depends(get_supabase), sb_admin=Depends(get_supabase_admin)):
+async def ai_compare(body: AICompareRequest, sb=Depends(get_supabase), sb_admin=Depends(get_supabase_admin), user: User = Depends(get_current_user)):
     """AI that compares 2-5 stocks and recommends the most attractive one."""
     import asyncio
 
