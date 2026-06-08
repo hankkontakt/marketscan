@@ -1,6 +1,6 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { Serwist, NetworkFirst } from "serwist";
+import { Serwist, NetworkOnly } from "serwist";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -10,18 +10,12 @@ declare global {
 
 declare const self: WorkerGlobalScope;
 
-// Add NetworkFirst strategy for API calls with 5s timeout
-const apiCache = {
+// API calls must go directly to the network — never cache, never timeout.
+// Using NetworkFirst with a short timeout caused "Failed to fetch" when the
+// serverless API was cold-starting (> 5 s). NetworkOnly bypasses this entirely.
+const apiRoute = {
   matcher: ({ url }: { url: URL }) => url.pathname.startsWith("/api/"),
-  handler: new NetworkFirst({
-    networkTimeoutSeconds: 5,
-    cacheName: "api-cache",
-    plugins: [
-      {
-        cacheWillUpdate: async () => null, // never cache API responses
-      },
-    ],
-  }),
+  handler: new NetworkOnly(),
 };
 
 const serwist = new Serwist({
@@ -29,7 +23,7 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: [...defaultCache, apiCache],
+  runtimeCaching: [...defaultCache, apiRoute],
 });
 
 serwist.addEventListeners();
