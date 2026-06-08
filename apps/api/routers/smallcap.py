@@ -29,7 +29,7 @@ class SmallcapResultOut(BaseModel):
 
 
 @router.get("", response_model=list[SmallcapResultOut])
-async def get_smallcap_results(
+def get_smallcap_results(
     score_min: float = Query(0.0, ge=0),
     sector: str | None = None,
     limit: int = Query(50, le=200),
@@ -44,7 +44,7 @@ async def get_smallcap_results(
 
 
 @router.get("/sectors")
-async def get_smallcap_sectors(sb=Depends(get_supabase)):
+def get_smallcap_sectors(sb=Depends(get_supabase)):
     """Distinct sectors in smallcap results."""
     res = sb.table("smallcap_results").select("sector").execute()
     sectors = sorted(set(r["sector"] for r in (res.data or []) if r.get("sector")))

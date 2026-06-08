@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 # ─── Portfolio ──────────────────────────────────────────────────────────────
 
 @router.get("", response_model=PortfolioOut)
-async def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
+def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
     port = (
         sb.table("portfolios").select("*").eq("user_id", user.id)
         .order("created_at").limit(1).execute()
@@ -45,7 +45,7 @@ async def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_u
 
 
 @router.post("/holdings", response_model=HoldingOut, status_code=201)
-async def add_holding(
+def add_holding(
     body: HoldingIn,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -98,7 +98,7 @@ async def add_holding(
 
 
 @router.delete("/holdings/{holding_id}", status_code=204)
-async def remove_holding(
+def remove_holding(
     holding_id: str,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -141,7 +141,7 @@ class PortfolioRiskOut(BaseModel):
 
 
 @router.get("/risk", response_model=PortfolioRiskOut)
-async def get_portfolio_risk(
+def get_portfolio_risk(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -206,7 +206,7 @@ class DiversificationOut(BaseModel):
 
 
 @router.get("/diversification", response_model=DiversificationOut)
-async def get_diversification(
+def get_diversification(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -322,7 +322,7 @@ class AvanzaImportIn(BaseModel):
 
 
 @router.post("/import/preview", response_model=ImportPreviewOut)
-async def import_preview(rows: ImportPreviewIn):
+def import_preview(rows: ImportPreviewIn):
     """Preview Avanza CSV import with ticker mapping.
     Accepts parsed rows (sent from frontend after client-side CSV parse)."""
     preview = build_preview(rows.rows)  # rows.rows is already list[dict]
@@ -338,7 +338,7 @@ async def import_preview(rows: ImportPreviewIn):
 
 
 @router.post("/import/avanza/preview", response_model=ImportPreviewOut)
-async def import_avanza_preview(body: AvanzaImportIn):
+def import_avanza_preview(body: AvanzaImportIn):
     """
     Parse Avanza positioner + inkopskurser CSV and return an enriched import preview.
 
@@ -548,7 +548,7 @@ class FundHoldingOut(BaseModel):
 
 
 @router.get("/funds", response_model=list[FundHoldingOut])
-async def get_fund_holdings(
+def get_fund_holdings(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -595,7 +595,7 @@ async def get_fund_holdings(
 
 
 @router.delete("/funds/{fund_id}", status_code=204)
-async def remove_fund_holding(
+def remove_fund_holding(
     fund_id: str,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),

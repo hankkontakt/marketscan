@@ -71,7 +71,7 @@ class StrategyUpdate(BaseModel):
 # ─── Strategies CRUD ──────────────────────────────────────────────────────────
 
 @router.get("/api/strategies")
-async def list_strategies(
+def list_strategies(
     include_public: bool = Query(True),
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -111,7 +111,7 @@ async def list_strategies(
 
 
 @router.post("/api/strategies", status_code=201)
-async def create_strategy(
+def create_strategy(
     body: StrategyIn,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -136,7 +136,7 @@ async def create_strategy(
 
 
 @router.put("/api/strategies/{strategy_id}")
-async def update_strategy(
+def update_strategy(
     strategy_id: str,
     body: StrategyUpdate,
     user: User = Depends(get_current_user),
@@ -172,7 +172,7 @@ async def update_strategy(
 
 
 @router.delete("/api/strategies/{strategy_id}", status_code=204)
-async def delete_strategy(
+def delete_strategy(
     strategy_id: str,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -193,7 +193,7 @@ async def delete_strategy(
 # ─── Backtest Runs ────────────────────────────────────────────────────────────
 
 @router.post("/api/strategies/{strategy_id}/run", status_code=202)
-async def trigger_backtest(
+def trigger_backtest(
     strategy_id: str,
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
@@ -256,7 +256,7 @@ async def trigger_backtest(
 
 
 @router.get("/api/strategies/{strategy_id}/results")
-async def get_backtest_results(
+def get_backtest_results(
     strategy_id: str,
     run_id: str | None = Query(None, description="Specifikt run-id, eller senaste om utelämnat"),
     user: User = Depends(get_current_user),
@@ -312,7 +312,7 @@ async def get_backtest_results(
 
 
 @router.get("/api/strategies/compare")
-async def compare_strategies(
+def compare_strategies(
     run_ids: str = Query(..., description="Kommaseparerade run-IDs (max 5)"),
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -386,7 +386,7 @@ async def compare_strategies(
 # ─── Signal Analytics ─────────────────────────────────────────────────────────
 
 @router.get("/api/signal-analytics")
-async def get_signal_analytics(
+def get_signal_analytics(
     field: str | None = Query(None, description="entry_signal eller trend_signal"),
     min_samples: int = Query(5, ge=2),
     sb=Depends(get_user_supabase),
@@ -415,7 +415,7 @@ async def get_signal_analytics(
 
 
 @router.get("/api/signal-analytics/{field}/{from_signal}/{to_signal}")
-async def get_signal_analytics_detail(
+def get_signal_analytics_detail(
     field: str,
     from_signal: str,
     to_signal: str,

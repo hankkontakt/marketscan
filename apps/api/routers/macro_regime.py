@@ -28,7 +28,7 @@ REGIME_MAP = {
 
 
 @router.get("/regime", response_model=RegimeOut)
-async def get_market_regime(sb=Depends(get_supabase)):
+def get_market_regime(sb=Depends(get_supabase)):
     """Get current market regime (bull/bear/uncertain/neutral).
     Based on the most recent pipeline run's macro analysis."""
     try:

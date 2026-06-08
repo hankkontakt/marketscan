@@ -349,7 +349,7 @@ class AIJournalOut(BaseModel):
 
 
 @router.get("/journal/{ticker}", response_model=AIJournalOut)
-async def get_ai_journal(ticker: str, sb=Depends(get_supabase)):
+def get_ai_journal(ticker: str, sb=Depends(get_supabase)):
     """Get AI analysis history for a ticker (transparency log)."""
     t = ticker.upper().strip()
     res = (

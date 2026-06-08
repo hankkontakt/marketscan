@@ -87,7 +87,7 @@ class UsersListOut(BaseModel):
 # ─── Status ───────────────────────────────────────────────────────────────────
 
 @router.get("/status", response_model=SystemStatusOut)
-async def system_status(
+def system_status(
     user: User = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
@@ -108,7 +108,7 @@ async def system_status(
 
 
 @router.get("/pipeline-runs", response_model=list[PipelineRunOut])
-async def pipeline_runs(
+def pipeline_runs(
     limit: int = 20,
     user: User = Depends(require_admin),
     sb=Depends(get_supabase),
@@ -124,7 +124,7 @@ async def pipeline_runs(
 
 
 @router.get("/users", response_model=list[UsersListOut])
-async def list_users(
+def list_users(
     user: User = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
@@ -133,7 +133,7 @@ async def list_users(
 
 
 @router.get("/score-distribution", response_model=ScoreDistributionOut)
-async def score_distribution(
+def score_distribution(
     user: User = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
@@ -157,7 +157,7 @@ async def score_distribution(
 
 
 @router.get("/universe", response_model=UniverseStatsOut)
-async def universe_stats(
+def universe_stats(
     user: User = Depends(require_admin),
     sb=Depends(get_supabase),
 ):
@@ -221,7 +221,7 @@ async def trigger_pipeline(
 
 
 @router.get("/pipeline/queue", response_model=list[PipelineQueueItem])
-async def pipeline_queue(
+def pipeline_queue(
     user: User = Depends(require_admin),
     sb=Depends(get_supabase_admin),
 ):
@@ -349,7 +349,7 @@ async def admin_health_check(
 
 
 @router.post("/diagnostics")
-async def run_diagnostics(
+def run_diagnostics(
     mode: str = "quick",
     user: User = Depends(require_admin),
     sb=Depends(get_supabase_admin),
@@ -390,7 +390,7 @@ async def run_diagnostics(
 # ─── Cache management ─────────────────────────────────────────────────────────
 
 @router.post("/cache/clear")
-async def clear_ai_cache(
+def clear_ai_cache(
     user: User = Depends(require_admin),
     sb=Depends(get_supabase_admin),
 ):
@@ -415,7 +415,7 @@ class CandidatesListOut(BaseModel):
 
 
 @router.get("/candidates", response_model=CandidatesListOut)
-async def list_candidates(
+def list_candidates(
     user: User = Depends(require_admin),
     sb=Depends(get_supabase_admin),
 ):
@@ -432,7 +432,7 @@ async def list_candidates(
 
 
 @router.post("/candidates/{ticker}/approve")
-async def approve_candidate(
+def approve_candidate(
     ticker: str,
     user: User = Depends(require_admin),
     sb=Depends(get_supabase_admin),
@@ -443,7 +443,7 @@ async def approve_candidate(
 
 
 @router.post("/candidates/{ticker}/reject")
-async def reject_candidate(
+def reject_candidate(
     ticker: str,
     user: User = Depends(require_admin),
     sb=Depends(get_supabase_admin),

@@ -9,7 +9,7 @@ router = APIRouter(prefix="/paper", tags=["paper-trading"])
 
 
 @router.get("/portfolio")
-async def get_paper_portfolio(
+def get_paper_portfolio(
     user: User = Depends(get_current_user),
     sb=Depends(get_supabase_admin),  # P1-6: use same client tier as POST so reads are consistent
 ):
@@ -57,7 +57,7 @@ async def get_paper_portfolio(
 
 
 @router.post("/trade")
-async def execute_paper_trade(
+def execute_paper_trade(
     body: dict,
     user: User = Depends(get_current_user),
     sb=Depends(get_supabase_admin),
@@ -146,7 +146,7 @@ async def execute_paper_trade(
 
 
 @router.post("/reset")
-async def reset_paper_portfolio(
+def reset_paper_portfolio(
     user: User = Depends(get_current_user),
     sb=Depends(get_supabase_admin),
 ):

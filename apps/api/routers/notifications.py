@@ -29,7 +29,7 @@ class UnreadCountOut(BaseModel):
 
 
 @router.get("", response_model=list[NotificationOut])
-async def get_notifications(
+def get_notifications(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -46,7 +46,7 @@ async def get_notifications(
 
 
 @router.get("/unread", response_model=UnreadCountOut)
-async def get_unread_count(
+def get_unread_count(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -62,7 +62,7 @@ async def get_unread_count(
 
 
 @router.post("/{notification_id}/read", status_code=204)
-async def mark_read(
+def mark_read(
     notification_id: str,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -81,7 +81,7 @@ async def mark_read(
 
 
 @router.post("/read-all", status_code=204)
-async def mark_all_read(
+def mark_all_read(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):

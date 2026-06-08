@@ -48,7 +48,7 @@ class TWROut(BaseModel):
 
 
 @router.get("", response_model=TransactionListOut)
-async def get_transactions(
+def get_transactions(
     ticker: str | None = None,
     limit: int = 50,
     user: User = Depends(get_current_user),
@@ -74,7 +74,7 @@ async def get_transactions(
 
 
 @router.post("", response_model=TransactionOut, status_code=201)
-async def create_transaction(
+def create_transaction(
     body: TransactionIn,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -106,7 +106,7 @@ async def create_transaction(
 
 
 @router.delete("/{transaction_id}", status_code=204)
-async def delete_transaction(
+def delete_transaction(
     transaction_id: str,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -123,7 +123,7 @@ async def delete_transaction(
 
 
 @router.get("/twr", response_model=TWROut)
-async def get_twr(
+def get_twr(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):

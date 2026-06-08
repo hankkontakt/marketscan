@@ -8,7 +8,7 @@ router = APIRouter(prefix="/options", tags=["options"])
 
 
 @router.get("/{ticker}")
-async def get_options_chain(ticker: str, sb=Depends(get_supabase)):
+def get_options_chain(ticker: str, sb=Depends(get_supabase)):
     """Latest options chain data for a ticker."""
     res = sb.table("options_data").select("*").eq("ticker", ticker.upper()).order("expiration").execute()
     return {"ticker": ticker.upper(), "options": res.data or [], "count": len(res.data or [])}

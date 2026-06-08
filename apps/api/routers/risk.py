@@ -129,7 +129,7 @@ def _get_holdings_with_prices(portfolio_id: str, sb) -> list[dict]:
 # ─── Endpoints ───────────────────────────────────────────────────────────────
 
 @router.get("/analytics", response_model=RiskMetrics)
-async def get_risk_analytics(
+def get_risk_analytics(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -231,7 +231,7 @@ async def get_risk_analytics(
 
 
 @router.get("/analytics/factor", response_model=FactorExposureOut)
-async def get_factor_exposure(
+def get_factor_exposure(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -321,7 +321,7 @@ async def get_factor_exposure(
 
 
 @router.get("/analytics/correlation", response_model=CorrelationOut)
-async def get_correlation(
+def get_correlation(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -351,7 +351,7 @@ async def get_correlation(
 
 
 @router.get("/optimize", response_model=list[OptimizeOut])
-async def get_optimized_weights(
+def get_optimized_weights(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -393,7 +393,7 @@ async def get_optimized_weights(
 
 
 @router.get("/rebalance", response_model=RebalanceOut)
-async def get_rebalance_suggestions(
+def get_rebalance_suggestions(
     target_name: str | None = None,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -508,7 +508,7 @@ async def get_rebalance_suggestions(
 
 
 @router.post("/rebalance/targets", status_code=201)
-async def save_rebalance_targets(
+def save_rebalance_targets(
     body: RebalTargetIn,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -525,7 +525,7 @@ async def save_rebalance_targets(
 
 
 @router.get("/rebalance/targets")
-async def get_rebalance_targets(
+def get_rebalance_targets(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):

@@ -12,14 +12,14 @@ router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
 
 @router.get("", response_model=list[WatchlistItem])
-async def get_watchlist(user: User = Depends(get_current_user), sb=Depends(get_supabase)):
+def get_watchlist(user: User = Depends(get_current_user), sb=Depends(get_supabase)):
     wl = sb.table("watchlist").select("*").eq("user_id", user.id).execute()
     items = wl.data or []
     return enrich_with_scan_data(items, sb)
 
 
 @router.post("/{ticker}", status_code=201)
-async def add_to_watchlist(
+def add_to_watchlist(
     ticker: str,
     user: User = Depends(get_current_user),
     sb=Depends(get_supabase),
@@ -58,7 +58,7 @@ async def add_to_watchlist(
 
 
 @router.delete("/{ticker}", status_code=204)
-async def remove_from_watchlist(
+def remove_from_watchlist(
     ticker: str, user: User = Depends(get_current_user), sb=Depends(get_supabase)
 ):
     res = sb.table("watchlist").delete().eq("user_id", user.id).eq("ticker", ticker.upper()).execute()

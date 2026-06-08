@@ -31,7 +31,7 @@ class ProfileOut(BaseModel):
 
 
 @router.put("", response_model=ProfileOut)
-async def update_profile(
+def update_profile(
     body: ProfileUpdate,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -67,7 +67,7 @@ async def update_profile(
 
 
 @router.get("", response_model=ProfileOut)
-async def get_profile(
+def get_profile(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -90,7 +90,7 @@ def _build_profile_out(profile: dict, email: str | None) -> ProfileOut:
 
 
 @router.delete("/account", status_code=204)
-async def delete_account(
+def delete_account(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
     sb_admin=Depends(get_supabase_admin),

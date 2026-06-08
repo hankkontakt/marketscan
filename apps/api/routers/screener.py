@@ -12,7 +12,7 @@ router = APIRouter(prefix="/scan", tags=["screener"])
 
 
 @router.get("", response_model=list[ScanRow])
-async def get_scan(
+def get_scan(
     segments: list[str] = Query(default=["large_cap", "mid_cap"]),
     score_min: float = Query(default=0, ge=0, le=100),
     score_max: float = Query(default=100, ge=0, le=100),
@@ -68,7 +68,7 @@ async def get_scan(
 
 
 @router.get("/sectors", response_model=list[str])
-async def get_sectors(sb=Depends(get_supabase)):
+def get_sectors(sb=Depends(get_supabase)):
     """Distinct sectors in current scan — for filter dropdown."""
     result = (
         sb.table("scan_results")
@@ -81,7 +81,7 @@ async def get_sectors(sb=Depends(get_supabase)):
 
 
 @router.get("/countries", response_model=list[str])
-async def get_countries(sb=Depends(get_supabase)):
+def get_countries(sb=Depends(get_supabase)):
     """Distinct countries in current scan — for filter dropdown."""
     result = (
         sb.table("scan_results")
@@ -94,7 +94,7 @@ async def get_countries(sb=Depends(get_supabase)):
 
 
 @router.get("/meta")
-async def get_scan_meta(sb=Depends(get_supabase)):
+def get_scan_meta(sb=Depends(get_supabase)):
     """Scan metadata: date, counts per segment."""
     # Use count="exact" to avoid fetching all rows
     count_res = sb.table("scan_results").select("ticker", count="exact").execute()
@@ -119,7 +119,7 @@ async def get_scan_meta(sb=Depends(get_supabase)):
 
 
 @router.get("/export")
-async def export_scan(
+def export_scan(
     segments: list[str] = Query(["large_cap", "mid_cap", "small_cap", "micro_cap"]),
     sb=Depends(get_supabase),
 ):

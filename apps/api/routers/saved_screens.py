@@ -8,13 +8,13 @@ router = APIRouter(prefix="/api/screens", tags=["saved_screens"])
 
 
 @router.get("", response_model=list[SavedScreenOut])
-async def get_saved_screens(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
+def get_saved_screens(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
     res = sb.table("saved_screens").select("*").eq("user_id", user.id).order("created_at").execute()
     return res.data or []
 
 
 @router.post("", response_model=SavedScreenOut, status_code=201)
-async def save_screen(
+def save_screen(
     body: SavedScreenIn, user: User = Depends(get_current_user), sb=Depends(get_user_supabase)
 ):
     res = sb.table("saved_screens").insert({
@@ -24,7 +24,7 @@ async def save_screen(
 
 
 @router.delete("/{screen_id}", status_code=204)
-async def delete_screen(
+def delete_screen(
     screen_id: str, user: User = Depends(get_current_user), sb=Depends(get_user_supabase)
 ):
     # P0-2: Add user_id ownership check to prevent IDOR

@@ -9,13 +9,13 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
 @router.get("", response_model=list[PriceAlertOut])
-async def get_alerts(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
+def get_alerts(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
     res = sb.table("price_alerts").select("*").eq("user_id", user.id).eq("active", True).execute()
     return res.data or []
 
 
 @router.post("", response_model=PriceAlertOut, status_code=201)
-async def create_alert(
+def create_alert(
     body: PriceAlertIn, user: User = Depends(get_current_user), sb=Depends(get_user_supabase)
 ):
     res = sb.table("price_alerts").insert({
@@ -29,7 +29,7 @@ async def create_alert(
 
 
 @router.delete("/{alert_id}", status_code=204)
-async def delete_alert(
+def delete_alert(
     alert_id: str, user: User = Depends(get_current_user), sb=Depends(get_user_supabase)
 ):
     # P0-2: Add user_id ownership check to prevent IDOR
@@ -44,7 +44,7 @@ async def delete_alert(
 
 
 @router.get("/check")
-async def manual_alert_check(
+def manual_alert_check(
     user: User = Depends(require_admin),
     sb=Depends(get_supabase_admin),
 ):

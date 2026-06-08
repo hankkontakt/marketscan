@@ -91,7 +91,7 @@ async def _build_empty_snapshot(user: User, sb) -> SnapshotOut:
 
 
 @router.get("/history", response_model=PortfolioHistoryOut)
-async def get_portfolio_history(
+def get_portfolio_history(
     periods: str = Query("1M,3M,6M,12M", description="Comma-separated period labels"),
     user: User = Depends(get_current_user),
     sb=Depends(get_supabase),

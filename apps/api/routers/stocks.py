@@ -378,7 +378,7 @@ async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabas
 
 
 @router.get("", response_model=list[StockSearchResult])
-async def search_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
+def search_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
     """Quick search by ticker or name — used by ⌘K palette."""
     # P0-4: sanitize before interpolating into PostgREST filter
     safe_q = safe_search(q)
@@ -659,7 +659,7 @@ class PiotroskiDetailOut(BaseModel):
 
 
 @router.get("/{ticker}/piotroski", response_model=PiotroskiDetailOut)
-async def get_piotroski_detail(ticker: str, sb=Depends(get_supabase)):
+def get_piotroski_detail(ticker: str, sb=Depends(get_supabase)):
     """Show Piotroski F-Score total with per-criterion breakdown.
 
     P1-4 fix: Only selects columns that exist in scan_results schema.
@@ -820,7 +820,7 @@ class SimilarStocksResponse(BaseModel):
 
 
 @router.get("/{ticker}/similar", response_model=SimilarStocksResponse)
-async def get_similar_stocks(ticker: str, limit: int = 6, sb=Depends(get_supabase)):
+def get_similar_stocks(ticker: str, limit: int = 6, sb=Depends(get_supabase)):
     """Find stocks with similar factor profiles using cosine similarity.
 
     Compares the target ticker's score vector against the universe.

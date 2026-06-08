@@ -74,7 +74,7 @@ class AlertRuleUpdate(BaseModel):
 # ─── Alert Rules CRUD ─────────────────────────────────────────────────────────
 
 @router.get("/api/alerts")
-async def list_alerts(
+def list_alerts(
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
@@ -90,7 +90,7 @@ async def list_alerts(
 
 
 @router.post("/api/alerts", status_code=201)
-async def create_alert(
+def create_alert(
     body: AlertRuleIn,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -115,7 +115,7 @@ async def create_alert(
 
 
 @router.put("/api/alerts/{rule_id}")
-async def update_alert(
+def update_alert(
     rule_id: str,
     body: AlertRuleUpdate,
     user: User = Depends(get_current_user),
@@ -150,7 +150,7 @@ async def update_alert(
 
 
 @router.delete("/api/alerts/{rule_id}", status_code=204)
-async def delete_alert(
+def delete_alert(
     rule_id: str,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
@@ -170,7 +170,7 @@ async def delete_alert(
 # ─── Triggered Alerts History ─────────────────────────────────────────────────
 
 @router.get("/api/alerts/triggered")
-async def get_triggered_alerts(
+def get_triggered_alerts(
     limit: int = Query(50, ge=1, le=200),
     rule_type: str | None = Query(None),
     ticker: str | None = Query(None),
@@ -197,7 +197,7 @@ async def get_triggered_alerts(
 # ─── Score History ────────────────────────────────────────────────────────────
 
 @router.get("/api/score-history/{ticker}")
-async def get_score_history(
+def get_score_history(
     ticker: str,
     days: int = Query(90, ge=7, le=730, description="Antal dagar bakåt"),
     fields: str = Query(
@@ -233,7 +233,7 @@ async def get_score_history(
 
 
 @router.get("/api/score-history/movers")
-async def get_score_movers(
+def get_score_movers(
     days: int = Query(7, ge=1, le=30),
     min_change: float = Query(5.0, ge=1.0, description="Minimum poängändring"),
     limit: int = Query(20, ge=1, le=100),
@@ -296,7 +296,7 @@ async def get_score_movers(
 # ─── Signal Transitions ───────────────────────────────────────────────────────
 
 @router.get("/api/signal-transitions/{ticker}")
-async def get_signal_transitions(
+def get_signal_transitions(
     ticker: str,
     days: int = Query(90, ge=7, le=730),
     sb=Depends(get_user_supabase),

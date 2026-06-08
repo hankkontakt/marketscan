@@ -17,7 +17,7 @@ class MLPredictionOut(BaseModel):
 
 
 @router.get("", response_model=list[MLPredictionOut])
-async def get_predictions(
+def get_predictions(
     limit: int = Query(50, le=200),
     sb=Depends(get_supabase),
 ):
@@ -27,7 +27,7 @@ async def get_predictions(
 
 
 @router.get("/{ticker}", response_model=MLPredictionOut | None)
-async def get_ticker_prediction(ticker: str, sb=Depends(get_supabase)):
+def get_ticker_prediction(ticker: str, sb=Depends(get_supabase)):
     """ML prediction for a single ticker."""
     res = sb.table("ml_predictions").select("*").eq("ticker", ticker.upper()).limit(1).execute()
     return res.data[0] if res.data else None

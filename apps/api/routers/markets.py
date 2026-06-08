@@ -54,7 +54,7 @@ class SectorOverviewOut(BaseModel):
 
 
 @router.get("/sectors", response_model=SectorOverviewOut)
-async def get_sector_overview(sb=Depends(get_supabase)):
+def get_sector_overview(sb=Depends(get_supabase)):
     """Aggregated sector data for heatmap/overview."""
     result = sb.table("scan_results").select(
         "sector, score_total, score_momentum, score_value, score_quality, "
@@ -272,7 +272,7 @@ class TopMoversOut(BaseModel):
 
 
 @router.get("/top-movers", response_model=TopMoversOut)
-async def get_top_movers(sb=Depends(get_supabase)):
+def get_top_movers(sb=Depends(get_supabase)):
     """Today's top movers by price change and score winners/losers."""
     # Use PostgREST ordering to avoid fetching all rows
     up_res = (
