@@ -619,3 +619,112 @@ export function SettingsSection() {
     </div>
   );
 }
+
+// ─── Diagnostik (djup självtest) ───────────────────────────────────────────────
+
+type DeepDiag = {
+  ok: boolean;
+  summary: string;
+  issues: string[];
+  env: {
+    required: Record<string, { present: boolean; feature: string }>;
+    optional: Record<string, { present: boolean; feature: string }>;
+  };
+  tables: Record<string, { exists: boolean; rows?: number; authenticated_read?: string; auth_error?: string }>;
+  migrations: Record<string, boolean>;
+};
+
+export function DiagnosticsSection() {
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["admin-diag-deep"],
+    queryFn: () => api<DeepDiag>("/api/admin/diagnostics/deep"),
+    staleTime: 0,
+  });
+
+  if (isLoading) return <div className="py-10 text-center text-xs text-[var(--color-text-muted)]">Kör diagnostik…</div>;
+  if (error) return <ErrorBlock message="Kunde inte köra diagnostik (är du admin?)" onRetry={refetch} />;
+  if (!data) return null;
+
+  return (
+    <div className="space-y-4 mt-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {data.ok
+            ? <CheckCircle2 size={18} className="text-[var(--color-up)]" />
+            : <AlertTriangle size={18} className="text-[var(--color-warn)]" />}
+          <span className="text-sm font-semibold text-[var(--color-text-primary)]">{data.summary}</span>
+        </div>
+        <button onClick={() => refetch()} disabled={isFetching}
+          className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-50">
+          <RefreshCw size={11} className={isFetching ? "animate-spin" : ""} /> Kör igen
+        </button>
+      </div>
+
+      {/* Issues — the important part */}
+      {data.issues.length > 0 && (
+        <div className="rounded-xl border border-[var(--color-warn)]/40 bg-[var(--color-warn)]/5 p-3 space-y-1.5">
+          <p className="text-xs font-semibold text-[var(--color-text-primary)]">Problem att åtgärda</p>
+          {data.issues.map((iss, i) => (
+            <div key={i} className="flex gap-2 text-xs text-[var(--color-text-secondary)]">
+              <XCircle size={13} className="text-[var(--color-down)] shrink-0 mt-0.5" />
+              <span>{iss}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Env */}
+      <div className="rounded-xl border border-[var(--color-border)] p-3">
+        <p className="text-xs font-semibold mb-2 text-[var(--color-text-primary)]">Miljövariabler</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {Object.entries(data.env.required).map(([k, v]) => (
+            <div key={k} className="flex items-center gap-1.5 text-[11px]">
+              {v.present ? <CheckCircle2 size={12} className="text-[var(--color-up)]" /> : <XCircle size={12} className="text-[var(--color-down)]" />}
+              <span className="font-mono text-[var(--color-text-secondary)]">{k}</span>
+            </div>
+          ))}
+          {Object.entries(data.env.optional).map(([k, v]) => (
+            <div key={k} className="flex items-center gap-1.5 text-[11px] opacity-70">
+              {v.present ? <CheckCircle2 size={12} className="text-[var(--color-up)]" /> : <AlertTriangle size={12} className="text-[var(--color-text-muted)]" />}
+              <span className="font-mono text-[var(--color-text-muted)]">{k}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tables */}
+      <div className="rounded-xl border border-[var(--color-border)] p-3">
+        <p className="text-xs font-semibold mb-2 text-[var(--color-text-primary)]">Tabeller (authenticated-åtkomst)</p>
+        <div className="space-y-1">
+          {Object.entries(data.tables).map(([t, v]) => {
+            const ok = v.exists && v.authenticated_read === "ok";
+            return (
+              <div key={t} className="flex items-center justify-between text-[11px]">
+                <span className="flex items-center gap-1.5">
+                  {ok ? <CheckCircle2 size={12} className="text-[var(--color-up)]" /> : <XCircle size={12} className="text-[var(--color-down)]" />}
+                  <span className="font-mono text-[var(--color-text-secondary)]">{t}</span>
+                </span>
+                <span className="text-[var(--color-text-muted)]">
+                  {!v.exists ? "saknas" : v.authenticated_read === "ok" ? `${v.rows ?? 0} rader` : "rättighet nekad"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Migrations */}
+      <div className="rounded-xl border border-[var(--color-border)] p-3">
+        <p className="text-xs font-semibold mb-2 text-[var(--color-text-primary)]">Migrationer (härledda)</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {Object.entries(data.migrations).map(([m, applied]) => (
+            <div key={m} className="flex items-center gap-1.5 text-[11px]">
+              {applied ? <CheckCircle2 size={12} className="text-[var(--color-up)]" /> : <XCircle size={12} className="text-[var(--color-down)]" />}
+              <span className="font-mono text-[var(--color-text-secondary)]">{m}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
