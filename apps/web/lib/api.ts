@@ -5,10 +5,22 @@
 
 import { createClient } from "@/lib/supabase/client";
 
-// API is served at /api/* on the same Vercel deployment as the frontend.
-// Empty string → relative URLs work in both production and SSR.
+// The FastAPI backend is a SEPARATE Vercel project on its own domain
+// (marketscan-api.vercel.app). We MUST always call it with an absolute URL.
+//
+// Why not fall back to "" (same-origin)?  The frontend's own deployment
+// (web-…-hankkontakts-projects.vercel.app) has Vercel Deployment Protection,
+// which redirects any request to an SSO challenge. A same-origin /api/* POST
+// then gets redirected cross-origin → fetch() throws TypeError → "Nätverksfel".
+// Calling the API host directly bypasses that entirely (CORS is configured for it).
+//
+// NOTE: `|| ` not `?? ` on purpose — Vercel can inject NEXT_PUBLIC_API_URL="" (an
+// empty string), and `?? ""` would keep the empty string. `|| ` falls through to
+// the absolute default for both unset AND empty values.
+//
 // For local dev, set NEXT_PUBLIC_API_URL=http://localhost:8000 in .env.local.
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "https://marketscan-api.vercel.app";
 
 export class ApiError extends Error {
   constructor(

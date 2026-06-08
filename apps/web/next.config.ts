@@ -18,15 +18,9 @@ const nextConfig: NextConfig = {
     buildActivityPosition: "bottom-right",
     appIsrStatus: false,
   },
-  // Proxy /api/* → marketscan-api.vercel.app so browser sees one origin (no CORS needed)
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: "https://marketscan-api.vercel.app/api/:path*",
-      },
-    ];
-  },
+  // NOTE: no /api/* rewrite proxy. The browser calls the API host directly
+  // (see lib/api.ts → API_BASE). Proxying same-origin would route through THIS
+  // deployment's Vercel Deployment Protection and break authenticated POSTs.
 };
 
 export default withSerwist(nextConfig);
