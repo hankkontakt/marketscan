@@ -36,8 +36,9 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    # Allow all Vercel preview deployments (e.g. web-git-*-hankkontakts-projects.vercel.app)
-    allow_origin_regex=r"https://.*hankkontakts.*\.vercel\.app",
+    # Allow Vercel preview deployments for this project only
+    # Pattern is strict: matches web-<hash>-hankkontakts-projects.vercel.app
+    allow_origin_regex=r"https://web-[a-z0-9-]+-hankkontakts-projects\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

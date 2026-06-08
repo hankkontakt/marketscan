@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from apps.api.core.security import require_admin, User
 from apps.api.core.config import settings
 from apps.api.dependencies import get_supabase
+from apps.api.core.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,9 @@ class ClientErrorIn(BaseModel):
 
 
 @debug_router.post("/client-error", status_code=200)
-async def capture_client_error(body: ClientErrorIn):
-    """Log client-side errors. Rate-limited via slowapi."""
+@(limiter.limit("10/minute") if limiter is not None else lambda f: f)
+async def capture_client_error(request: Request, body: ClientErrorIn):
+    """Log client-side errors. Rate-limited to 10 req/min per IP via slowapi."""
     logger.warning("Client error: %s | url=%s | rid=%s", body.message[:200], body.url, body.request_id)
     try:
         from apps.api.dependencies import get_supabase_admin
