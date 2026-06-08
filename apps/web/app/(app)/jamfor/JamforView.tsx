@@ -222,27 +222,26 @@ export function JamforView() {
     return () => { cancelled = true; };
   }, [tickers]);
 
-  // Radar data from compare metrics
+  // Bar chart data from compare metrics — null for missing, never 0-fill
   const radarSeries = useMemo(() => {
     if (!compareData) return [];
     return compareData.tickers.map((t, i) => {
-      const getVal = (label: string) => {
+      const getVal = (label: string): number | null => {
         const m = compareData.metrics.find((m) => m.label === label);
         const v = m?.values[t];
-        return typeof v === "number" ? v : 0;
+        return typeof v === "number" && !isNaN(v) && v > 0 ? v : null;
       };
       return {
         ticker: t,
         color: tickerColor(i),
         values: {
-          score_value: getVal("Värdering"),
-          score_quality: getVal("Kvalitet"),
-          score_momentum: getVal("Momentum"),
-          score_growth: getVal("Tillväxt"),
-          score_risk: getVal("Risk"),
-          score_dividend: getVal("Utdelning"),
-          score_sentiment: 50,
-          score_size: 50,
+          score_value:     getVal("Värdering"),
+          score_quality:   getVal("Kvalitet"),
+          score_momentum:  getVal("Momentum"),
+          score_growth:    getVal("Tillväxt"),
+          score_risk:      getVal("Risk"),
+          score_dividend:  getVal("Utdelning"),
+          score_sentiment: getVal("Sentiment"),
         },
       };
     });
