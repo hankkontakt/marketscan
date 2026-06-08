@@ -19,6 +19,13 @@
 | 2026-06-08 | fas2 | FX-normalisering av `market_cap` (SEK→USD) före segment-klassificering | `backend_worker/db_loader.py` |
 | 2026-06-08 | fas2 | UTF-8-härdning: `client_encoding="UTF8"` + `encoding="utf-8"` till `to_csv()` | `backend_worker/db_loader.py` |
 | 2026-06-08 | fas3 | DEPRECATED-header på `hrp_optimizer.py`, `portfolio_snapshot.py`, `load_data.py` | alla tre filer |
+| 2026-06-08 | mega1 | **Risk Analytics**: `risk_analyzer.py`, migration 019, API-router `risk.py`, `RiskView.tsx`, hooks | se nedan |
+| 2026-06-08 | mega2 | **Smart Alerts**: `score_tracker.py`, `smart_alert_engine.py`, `digest_mailer.py`, migration 020, router `smart_alerts.py`, hooks | se nedan |
+| 2026-06-08 | mega3 | **Strategy Lab**: `strategy_backtester.py`, `signal_analytics.py`, migration 021, router `strategy_lab.py`, `StrategiLabView.tsx`, `SignalAnalyticsView.tsx`, hooks | se nedan |
+| 2026-06-08 | infra | 6 nya GH Actions workflows: score_tracker, risk_analysis, smart_alerts, digest, signal_analytics, strategy_backtester | `.github/workflows/` |
+| 2026-06-08 | infra | NavRail: lade till Strategi Lab (FlaskConical) + Signalanalys (Activity) | `NavRail.tsx` |
+| 2026-06-08 | infra | PortfoljView: lade till länk-kort till djupgående riskanalys | `PortfoljView.tsx` |
+| 2026-06-08 | infra | Nya TS-typer: RiskMetrics, FactorExposure, CorrelationMatrix, OptimizeResult, RebalanceResult, AlertRule, TriggeredAlert, Strategy, StrategyRun, SignalAnalytics | `types/portfolio.ts`, `types/alerts.ts`, `types/strategy.ts` |
 
 ---
 
@@ -273,3 +280,134 @@ Serwist (`@serwist/next`) konfigurerat i `next.config.ts`. Service worker: `app/
 | Nästan allt `large_cap` | SEK-värden jämfördes mot USD-trösklar | Fixat: `_to_usd()` normaliserar med FX-map |
 | Mojibake i `entry_signal` | Fel encoding vid COPY | Fixat: `client_encoding="UTF8"` + `encoding="utf-8"` |
 | `ModuleNotFoundError: No module named 'core'` | `PYTHONPATH` saknar stock-scanner | GH Actions workflow: `PYTHONPATH: "marketscan:stock-scanner"` |
+| Backtest-resultat saknas trots klar run | `strategy_daily_equity` är tom | Kontrollera att `score_history` har data — backtests kräver historisk snapshotdata |
+| Signalanalys visar inga rader | `signal_transitions` är tom | Vänta tills score_tracker körts och signaler faktiskt ändrats |
+| Risk analytics visar bara beta/vol | Saknar nattlig cache | Kör `risk_analyzer.py` via GH Actions eller vänta till nästa natt |
+
+---
+
+## 9. Mega-projekt (implementerade 2026-06-08)
+
+### 9.1 Risk Analytics
+
+**Syfte:** Djupgående portföljriskanalys med nattlig beräkning.
+
+**Flöde:**
+```
+GitHub Actions: risk_analysis.yml (nightly efter score_tracker)
+  → backend_worker/risk_analyzer.py
+    → hämtar prishistorik via yfinance (1 år)
+    → beräknar Sharpe, Sortino, Calmar, VaR, CVaR, beta, max_drawdown, HRP/minvar
+    → upsert → portfolio_risk_cache (per user_id)
+    → upsert → portfolio_factor_exposure (weighted avg scores vs benchmark)
+```
+
+**API-endpoints (apps/api/routers/risk.py):**
+- `GET /api/portfolio/analytics` — full riskrapport (cache + realtidsfallback)
+- `GET /api/portfolio/analytics/factor` — faktorexponering vs benchmark
+- `GET /api/portfolio/analytics/correlation` — korrelationsmatris
+- `GET /api/portfolio/optimize` — HRP + minvar + equal weights
+- `GET /api/portfolio/rebalance` — driftanalys + köp/sälj-förslag
+- `POST/GET /api/portfolio/rebalance/targets` — CRUD för målallokeringar
+
+**DB-tabeller:** `portfolio_risk_cache`, `portfolio_factor_exposure`, `rebalancing_targets`
+
+**Frontend:** `/portfolj/risk` → `RiskView.tsx` (MetricTiles, CorrelationHeatmap, FactorRadar, OptimizeView, RebalanceDriftView)
+
+---
+
+### 9.2 Smart Alerts
+
+**Syfte:** Compound larmsystem med 6 regeltyper + veckodigest.
+
+**Flöde:**
+```
+score_tracker.yml (nightly after pipeline):
+  → backend_worker/score_tracker.py
+    → snapshot scan_results → score_history
+    → jämför med förra snapshot → signal_transitions
+
+smart_alerts.yml (nightly):
+  → backend_worker/smart_alert_engine.py
+    → laddar alla aktiva alert_rules
+    → utvärderar 6 typer: price_cross, score_change, signal_change,
+      screen_match, insider_cluster, volatility_spike
+    → batch-insert notifications + triggered_alerts
+
+digest.yml (varje måndag 09:30):
+  → backend_worker/digest_mailer.py
+    → bygger HTML via email/layout.py + components.py
+    → skickar via Resend API
+    → loggar i digest_log
+```
+
+**API-endpoints (apps/api/routers/smart_alerts.py):**
+- `GET/POST/PUT/DELETE /api/alerts` — CRUD för compound larmregler
+- `GET /api/alerts/triggered` — historik senaste 30 dagar
+- `GET /api/score-history/{ticker}` — betygstidslinje per aktie
+- `GET /api/score-history/movers` — störst betygskändringar N dagar
+- `GET /api/signal-transitions/{ticker}` — transitionshistorik per aktie
+
+**DB-tabeller:** `score_history`, `signal_transitions`, `alert_rules`, `triggered_alerts`, `digest_log`
+
+---
+
+### 9.3 Strategy Lab
+
+**Syfte:** Backtestar screener-strategier mot historiska betygssnapshots.
+
+**Flöde:**
+```
+Frontend: POST /api/strategies/{id}/run
+  → skapar strategy_runs med status=pending
+  → försöker köra in-process i bakgrundstask (om DATABASE_URL satt)
+
+strategy_backtester.yml (nightly, --run-pending):
+  → backend_worker/strategy_backtester.py
+    → hämtar alla pending strategy_runs
+    → för varje run: laddar score_history, simulerar portfölj,
+      räknar om vid rebalanceringsdatum, applicerar courtage
+    → skriver equity-kurva till strategy_daily_equity
+    → uppdaterar strategy_runs med alla metrics
+
+signal_analytics.yml (varje söndag):
+  → backend_worker/signal_analytics.py
+    → grupperar signal_transitions per (field, from, to)
+    → beräknar hålltid, framåtavkastning, win rate, sektorbrytning
+    → upsert → signal_persistence_cache
+```
+
+**API-endpoints (apps/api/routers/strategy_lab.py):**
+- `GET/POST/PUT/DELETE /api/strategies` — CRUD + publik delning
+- `POST /api/strategies/{id}/run` — kö-ar backtest (202 Accepted)
+- `GET /api/strategies/{id}/results` — metrics + equity-kurva
+- `GET /api/strategies/compare?run_ids=…` — jämför upp till 5 runs
+- `GET /api/signal-analytics` — alla transition-statistik
+- `GET /api/signal-analytics/{field}/{from}/{to}` — detaljvy + exempel
+
+**DB-tabeller:** `strategies`, `strategy_runs`, `strategy_daily_equity`, `signal_persistence_cache`
+
+**Frontend:** `/strategi-lab` (lista + skapa), `/strategi-lab/[id]` (equity-kurva + metrics), `/signal-analytics` (tabellvy med drill-down)
+
+---
+
+### 9.4 Deployment-checklista för mega-projekten
+
+1. **Kör DB-migrationer i Supabase SQL-editor** (i ordning):
+   - `019_risk_analytics.sql`
+   - `020_smart_alerts.sql`
+   - `021_strategy_lab.sql`
+
+2. **Redeploya `marketscan-api`** (ny routerregistrering i `main.py`)
+
+3. **Redeploya `web`** (ny NavRail-länkar, nya sidor)
+
+4. **Sätt GitHub Secrets** om de saknas:
+   - `DATABASE_URL` — direktanslutning PostgreSQL (psycopg2)
+   - `RESEND_API_KEY` — för digest-mailer
+   - `EMAIL_FROM` — avsändaradress (t.ex. `digest@marketscan.se`)
+   - `APP_URL` — frontend-URL för CTA-knappar i email
+
+5. **Triggra score_tracker manuellt** första gången för att fylla `score_history`
+
+6. **Notera:** strategy backtests kräver ≥7 dagars `score_history` för meningsfull data
