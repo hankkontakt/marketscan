@@ -1,0 +1,42 @@
+name: Score Tracker — snapshot daily scores
+
+on:
+  # Runs after the main pipeline completes
+  workflow_run:
+    workflows: ["Daily Pipeline"]
+    types: [completed]
+  # Also allow manual trigger for backfill
+  workflow_dispatch:
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  snapshot:
+    # Only run if the pipeline succeeded (or manual trigger)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout marketscan
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary numpy
+
+      - name: Run score tracker
+        run: python -m backend_worker.score_tracker
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Summary
+        run: echo "Score tracker complete — scores snapshotted and signal transitions detected"

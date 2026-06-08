@@ -1,0 +1,41 @@
+name: Smart Alerts — nightly alert engine
+
+on:
+  # After risk analysis (which is after score_tracker → pipeline)
+  workflow_run:
+    workflows: ["Risk Analysis — nightly portfolio risk metrics"]
+    types: [completed]
+  workflow_dispatch:
+  # Fallback schedule: 07:00 UTC weekdays
+  schedule:
+    - cron: "0 7 * * 1-5"
+
+jobs:
+  alert-engine:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout marketscan
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary
+
+      - name: Run smart alert engine
+        run: python -m backend_worker.smart_alert_engine
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Summary
+        run: echo "Alert engine complete — notifications and triggered_alerts updated"

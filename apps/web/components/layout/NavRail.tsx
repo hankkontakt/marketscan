@@ -15,6 +15,8 @@ import {
   ArrowLeftRight,
   BookOpen,
   Shield,
+  FlaskConical,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -25,8 +27,10 @@ const NAV_ITEMS = [
   { href: "/marknad",       icon: Globe,               label: "Marknad" },
   { href: "/jamfor",        icon: ArrowLeftRight,      label: "Jämför" },
   { href: "/kalender",      icon: CalendarDays,        label: "Kalender" },
-  { href: "/portfolj",      icon: Briefcase,           label: "Min portfölj" },
-  { href: "/bevakningar",   icon: Star,                label: "Bevakningar" },
+  { href: "/portfolj",         icon: Briefcase,       label: "Min portfölj" },
+  { href: "/bevakningar",      icon: Star,            label: "Bevakningar" },
+  { href: "/strategi-lab",     icon: FlaskConical,    label: "Strategi Lab" },
+  { href: "/signal-analytics", icon: Activity,        label: "Signalanalys" },
 ] as const;
 
 const BOTTOM_ITEMS = [

@@ -1,0 +1,43 @@
+name: Risk Analysis — nightly portfolio risk metrics
+
+on:
+  # Runs after score_tracker completes (which runs after pipeline)
+  workflow_run:
+    workflows: ["Score Tracker — snapshot daily scores"]
+    types: [completed]
+  # Manual trigger for re-runs
+  workflow_dispatch:
+  # Fallback: also run on schedule in case workflow_run chain fails
+  schedule:
+    # 06:00 UTC weekdays (08:00 Swedish summer time)
+    - cron: "0 6 * * 1-5"
+
+jobs:
+  risk-metrics:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout marketscan
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary numpy scipy yfinance
+
+      - name: Run risk analyzer
+        run: python -m backend_worker.risk_analyzer
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Summary
+        run: echo "Risk analysis complete — portfolio_risk_cache and factor_exposure updated"

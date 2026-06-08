@@ -1,0 +1,43 @@
+name: Strategy Backtester — run pending backtests
+
+on:
+  # Every night at 03:00 UTC — pick up runs queued during the day
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      strategy_id:
+        description: "Run a specific strategy ID (optional — omit to run all pending)"
+        required: false
+        default: ""
+
+jobs:
+  backtester:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout marketscan
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary numpy scipy
+
+      - name: Run pending backtests
+        run: |
+          if [ -n "${{ github.event.inputs.strategy_id }}" ]; then
+            python -m backend_worker.strategy_backtester --strategy-id "${{ github.event.inputs.strategy_id }}"
+          else
+            python -m backend_worker.strategy_backtester --run-pending
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Summary
+        run: echo "Backtester complete"

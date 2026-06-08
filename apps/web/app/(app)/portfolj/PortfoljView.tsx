@@ -270,6 +270,25 @@ export function PortfoljView() {
         </div>
       )}
 
+      {/* Link to deep risk analysis */}
+      {holdings.length > 1 && (
+        <Link
+          href="/portfolj/risk"
+          className="flex items-center justify-between px-4 py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] hover:border-[var(--color-border-strong)] transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-[var(--color-accent-soft)]">
+              <ShieldAlert size={15} strokeWidth={1.5} className="text-[var(--color-accent)]" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[var(--color-text-primary)]">Djupgående riskanalys</p>
+              <p className="text-xs text-[var(--color-text-muted)]">Sharpe, VaR, korrelationsmatris, optimal viktning &amp; rebalansering</p>
+            </div>
+          </div>
+          <BarChart3 size={16} strokeWidth={1.5} className="text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)] transition-colors" />
+        </Link>
+      )}
+
       {/* AI Coach */}
       {holdings.length > 0 && (
         <div className="rounded-xl p-5 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">

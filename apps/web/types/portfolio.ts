@@ -85,3 +85,76 @@ export interface TWResponse {
   total_return_pct: number | null;
   periods: Record<string, number | null>;
 }
+
+// ─── Risk Analytics (Mega-project 1) ──────────────────────────────────────────
+
+export interface RiskMetrics {
+  sharpe_ratio: number | null;
+  sortino_ratio: number | null;
+  calmar_ratio: number | null;
+  total_return_pct: number | null;
+  cagr_pct: number | null;
+  volatility_ann: number | null;
+  max_drawdown_pct: number | null;
+  var_95_pct: number | null;
+  cvar_95_pct: number | null;
+  beta_market: number | null;
+  num_holdings: number | null;
+  top_holding_pct: number | null;
+  sector_hhi: number | null;
+  computed_at: string | null;
+  is_cached: boolean;
+}
+
+export interface FactorExposure {
+  factor_value: number | null;
+  factor_momentum: number | null;
+  factor_quality: number | null;
+  factor_growth: number | null;
+  factor_dividend: number | null;
+  factor_risk: number | null;
+  bench_value: number | null;
+  bench_momentum: number | null;
+  bench_quality: number | null;
+  bench_growth: number | null;
+  bench_dividend: number | null;
+  bench_risk: number | null;
+  computed_at: string | null;
+}
+
+export interface CorrelationMatrix {
+  tickers: string[];
+  matrix: number[][];
+}
+
+export interface OptimizeResult {
+  method: "hrp" | "minvar" | "equal";
+  weights: Record<string, number>;
+  expected_return_pct: number | null;
+  expected_vol_pct: number | null;
+}
+
+export interface HoldingDrift {
+  ticker: string;
+  name: string | null;
+  current_pct: number;
+  target_pct: number | null;
+  drift_pct: number;
+  action: "buy" | "sell" | "hold";
+  amount_sek: number | null;
+}
+
+export interface RebalanceResult {
+  total_value: number;
+  drifted: boolean;
+  holdings: HoldingDrift[];
+  target_name: string | null;
+}
+
+export interface RebalancingTarget {
+  id: string;
+  name: string;
+  method: "ticker" | "sector";
+  targets: Array<{ ticker?: string; sector?: string; target_pct: number }>;
+  updated_at: string;
+}

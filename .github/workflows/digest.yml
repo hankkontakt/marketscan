@@ -1,0 +1,43 @@
+name: Weekly Digest — send email summaries
+
+on:
+  # Every Monday at 07:30 UTC (09:30 Swedish summer time)
+  schedule:
+    - cron: "30 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (log recipients but do not send emails)"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  send-digests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout marketscan
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary httpx
+
+      - name: Send weekly digests
+        run: python -m backend_worker.digest_mailer
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          APP_URL: ${{ secrets.APP_URL }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+
+      - name: Summary
+        run: echo "Weekly digest job complete"

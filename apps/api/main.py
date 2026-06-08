@@ -19,6 +19,7 @@ from apps.api.routers import (
     options, prediction, smallcap, backtests, sector_rotation_router, paper_trading_router,
     notifications, transactions, macro_regime, insider,
 )
+from apps.api.routers import risk, smart_alerts, strategy_lab
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -74,6 +75,11 @@ app.include_router(notifications.router)
 app.include_router(transactions.router)
 app.include_router(macro_regime.router, prefix="/api")
 app.include_router(insider.router, prefix="/api")
+
+# Mega-project routers
+app.include_router(risk.router)            # /api/portfolio/analytics, /optimize, /rebalance, ...
+app.include_router(smart_alerts.router)    # /api/alerts, /api/score-history, /api/signal-transitions
+app.include_router(strategy_lab.router)    # /api/strategies, /api/signal-analytics
 
 
 @app.get("/api/health")

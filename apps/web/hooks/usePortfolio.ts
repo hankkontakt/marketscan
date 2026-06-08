@@ -3,8 +3,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ScanRow } from "@/types/scan";
-import type { Portfolio, Holding, PortfolioHistory, PortfolioRisk, Transaction, TWResponse } from "@/types/portfolio";
-export type { Portfolio, Holding, PortfolioHistory, PeriodReturn, PortfolioRisk, Transaction, TWResponse } from "@/types/portfolio";
+import type {
+  Portfolio, Holding, PortfolioHistory, PortfolioRisk, Transaction, TWResponse,
+  RiskMetrics, FactorExposure, CorrelationMatrix, OptimizeResult,
+  RebalanceResult, RebalancingTarget,
+} from "@/types/portfolio";
+export type {
+  Portfolio, Holding, PortfolioHistory, PeriodReturn, PortfolioRisk, Transaction, TWResponse,
+  RiskMetrics, FactorExposure, CorrelationMatrix, OptimizeResult, RebalanceResult, RebalancingTarget,
+} from "@/types/portfolio";
 
 export function usePortfolio() {
   return useQuery<Portfolio>({
@@ -99,5 +106,70 @@ export function useTWR() {
     queryFn: () => api<TWResponse>("/api/transactions/twr"),
     staleTime: 60_000,
     retry: 1,
+  });
+}
+
+// ─── Risk Analytics (Mega-project 1) ──────────────────────────────────────────
+
+export function useRiskAnalytics() {
+  return useQuery<RiskMetrics>({
+    queryKey: ["portfolio-risk-analytics"],
+    queryFn: () => api<RiskMetrics>("/api/portfolio/analytics"),
+    staleTime: 10 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useFactorExposure() {
+  return useQuery<FactorExposure>({
+    queryKey: ["portfolio-factor-exposure"],
+    queryFn: () => api<FactorExposure>("/api/portfolio/analytics/factor"),
+    staleTime: 10 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useCorrelationMatrix() {
+  return useQuery<CorrelationMatrix>({
+    queryKey: ["portfolio-correlation"],
+    queryFn: () => api<CorrelationMatrix>("/api/portfolio/analytics/correlation"),
+    staleTime: 10 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useOptimizedWeights() {
+  return useQuery<OptimizeResult[]>({
+    queryKey: ["portfolio-optimize"],
+    queryFn: () => api<OptimizeResult[]>("/api/portfolio/optimize"),
+    staleTime: 10 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useRebalanceSuggestions(targetName?: string) {
+  const params = targetName ? `?target_name=${encodeURIComponent(targetName)}` : "";
+  return useQuery<RebalanceResult>({
+    queryKey: ["portfolio-rebalance", targetName],
+    queryFn: () => api<RebalanceResult>(`/api/portfolio/rebalance${params}`),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useRebalancingTargets() {
+  return useQuery<RebalancingTarget[]>({
+    queryKey: ["rebalancing-targets"],
+    queryFn: () => api<RebalancingTarget[]>("/api/portfolio/rebalance/targets"),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useSaveRebalancingTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; targets: object[]; method: string }) =>
+      api("/api/portfolio/rebalance/targets", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rebalancing-targets"] }),
   });
 }
