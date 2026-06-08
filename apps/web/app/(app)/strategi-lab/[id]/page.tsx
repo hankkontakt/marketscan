@@ -3,6 +3,7 @@ import { StrategyResultView } from "./StrategyResultView";
 
 export const metadata: Metadata = { title: "Backtest-resultat" };
 
-export default function StrategyResultPage({ params }: { params: { id: string } }) {
-  return <StrategyResultView strategyId={params.id} />;
+export default async function StrategyResultPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return <StrategyResultView strategyId={id} />;
 }

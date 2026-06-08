@@ -407,6 +407,52 @@ class CompareMetric(BaseModel):
 class CompareResponse(BaseModel):
     tickers: list[str]
     metrics: list[CompareMetric]
+    external_tickers: list[str] = []  # tickers fetched from yfinance, not in universe
+
+
+async def _yfinance_fundamentals(ticker: str) -> dict:
+    """
+    Fetch fundamental data via yfinance for tickers not in scan_results.
+    Runs in a thread to avoid blocking the event loop.
+    Returns a partial row dict — factor scores (score_*) are left absent
+    since those require the full pipeline scoring.
+    """
+    try:
+        import yfinance as yf  # optional dep — only called for non-universe tickers
+
+        def _blocking_fetch() -> dict:
+            stock = yf.Ticker(ticker)
+            info = stock.info or {}
+
+            # Dividend yield from yfinance is 0–1 (e.g. 0.032 = 3.2%). Normalise to %.
+            raw_div = info.get("dividendYield")
+            div_yield = round(raw_div * 100, 2) if raw_div else None
+
+            # ROE is also 0–1 in yfinance
+            raw_roe = info.get("returnOnEquity")
+            roe = round(raw_roe * 100, 2) if raw_roe else None
+
+            return {
+                "ticker": ticker,
+                "name": info.get("longName") or info.get("shortName"),
+                "sector": info.get("sector"),
+                "price": info.get("currentPrice") or info.get("regularMarketPrice"),
+                "change_pct": info.get("regularMarketChangePercent"),
+                "market_cap": info.get("marketCap"),
+                "pe_trailing": info.get("trailingPE"),
+                "roe": roe,
+                "beta": info.get("beta"),
+                "dividend_yield": div_yield,
+                "currency": info.get("currency"),
+                # Scores intentionally absent — not in universe
+                "_external": True,  # flag so frontend can show a note
+            }
+
+        return await asyncio.to_thread(_blocking_fetch)
+
+    except Exception as exc:
+        logger.warning("yfinance fallback failed for %s: %s", ticker, exc)
+        return {"ticker": ticker, "_external": True}
 
 
 @router.post("/compare", response_model=CompareResponse)
@@ -421,39 +467,20 @@ async def compare_stocks(body: CompareRequest, sb=Depends(get_supabase)):
     ).in_("ticker", tickers).execute()
 
     rows = result.data or []
-    # Get snapshot data for each validated ticker
     row_map = {r["ticker"]: r for r in rows}
 
-    # For tickers not in scan_results, try Finnhub
+    # For tickers not in scan_results, fall back to yfinance (fundamentals only)
     validated = [t.upper() for t in tickers]
     missing = [t for t in validated if t not in row_map]
-    if missing and settings.FINNHUB_API_KEY:
-        for t in missing:
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    resp = await client.get(
-                        "https://finnhub.io/api/v1/stock/profile2",
-                        params={"symbol": t},
-                        headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
-                    )
-                    profile = resp.json()
-                    quote_resp = await client.get(
-                        "https://finnhub.io/api/v1/quote",
-                        params={"symbol": t},
-                        headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
-                    )
-                    quote = quote_resp.json()
-                if profile and profile.get("ticker"):
-                    row_map[t] = {
-                        "ticker": t,
-                        "name": profile.get("name"),
-                        "sector": profile.get("finnhubIndustry"),
-                        "price": quote.get("c"),
-                        "change_pct": quote.get("dp"),
-                        "market_cap": profile.get("marketCapitalization"),
-                    }
-            except Exception:
-                pass  # leave as None — compare will show empty for this ticker
+    if missing:
+        fetch_tasks = [_yfinance_fundamentals(t) for t in missing]
+        fetched = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+        for t, data in zip(missing, fetched):
+            if isinstance(data, dict) and data.get("name"):
+                row_map[t] = data
+            elif t not in row_map:
+                # Minimal stub so ticker appears in results
+                row_map[t] = {"ticker": t, "_external": True}
 
     metric_defs = [
         ("Totalbetyg", "score_total"),
@@ -472,13 +499,20 @@ async def compare_stocks(body: CompareRequest, sb=Depends(get_supabase)):
 
     metrics = []
     for label, field in metric_defs:
-        values = {}
+        values: dict[str, float | str | None] = {}
         for t in validated:
-            row = row_map.get(t.upper())
+            row = row_map.get(t)
             values[t] = row.get(field) if row else None
         metrics.append(CompareMetric(label=label, values=values))
 
-    return CompareResponse(tickers=validated, metrics=metrics)
+    # Surface which tickers are outside the universe so the frontend can annotate
+    external_tickers = [t for t in validated if row_map.get(t, {}).get("_external")]
+
+    return CompareResponse(
+        tickers=validated,
+        metrics=metrics,
+        external_tickers=external_tickers,
+    )
 
 
 @router.get("/{ticker}/news", response_model=NewsResponse)

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useMemo } from "react";
-import { Search, X, Loader2, AlertCircle, TrendingUp, Brain, ChevronDown } from "lucide-react";
+import { Search, X, Loader2, AlertCircle, TrendingUp, Brain, ChevronDown, Info } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   formatScore,
@@ -251,6 +251,10 @@ export function JamforView() {
   const coreMetrics = ["Totalbetyg", "Värdering", "Kvalitet", "Momentum", "Tillväxt", "Risk"];
   const extendedMetrics = ["P/E", "ROE", "Piotroski", "Beta", "Utdelning", "Signal"];
 
+  // Labels that are pipeline-computed scores — null for external tickers is expected
+  const scoreLabels = new Set(["Totalbetyg", "Värdering", "Kvalitet", "Momentum", "Tillväxt", "Risk", "Sentiment", "Piotroski"]);
+  const externalSet = new Set(compareData?.external_tickers ?? []);
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12">
       <h1 className="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-2">
@@ -391,18 +395,54 @@ export function JamforView() {
         <div className="space-y-6">
           {/* Single overlayed factor radar */}
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
               <h3 className="text-sm font-semibold text-[var(--color-text-secondary)]">Faktorprofil</h3>
-              {tickers.map((t, i) => {
-                const metric = compareData.metrics.find((m) => m.label === "Totalbetyg");
-                const score = metric?.values[t];
-                return (
-                  <span key={t} className="text-xs font-mono" style={{ color: tickerColor(i) }}>
-                    {t}: {score != null ? formatScore(Number(score)) : "—"}
-                  </span>
-                );
-              })}
+              <div className="flex items-center gap-3 flex-wrap">
+                {tickers.map((t, i) => {
+                  const metric = compareData.metrics.find((m) => m.label === "Totalbetyg");
+                  const score = metric?.values[t];
+                  const isExternal = compareData.external_tickers?.includes(t);
+                  return (
+                    <span key={t} className="flex items-center gap-1 text-xs font-mono" style={{ color: tickerColor(i) }}>
+                      {t}: {score != null ? formatScore(Number(score)) : "—"}
+                      {isExternal && (
+                        <span
+                          title="Aktien är inte i det analyserade universumet — faktorbetyg saknas, men nyckeltal hämtas live."
+                          className="ml-0.5 px-1 py-0.5 rounded text-[9px] font-semibold border"
+                          style={{
+                            background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
+                            borderColor: "color-mix(in srgb, var(--color-warn) 30%, transparent)",
+                            color: "var(--color-warn)",
+                          }}
+                        >
+                          Live
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
+
+            {/* Info banner for tickers outside the universe */}
+            {(compareData.external_tickers?.length ?? 0) > 0 && (
+              <div
+                className="flex items-start gap-2 rounded-lg px-3 py-2 mb-3 text-xs"
+                style={{
+                  background: "color-mix(in srgb, var(--color-warn) 8%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--color-warn) 25%, transparent)",
+                }}
+              >
+                <Info size={13} className="shrink-0 mt-0.5" style={{ color: "var(--color-warn)" }} />
+                <span className="text-[var(--color-text-secondary)]">
+                  <span className="font-semibold" style={{ color: "var(--color-warn)" }}>
+                    {compareData.external_tickers.join(", ")}
+                  </span>{" "}
+                  är inte i det analyserade universumet. Faktorbetyg (polygon) visas inte, men nyckeltal som P/E, ROE och beta hämtas direkt från marknaden.
+                </span>
+              </div>
+            )}
+
             <MultiFactorRadar series={radarSeries} />
           </div>
 
@@ -441,25 +481,38 @@ export function JamforView() {
                     return (
                       <tr key={label} className="border-b border-[var(--color-border)] last:border-0">
                         <td className="px-4 py-2.5 text-[var(--color-text-secondary)] font-medium">{label}</td>
-                        {vals.map((v) => (
-                          <td
-                            key={v.ticker}
-                            className={cn(
-                              "px-4 py-2.5 text-right font-mono tabular",
-                              v.ticker === best && numericVals.length >= 2
-                                ? "text-[var(--color-up)]"
-                                : "text-[var(--color-text-primary)]",
-                            )}
-                          >
-                            {label === "Signal" && typeof v.value === "string" ? (
-                              <span className={cn("inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold border", signalBadgeClass(v.value))}>
-                                {signalShortLabel(v.value)}
-                              </span>
-                            ) : (
-                              formatMetric(v.value, label)
-                            )}
-                          </td>
-                        ))}
+                        {vals.map((v) => {
+                          const isExternal = externalSet.has(v.ticker);
+                          const isScore = scoreLabels.has(label);
+                          const noData = v.value == null;
+                          return (
+                            <td
+                              key={v.ticker}
+                              className={cn(
+                                "px-4 py-2.5 text-right font-mono tabular",
+                                v.ticker === best && numericVals.length >= 2
+                                  ? "text-[var(--color-up)]"
+                                  : "text-[var(--color-text-primary)]",
+                              )}
+                            >
+                              {label === "Signal" && typeof v.value === "string" ? (
+                                <span className={cn("inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold border", signalBadgeClass(v.value))}>
+                                  {signalShortLabel(v.value)}
+                                </span>
+                              ) : isExternal && isScore && noData ? (
+                                <span
+                                  className="text-[10px] italic"
+                                  style={{ color: "var(--color-text-muted)" }}
+                                  title="Kräver pipeline-analys — aktien är inte i universumet"
+                                >
+                                  ej beräknat
+                                </span>
+                              ) : (
+                                formatMetric(v.value, label)
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
                     );
                   })}
@@ -498,25 +551,38 @@ export function JamforView() {
                         return (
                           <tr key={label} className="border-b border-[var(--color-border)] last:border-0">
                             <td className="px-4 py-2.5 text-[var(--color-text-secondary)] font-medium">{label}</td>
-                            {vals.map((v) => (
-                              <td
-                                key={v.ticker}
-                                className={cn(
-                                  "px-4 py-2.5 text-right font-mono tabular",
-                                  v.ticker === best && numericVals.length >= 2
-                                    ? "text-[var(--color-up)]"
-                                    : "text-[var(--color-text-primary)]",
-                                )}
-                              >
-                                {label === "Signal" && typeof v.value === "string" ? (
-                                  <span className={cn("inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold border", signalBadgeClass(v.value))}>
-                                    {signalShortLabel(v.value)}
-                                  </span>
-                                ) : (
-                                  formatMetric(v.value, label)
-                                )}
-                              </td>
-                            ))}
+                            {vals.map((v) => {
+                              const isExternal = externalSet.has(v.ticker);
+                              const isScore = scoreLabels.has(label);
+                              const noData = v.value == null;
+                              return (
+                                <td
+                                  key={v.ticker}
+                                  className={cn(
+                                    "px-4 py-2.5 text-right font-mono tabular",
+                                    v.ticker === best && numericVals.length >= 2
+                                      ? "text-[var(--color-up)]"
+                                      : "text-[var(--color-text-primary)]",
+                                  )}
+                                >
+                                  {label === "Signal" && typeof v.value === "string" ? (
+                                    <span className={cn("inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold border", signalBadgeClass(v.value))}>
+                                      {signalShortLabel(v.value)}
+                                    </span>
+                                  ) : isExternal && isScore && noData ? (
+                                    <span
+                                      className="text-[10px] italic"
+                                      style={{ color: "var(--color-text-muted)" }}
+                                      title="Kräver pipeline-analys — aktien är inte i universumet"
+                                    >
+                                      ej beräknat
+                                    </span>
+                                  ) : (
+                                    formatMetric(v.value, label)
+                                  )}
+                                </td>
+                              );
+                            })}
                           </tr>
                         );
                       })}

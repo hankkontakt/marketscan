@@ -11,6 +11,8 @@ export interface CompareMetric {
 export interface CompareResponse {
   tickers: string[];
   metrics: CompareMetric[];
+  /** Tickers fetched live from yfinance — not in the scored universe, factor scores will be null */
+  external_tickers: string[];
 }
 
 export function useCompare(tickers: string[]) {
