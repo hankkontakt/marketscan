@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronDown, Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
-import { useSectors } from "@/hooks/useScreener";
+import { useSectors, useCountries } from "@/hooks/useScreener";
 import { SCREENER_PRESETS } from "@/lib/labels";
 import type { ScanParams } from "@/lib/api";
 
@@ -29,11 +29,12 @@ const TRENDS = [
 
 export function FilterRail({ filters, onChange, onReset, inline }: Props) {
   const { data: sectors = [] } = useSectors();
+  const { data: countries = [] } = useCountries();
   const [expanded, setExpanded] = useState(false);
 
   const hasActive =
     filters.entry_signal || filters.trend_signal || filters.sector ||
-    (filters.score_min ?? 0) > 0 || filters.piotroski_min ||
+    filters.country || (filters.score_min ?? 0) > 0 || filters.piotroski_min ||
     filters.pe_max || filters.roe_min || filters.dividend_yield_min ||
     filters.exclude_low_liquidity;
 
@@ -118,6 +119,17 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
               value={filters.sector ?? ""}
               onChange={(v) => onChange({ sector: v || undefined })}
               options={[{ value: "", label: "Alla sektorer" }, ...sectors.map(s => ({ value: s, label: s }))]}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="flex items-center text-[11px] text-[var(--color-text-muted)]">
+              Land
+              <InfoTooltip text="Filtrera på börsnoterat land (SE = Sverige, US = USA, etc.)." />
+            </label>
+            <FilterSelect label="Land"
+              value={filters.country ?? ""}
+              onChange={(v) => onChange({ country: v || undefined })}
+              options={[{ value: "", label: "Alla länder" }, ...countries.map(c => ({ value: c, label: c }))]}
             />
           </div>
           <div className="space-y-1">

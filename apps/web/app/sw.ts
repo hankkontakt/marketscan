@@ -23,7 +23,11 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: [...defaultCache, apiRoute],
+  // apiRoute MUST come first — defaultCache includes a NetworkFirst+10s rule for
+  // same-origin /api/ GET requests. By putting apiRoute first we override it with
+  // NetworkOnly for ALL methods (GET + POST), so serverless cold-starts never
+  // trigger a "Failed to fetch" via the stale-cache fallback.
+  runtimeCaching: [apiRoute, ...defaultCache],
 });
 
 serwist.addEventListeners();

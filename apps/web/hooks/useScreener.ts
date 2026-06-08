@@ -28,3 +28,11 @@ export function useSectors() {
     staleTime: 30 * 60_000,
   });
 }
+
+export function useCountries() {
+  return useQuery<string[]>({
+    queryKey: ["countries"],
+    queryFn: () => api<string[]>("/api/scan/countries"),
+    staleTime: 30 * 60_000,
+  });
+}

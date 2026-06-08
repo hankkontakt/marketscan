@@ -80,6 +80,19 @@ async def get_sectors(sb=Depends(get_supabase)):
     return sectors
 
 
+@router.get("/countries", response_model=list[str])
+async def get_countries(sb=Depends(get_supabase)):
+    """Distinct countries in current scan — for filter dropdown."""
+    result = (
+        sb.table("scan_results")
+        .select("country")
+        .not_.is_("country", "null")
+        .execute()
+    )
+    countries = sorted({row["country"] for row in result.data if row.get("country")})
+    return countries
+
+
 @router.get("/meta")
 async def get_scan_meta(sb=Depends(get_supabase)):
     """Scan metadata: date, counts per segment."""

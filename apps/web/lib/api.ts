@@ -64,6 +64,7 @@ export type ScanParams = {
   score_min?: number;
   score_max?: number;
   sector?: string;
+  country?: string;
   entry_signal?: string;
   trend_signal?: string;
   piotroski_min?: number;

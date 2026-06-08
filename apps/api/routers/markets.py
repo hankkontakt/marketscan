@@ -181,9 +181,13 @@ async def _fetch_indices_yfinance() -> list[GlobalIndexOut]:
         for symbol, name in YF_SYMBOLS:
             try:
                 t = yf.Ticker(symbol)
-                fi = t.fast_info
-                price = fi.get("last_price") or fi.get("regularMarketPrice")  # type: ignore[union-attr]
-                prev = fi.get("previous_close")  # type: ignore[union-attr]
+                # Use history(period="2d") — more reliable than fast_info for indices
+                # across all yfinance versions and works when markets are closed.
+                hist = t.history(period="2d")
+                if hist.empty:
+                    continue
+                price = float(hist["Close"].iloc[-1])
+                prev = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else None
                 if price:
                     change = round(((price - prev) / prev) * 100, 2) if prev else None
                     results.append(GlobalIndexOut(name=name, price=round(price, 2), change_pct=change))

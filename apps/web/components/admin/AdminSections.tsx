@@ -1,11 +1,12 @@
+import React, { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-  RefreshCw, Play, Activity, Globe, Database, ExternalLink, CheckCircle2,
-  XCircle, AlertTriangle,
+  RefreshCw, Play, Database, ExternalLink, CheckCircle2,
+  XCircle, AlertTriangle, Copy, Key, Cloud, GitBranch, Table2,
+  Users, TrendingUp,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { KpiCard, StatusPill, RunsTable, DistTable, type PipelineRun } from "./StatusHelpers";
-import { useState } from "react";
 
 // ─── Shared error/empty state ─────────────────────────────────────────────────
 
@@ -350,47 +351,106 @@ export function MattSection() {
 
   const max = Math.max(...data.buckets.map((b) => b.count), 1);
 
+  // Color each bucket: 0-39 = red-ish, 40-59 = amber, 60-79 = blue-accent, 80-100 = green
+  function bucketColor(range: string): string {
+    const lo = parseInt(range.split("-")[0], 10);
+    if (lo < 40) return "#ef4444"; // red
+    if (lo < 60) return "#f59e0b"; // amber
+    if (lo < 80) return "var(--color-accent)"; // blue
+    return "#22c55e"; // green
+  }
+
+  // Signal bar widths
+  const signalMax = Math.max(...Object.values(data.by_signal), 1);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-      {/* Score distribution */}
+      {/* Score distribution histogram */}
       <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">
           Totalbetyg-fördelning ({data.total} aktier)
         </h3>
-        <div className="flex items-end gap-1 h-32">
+        <div className="flex items-end gap-1.5 h-36">
+          {data.buckets.map((b) => {
+            const heightPct = b.count > 0 ? Math.max((b.count / max) * 100, 8) : 0;
+            return (
+              <div key={b.range} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                {/* Count label above bar */}
+                <span className="text-[9px] text-[var(--color-text-muted)] tabular-nums leading-none">
+                  {b.count > 0 ? b.count : ""}
+                </span>
+                <div
+                  className="w-full rounded-sm transition-all duration-300"
+                  style={{
+                    height: heightPct > 0 ? `${heightPct}%` : "0",
+                    background: bucketColor(b.range),
+                    opacity: b.count > 0 ? 0.85 : 0,
+                  }}
+                  title={`${b.range}: ${b.count} aktier`}
+                />
+              </div>
+            );
+          })}
+        </div>
+        {/* Range labels */}
+        <div className="flex mt-1 gap-1.5">
           {data.buckets.map((b) => (
-            <div key={b.range} className="flex-1 flex flex-col items-center gap-1">
-              <div
-                className="w-full rounded-t"
-                style={{
-                  height: `${(b.count / max) * 100}%`,
-                  background: "var(--color-accent)",
-                  opacity: 0.7,
-                  minHeight: b.count > 0 ? 4 : 0,
-                }}
-                title={`${b.range}: ${b.count}`}
-              />
+            <div key={b.range} className="flex-1 text-center">
+              <span className="text-[8px] text-[var(--color-text-muted)]">
+                {b.range.split("-")[0]}
+              </span>
             </div>
           ))}
         </div>
-        <div className="flex justify-between mt-1">
-          <span className="text-[10px] text-[var(--color-text-muted)]">0</span>
-          <span className="text-[10px] text-[var(--color-text-muted)]">100</span>
+        {/* Color legend */}
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          {[
+            { color: "#ef4444", label: "Svagt (<40)" },
+            { color: "#f59e0b", label: "Neutral (40-59)" },
+            { color: "var(--color-accent)", label: "Bra (60-79)" },
+            { color: "#22c55e", label: "Starkt (80+)" },
+          ].map(({ color, label }) => (
+            <div key={label} className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: color, opacity: 0.85 }} />
+              <span className="text-[9px] text-[var(--color-text-muted)]">{label}</span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* By signal */}
+      {/* By signal — horizontal bar chart */}
       <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-medium mb-4 text-[var(--color-text-secondary)]">Per köpläge</h3>
         <dl className="space-y-3">
-          {Object.entries(data.by_signal).map(([sig, count]) => (
-            <div key={sig} className="flex justify-between">
-              <dt className="text-xs text-[var(--color-text-secondary)]">{sig}</dt>
-              <dd className="text-xs font-mono tabular text-[var(--color-text-primary)]">
-                {count} ({((count / data.total) * 100).toFixed(0)}%)
-              </dd>
-            </div>
-          ))}
+          {Object.entries(data.by_signal).map(([sig, count]) => {
+            const pct = data.total > 0 ? (count / data.total) * 100 : 0;
+            const barPct = (count / signalMax) * 100;
+            const sigColor: Record<string, string> = {
+              STARK: "#22c55e",
+              OK: "var(--color-accent)",
+              "VÄNTA": "#f59e0b",
+              EJ_AKTUELL: "#6b7280",
+            };
+            return (
+              <div key={sig} className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <dt className="font-medium text-[var(--color-text-primary)]">{sig}</dt>
+                  <dd className="font-mono tabular text-[var(--color-text-muted)]">
+                    {count} <span className="text-[10px]">({pct.toFixed(0)}%)</span>
+                  </dd>
+                </div>
+                <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${barPct}%`,
+                      background: sigColor[sig] ?? "var(--color-accent)",
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
         </dl>
       </div>
     </div>
@@ -399,13 +459,163 @@ export function MattSection() {
 
 // ─── Inställningar ───────────────────────────────────────────────────────────
 
-export function SettingsSection() {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <div className="rounded-xl p-5 border bg-[var(--color-bg-surface)] border-[var(--color-border)] mt-4">
-      <p className="text-sm text-[var(--color-text-secondary)]">
-        Faktorvikter, feature flags och användarhantering konfigureras via miljövariabler
-        och Supabase-dashboard. Direktredigering av vikter implementeras i nästa fas.
-      </p>
+    <button
+      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+      className="ml-1.5 p-0.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-colors"
+      title="Kopiera"
+    >
+      {copied ? <CheckCircle2 size={12} className="text-[var(--color-up)]" /> : <Copy size={12} />}
+    </button>
+  );
+}
+
+function SetupBlock({ icon: Icon, title, ok, children }: {
+  icon: React.ElementType; title: string; ok?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <div className={`rounded-xl p-4 border space-y-3 ${ok === false ? "border-[var(--color-down)]/30 bg-[var(--color-down)]/5" : "border-[var(--color-border)] bg-[var(--color-bg-surface)]"}`}>
+      <div className="flex items-center gap-2">
+        <Icon size={14} strokeWidth={1.5} className={ok === false ? "text-[var(--color-down)]" : "text-[var(--color-accent)]"} />
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{title}</h3>
+        {ok === true && <span className="ml-auto text-[10px] text-[var(--color-up)] font-medium">✓ konfigurerad</span>}
+        {ok === false && <span className="ml-auto text-[10px] text-[var(--color-down)] font-medium">⚠ saknas</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CodeSnip({ code }: { code: string }) {
+  return (
+    <div className="flex items-start gap-1 bg-[var(--color-bg-elevated)] rounded-lg p-2 font-mono text-[10px] text-[var(--color-text-secondary)] break-all">
+      <span className="flex-1">{code}</span>
+      <CopyButton text={code} />
+    </div>
+  );
+}
+
+export function SettingsSection() {
+  // Reuse health data to know which env vars are set
+  const { data: health } = useQuery({
+    queryKey: ["admin-health"],
+    queryFn: () => api<{
+      env: Record<string, boolean>;
+      db: Record<string, number | string | null>;
+      checks: { name: string; ok: boolean; detail?: string }[];
+    }>(`/api/admin/health`),
+    staleTime: 30_000,
+  });
+
+  const env = health?.env ?? {};
+
+  return (
+    <div className="space-y-4 mt-4">
+
+      {/* ── GH_DISPATCH_TOKEN ─────────────────────────────────── */}
+      <SetupBlock icon={GitBranch} title="GH_DISPATCH_TOKEN — Pipeline-trigger" ok={env.gh_token}>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Krävs för att starta pipelines från admin-panelen. Skapa ett GitHub Personal Access Token (classic) med scope <code className="bg-[var(--color-bg-elevated)] px-1 rounded">workflow</code>.
+        </p>
+        <ol className="text-xs text-[var(--color-text-muted)] space-y-1 list-decimal list-inside">
+          <li>Gå till <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline">github.com/settings/tokens/new</a></li>
+          <li>Välj scope: <strong>workflow</strong> (ger rättighet till Actions)</li>
+          <li>Kopiera token och lägg till som env var i Vercel API-projektet:</li>
+        </ol>
+        <CodeSnip code="GH_DISPATCH_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+        <p className="text-[10px] text-[var(--color-text-muted)]">
+          Vercel: <em>marketscan-api → Settings → Environment Variables → Add</em>. Redeploya efter sparad variabel.
+        </p>
+      </SetupBlock>
+
+      {/* ── R2 Storage ────────────────────────────────────────── */}
+      <SetupBlock icon={Cloud} title="R2 Storage — Cloudflare" ok={env.r2}>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Används för att spara pipeline-artefakter (parquet, rapporter). Utan R2 lagras inget utanför Supabase.
+        </p>
+        <ol className="text-xs text-[var(--color-text-muted)] space-y-1 list-decimal list-inside">
+          <li>Cloudflare Dashboard → R2 → Skapa bucket (t.ex. <code className="bg-[var(--color-bg-elevated)] px-1 rounded">marketscan</code>)</li>
+          <li>R2 → Overview → Manage R2 API Tokens → Create API Token (Object Read & Write)</li>
+          <li>Kopiera: Access Key ID, Secret Access Key, och endpoint-URL</li>
+          <li>Sätt dessa tre env vars i Vercel API-projektet:</li>
+        </ol>
+        <div className="space-y-1">
+          <CodeSnip code="R2_KEY_ID=<Access Key ID>" />
+          <CodeSnip code="R2_SECRET=<Secret Access Key>" />
+          <CodeSnip code="R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com" />
+          <CodeSnip code="R2_BUCKET=marketscan" />
+        </div>
+      </SetupBlock>
+
+      {/* ── Supabase Service Role ─────────────────────────────── */}
+      <SetupBlock icon={Key} title="Supabase Service Role Key" ok={env.supabase}>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Krävs för admin-operationer (ta bort konton, se alla profiler). Den vanliga anon-nyckeln räcker för läsning.
+        </p>
+        <ol className="text-xs text-[var(--color-text-muted)] space-y-1 list-decimal list-inside">
+          <li>Supabase Dashboard → Project → Settings → API</li>
+          <li>Kopiera <strong>service_role</strong> secret (INTE anon-nyckeln)</li>
+          <li>Sätt i Vercel API-projektet:</li>
+        </ol>
+        <CodeSnip code="SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
+        <p className="text-[10px] text-[var(--color-down)]">
+          ⚠ service_role bypasses RLS — använd ALDRIG i frontend-koden.
+        </p>
+      </SetupBlock>
+
+      {/* ── Admin-roll i Supabase ─────────────────────────────── */}
+      <SetupBlock icon={Users} title="Sätt admin-roll (SQL)" ok={undefined}>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Kör i Supabase SQL Editor (ersätt e-postadressen):
+        </p>
+        <CodeSnip code={`UPDATE auth.users\nSET raw_app_meta_data = raw_app_meta_data || '{"role":"admin"}'::jsonb\nWHERE email = 'din@epost.se';\n\nUPDATE profiles SET role = 'admin' WHERE id = (\n  SELECT id FROM auth.users WHERE email = 'din@epost.se'\n);`} />
+        <p className="text-[10px] text-[var(--color-text-muted)]">Logga ut och in igen efter SQL:en — JWT måste förnyas.</p>
+      </SetupBlock>
+
+      {/* ── Databas-migrationer ───────────────────────────────── */}
+      <SetupBlock icon={Table2} title="Databasmigrationer" ok={undefined}>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Kör dessa SQL-filer i Supabase SQL Editor om du inte gjort det:
+        </p>
+        <div className="space-y-1 text-xs text-[var(--color-text-muted)]">
+          {[
+            { file: "012_profile_extensions.sql", desc: "experience_level, onboarding, tema, email-notiser" },
+            { file: "018_rls_hardening.sql", desc: "RLS-policys + client_errors-tabell" },
+            { file: "022_fund_holdings.sql", desc: "fund_holdings-tabell" },
+          ].map(({ file, desc }) => (
+            <div key={file} className="flex items-start gap-2 p-2 rounded-lg bg-[var(--color-bg-elevated)]">
+              <Database size={11} strokeWidth={1.5} className="text-[var(--color-text-muted)] mt-0.5 shrink-0" />
+              <div>
+                <code className="font-mono text-[10px] text-[var(--color-text-primary)]">{file}</code>
+                <p className="text-[10px] mt-0.5">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <a
+          href="https://supabase.com/dashboard"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline"
+        >
+          <ExternalLink size={11} strokeWidth={1.5} />
+          Öppna Supabase Dashboard
+        </a>
+      </SetupBlock>
+
+      {/* ── Universum-storlek ─────────────────────────────────── */}
+      <SetupBlock icon={TrendingUp} title="Universum-storlek (~558 aktier)">
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Pipelinen kör som standard med segmenten <code className="bg-[var(--color-bg-elevated)] px-1 rounded">large_cap</code> + <code className="bg-[var(--color-bg-elevated)] px-1 rounded">mid_cap</code>.
+          För att nå ~1500 aktier, kör även <strong>Småbolag</strong>-pipelines regelbundet (knappen ovan) och aktivera <code className="bg-[var(--color-bg-elevated)] px-1 rounded">small_cap</code> + <code className="bg-[var(--color-bg-elevated)] px-1 rounded">micro_cap</code> i pipeline-schemat.
+        </p>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          I GitHub Actions workflow <code className="bg-[var(--color-bg-elevated)] px-1 rounded">pipeline.yml</code>, lägg till ett nytt schemalagt steg med mode <code className="bg-[var(--color-bg-elevated)] px-1 rounded">smallcap</code> (kör t.ex. lördag kl. 08:00).
+        </p>
+      </SetupBlock>
+
     </div>
   );
 }
