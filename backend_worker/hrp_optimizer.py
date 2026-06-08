@@ -1,4 +1,12 @@
-"""Hierarchical Risk Parity portfolio optimizer."""
+"""
+Hierarchical Risk Parity portfolio optimizer.
+
+DEPRECATED — 2026-06-08
+This file is not imported by any router or workflow and is kept only as
+reference code. If HRP optimisation is needed in the future, integrate it
+into apps/api/routers/portfolio.py using the service-layer pattern.
+No active callers; safe to remove once confirmed unused in all branches.
+"""
 import os
 import sys
 import json

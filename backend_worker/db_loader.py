@@ -25,20 +25,44 @@ SCAN_COLUMNS = [
 ]
 
 SEGMENT_THRESHOLDS = {
-    "large_cap":  10_000_000_000,
-    "mid_cap":    2_000_000_000,
-    "small_cap":  300_000_000,
+    "large_cap":  10_000_000_000,   # USD
+    "mid_cap":    2_000_000_000,    # USD
+    "small_cap":  300_000_000,      # USD
+}
+
+# Static FX rates → USD.  Updated 2026-06; refresh periodically.
+# Used to normalise market_cap values before applying USD thresholds.
+_FX_TO_USD: dict[str, float] = {
+    "USD": 1.0,
+    "SEK": 0.093,   # 1 SEK ≈ 0.093 USD
+    "EUR": 1.08,
+    "GBP": 1.27,
+    "NOK": 0.092,
+    "DKK": 0.145,
+    "CHF": 1.12,
+    "CAD": 0.74,
+    "AUD": 0.65,
+    "JPY": 0.0066,
 }
 
 
-def _derive_segment(market_cap: float | None) -> str:
+def _to_usd(market_cap: float | None, currency: str | None) -> float | None:
+    """Return market_cap in USD. Falls back to 1:1 if currency is unknown."""
     if market_cap is None or market_cap <= 0:
+        return market_cap
+    rate = _FX_TO_USD.get((currency or "USD").upper(), 1.0)
+    return market_cap * rate
+
+
+def _derive_segment(market_cap_usd: float | None) -> str:
+    """Map USD market cap to segment string."""
+    if market_cap_usd is None or market_cap_usd <= 0:
         return "micro_cap"
-    if market_cap >= SEGMENT_THRESHOLDS["large_cap"]:
+    if market_cap_usd >= SEGMENT_THRESHOLDS["large_cap"]:
         return "large_cap"
-    if market_cap >= SEGMENT_THRESHOLDS["mid_cap"]:
+    if market_cap_usd >= SEGMENT_THRESHOLDS["mid_cap"]:
         return "mid_cap"
-    if market_cap >= SEGMENT_THRESHOLDS["small_cap"]:
+    if market_cap_usd >= SEGMENT_THRESHOLDS["small_cap"]:
         return "small_cap"
     return "micro_cap"
 
@@ -48,7 +72,17 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
     df["scan_date"] = date.today().isoformat()
 
     if "segment" not in df.columns:
-        df["segment"] = df.get("market_cap", pd.Series(dtype=float)).map(_derive_segment)
+        # Normalise market_cap to USD before applying thresholds — parquet stores
+        # Swedish stocks in SEK, US stocks in USD, etc.  Without this almost all
+        # SEK-denominated companies end up classified as large_cap.
+        currency_col = df.get("currency", pd.Series(dtype=str))
+        df["segment"] = [
+            _derive_segment(_to_usd(mc, cur))
+            for mc, cur in zip(
+                df.get("market_cap", pd.Series(dtype=float)),
+                currency_col,
+            )
+        ]
 
     if "has_holding" not in df.columns:
         df["has_holding"] = False
@@ -115,10 +149,10 @@ def load_scan(df: pd.DataFrame, dsn: str | None = None) -> int:
     prepared = _prepare_df(df)
 
     buf = io.StringIO()
-    prepared.to_csv(buf, index=False, header=False, na_rep="")
+    prepared.to_csv(buf, index=False, header=False, na_rep="", encoding="utf-8")
     buf.seek(0)
 
-    with psycopg2.connect(dsn) as con:
+    with psycopg2.connect(dsn, client_encoding="UTF8") as con:
         con.autocommit = False
         with con.cursor() as cur:
             cur.execute("TRUNCATE scan_results;")

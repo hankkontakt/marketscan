@@ -1,4 +1,11 @@
-# load_data.py — Laddar aktiedata från stock-scanner-fix till Supabase.
+# DEPRECATED — 2026-06-08
+# load_data.py — Manuell engångsladdning av aktiedata från stock-scanner-fix till Supabase.
+#
+# Ersatt av: backend_worker/pipeline/entrypoint.py (kör via GitHub Actions)
+# och backend_worker/db_loader.py (COPY-baserad bulk-laddning, 4× snabbare).
+#
+# Kvar enbart som referens. Kör INTE i produktion — använder gammal hårdkodad sökväg
+# och Supabase-upsert (långsamt) istället för psycopg2 COPY.
 # Kör från: marketscan-mappen med: python load_data.py
 
 import os

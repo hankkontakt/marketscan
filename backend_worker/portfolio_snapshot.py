@@ -2,6 +2,12 @@
 Daily portfolio snapshot creator — runs as a cron job in GitHub Actions.
 Creates or updates portfolio_snapshots rows for all users who have holdings.
 
+DEPRECATED — 2026-06-08
+Snapshot creation is now handled by apps/api/routers/snapshots.py (triggered
+client-side). If this cron path is re-activated, re-test against the current
+portfolio_snapshots RLS policies (migration 018). Currently no GitHub Actions
+workflow calls this script.
+
 Usage:
     python -m backend_worker.portfolio_snapshot
 
