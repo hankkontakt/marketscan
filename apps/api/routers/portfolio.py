@@ -404,7 +404,14 @@ def import_confirm(
     an 'async def' blocks the event loop, which is an anti-pattern and
     causes unpredictable latency on serverless.
     """
-    port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
+    try:
+        port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
+    except Exception as e:
+        logger.error("Portfolio lookup failed during import: %s", e)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"Kunde inte läsa portföljen: {e}",
+        )
     if not port.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
     portfolio_id = port.data[0]["id"]

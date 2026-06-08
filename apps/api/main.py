@@ -2,9 +2,11 @@
 FastAPI main — Vercel serverless entrypoint.
 """
 import logging
+import re
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from apps.api.core.config import settings
@@ -32,7 +34,31 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# ── Middleware order: outermost first ─────────────────────────────
+# ── Middleware ────────────────────────────────────────────────────
+# NOTE on order: Starlette's add_middleware() PREPENDS — the LAST one added
+# becomes the OUTERMOST layer. So CORSMiddleware is NOT outermost here
+# (RequestIDMiddleware, added later, wraps it). That means an *unhandled*
+# exception in a route bubbles up PAST CORSMiddleware to Starlette's
+# ServerErrorMiddleware, whose 500 response has NO CORS headers — the browser
+# then reports it as a network/CORS failure ("Nätverksfel") instead of a
+# readable error. The global exception handler below fixes that systemically
+# by attaching CORS headers to every error response itself.
+_CORS_ORIGIN_REGEX = re.compile(r"https://[a-z0-9-]+-hankkontakts-projects\.vercel\.app")
+
+
+def _cors_headers_for(request: Request) -> dict[str, str]:
+    """Return CORS headers echoing the request Origin if it is allowed.
+    Mirrors the CORSMiddleware allow-list so error responses are not blocked."""
+    origin = request.headers.get("origin")
+    if origin and (origin in settings.CORS_ORIGINS or _CORS_ORIGIN_REGEX.fullmatch(origin)):
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
+
+
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
@@ -50,6 +76,22 @@ add_rate_limiting(app)
 
 # Request ID middleware — log structured request info
 app.middleware("http")(RequestIDMiddleware)  # function, not class — no ()
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all so an unhandled error NEVER reaches the browser as a bare,
+    CORS-less 500 (which surfaces as "Nätverksfel"). We log the real error
+    server-side and return a JSON body WITH CORS headers so the frontend can
+    show a readable message and the status code."""
+    logger.exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internt serverfel ({type(exc).__name__})"},
+        headers=_cors_headers_for(request),
+    )
 
 app.include_router(debug_router)
 app.include_router(screener.router, prefix="/api")
