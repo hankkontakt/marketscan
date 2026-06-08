@@ -20,7 +20,11 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+export async function api<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = 55_000,
+): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init?.headers as Record<string, string>),
@@ -38,10 +42,30 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     // supabase client may not be available (e.g. SSR)
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers,
-  });
+  // AbortController so we can time out fetch independently of the service
+  // worker.  55 s is just under Vercel's 60 s maxDuration, giving the server
+  // the full window while still showing a human-readable error instead of a
+  // cryptic "Failed to fetch".
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (err: unknown) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(408, "Begäran tog för lång tid — försök igen");
+    }
+    // Generic network failure (service worker timeout, no connectivity, etc.)
+    throw new ApiError(0, "Nätverksfel — kontrollera anslutningen och försök igen");
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;

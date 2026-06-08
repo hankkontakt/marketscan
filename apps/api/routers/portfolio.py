@@ -384,96 +384,134 @@ async def import_avanza_preview(body: AvanzaImportIn):
 
 
 @router.post("/import/confirm", status_code=201)
-async def import_confirm(
+def import_confirm(
     body: ImportConfirmIn,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
     """
     Confirm import: create holdings + optional buy transactions.
-    Rows with av_typ='FUND' or no ticker are silently skipped.
+
+    Optimised for Vercel serverless cold-starts:
+      - One batch query to check which tickers exist in universe.
+      - One batch INSERT for all holdings (PostgREST supports list payload).
+      - One batch INSERT for all transactions.
+      - One batch upsert for out-of-universe ticker requests.
+    Total DB round-trips: ~4 regardless of how many rows are imported.
+
+    Changed from 'async def' to 'def' so FastAPI runs the handler in its
+    sync thread pool.  The Supabase SDK is synchronous; calling it inside
+    an 'async def' blocks the event loop, which is an anti-pattern and
+    causes unpredictable latency on serverless.
     """
     port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
     if not port.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
     portfolio_id = port.data[0]["id"]
 
-    stocks_created = 0
-    funds_created = 0
+    # ── Separate stocks and funds ──────────────────────────────────────────────
+    stock_rows = [r for r in body.rows if r.av_typ != "FUND" and r.ticker and r.shares is not None]
+    fund_rows  = [r for r in body.rows if r.av_typ == "FUND"  and r.isin  and r.shares is not None]
 
-    for row in body.rows:
-        if row.shares is None:
-            continue
-
-        # ── Funds: save to fund_holdings ──────────────────────────────────────
-        if row.av_typ == "FUND":
-            if not row.isin:
-                continue
-            try:
-                fund_data: dict = {
-                    "portfolio_id": portfolio_id,
-                    "isin":          row.isin,
-                    "name":          row.name,
-                    "shares":        row.shares,
-                    "cost_basis":    row.cost_basis,
-                    "current_price": row.current_price,
-                    "marknadsvarde": row.marknadsvarde,
-                }
-                if row.purchase_date:
-                    fund_data["purchase_date"] = row.purchase_date
-                sb.table("fund_holdings").insert(fund_data).execute()
-                funds_created += 1
-            except Exception as e:
-                logger.debug("Could not save fund holding %s: %s", row.isin, e)
-            continue
-
-        # ── Stocks: save to holdings ───────────────────────────────────────────
-        if not row.ticker:
-            continue
-
-        ticker = row.ticker.upper()
-
-        # Queue out-of-universe tickers for next pipeline run
+    # ── 1. Batch-check which stock tickers are in the universe ─────────────────
+    tickers_to_import = [r.ticker.upper() for r in stock_rows]  # type: ignore[union-attr]
+    in_universe: set[str] = set()
+    if tickers_to_import:
         try:
-            exists = sb.table("scan_results").select("ticker").eq("ticker", ticker).limit(1).execute()
-            if not exists.data:
-                sb.table("user_ticker_requests").upsert({
-                    "ticker": ticker,
-                    "user_id": user.id,
-                    "name": row.name,
-                    "source": "import",
-                }, on_conflict="ticker").execute()
+            res = (
+                sb.table("scan_results")
+                .select("ticker")
+                .in_("ticker", tickers_to_import)
+                .execute()
+            )
+            in_universe = {r["ticker"] for r in (res.data or [])}
         except Exception as e:
-            logger.debug("Could not queue ticker request for %s: %s", ticker, e)
+            logger.debug("Could not check universe for tickers: %s", e)
 
-        # Insert the holding
-        sb.table("holdings").insert({
-            "portfolio_id": portfolio_id,
-            "ticker": ticker,
-            "shares": row.shares,
-            "cost_basis": row.cost_basis,
-        }).execute()
+    # ── 2. Batch-upsert out-of-universe ticker requests (one call) ─────────────
+    missing = [r for r in stock_rows if r.ticker.upper() not in in_universe]  # type: ignore[union-attr]
+    if missing:
+        try:
+            sb.table("user_ticker_requests").upsert(
+                [
+                    {
+                        "ticker": r.ticker.upper(),  # type: ignore[union-attr]
+                        "user_id": user.id,
+                        "name": r.name,
+                        "source": "import",
+                        "added_to_universe": False,
+                    }
+                    for r in missing
+                ],
+                on_conflict="ticker",
+            ).execute()
+        except Exception as e:
+            logger.debug("Could not queue ticker requests: %s", e)
 
-        # If purchase_date is known, also record a buy transaction so TWR works
-        if row.purchase_date:
-            try:
-                tx_data: dict = {
-                    "user_id": user.id,
-                    "portfolio_id": portfolio_id,
-                    "ticker": ticker,
-                    "type": "buy",
-                    "shares": row.shares,
-                    "price": row.cost_basis,
-                    "note": "Importerad från Avanza",
-                    "traded_at": row.purchase_date,
-                }
-                if row.cost_basis is not None and row.shares is not None:
-                    tx_data["amount"] = round(row.cost_basis * row.shares, 2)
-                sb.table("transactions").insert(tx_data).execute()
-            except Exception as e:
-                logger.debug("Could not create import transaction for %s: %s", ticker, e)
+    # ── 3. Batch-insert all holdings (one call) ────────────────────────────────
+    stocks_created = 0
+    if stock_rows:
+        holdings_payload = [
+            {
+                "portfolio_id": portfolio_id,
+                "ticker": r.ticker.upper(),  # type: ignore[union-attr]
+                "shares": r.shares,
+                "cost_basis": r.cost_basis,
+            }
+            for r in stock_rows
+        ]
+        try:
+            sb.table("holdings").insert(holdings_payload).execute()
+            stocks_created = len(holdings_payload)
+        except Exception as e:
+            logger.error("Holdings batch insert failed: %s", e)
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                f"Kunde inte spara innehav: {e}",
+            )
 
-        stocks_created += 1
+    # ── 4. Batch-insert transactions for rows that have a purchase_date ─────────
+    tx_rows = [r for r in stock_rows if r.purchase_date]
+    if tx_rows:
+        tx_payload = []
+        for r in tx_rows:
+            tx: dict = {
+                "user_id": user.id,
+                "portfolio_id": portfolio_id,
+                "ticker": r.ticker.upper(),  # type: ignore[union-attr]
+                "type": "buy",
+                "shares": r.shares,
+                "price": r.cost_basis,
+                "note": "Importerad från Avanza",
+                "traded_at": r.purchase_date,
+            }
+            if r.cost_basis is not None and r.shares is not None:
+                tx["amount"] = round(r.cost_basis * r.shares, 2)
+            tx_payload.append(tx)
+        try:
+            sb.table("transactions").insert(tx_payload).execute()
+        except Exception as e:
+            logger.debug("Could not create import transactions: %s", e)
+
+    # ── 5. Insert fund holdings ────────────────────────────────────────────────
+    funds_created = 0
+    for row in fund_rows:
+        try:
+            fund_data: dict = {
+                "portfolio_id": portfolio_id,
+                "isin":          row.isin,
+                "name":          row.name,
+                "shares":        row.shares,
+                "cost_basis":    row.cost_basis,
+                "current_price": row.current_price,
+                "marknadsvarde": row.marknadsvarde,
+            }
+            if row.purchase_date:
+                fund_data["purchase_date"] = row.purchase_date
+            sb.table("fund_holdings").insert(fund_data).execute()
+            funds_created += 1
+        except Exception as e:
+            logger.warning("Could not save fund holding %s: %s", row.isin, e)
 
     return {
         "created": stocks_created + funds_created,
