@@ -49,7 +49,13 @@ export function NavRail() {
       if (!token) return;
       try {
         const payload = JSON.parse(atob(token.split(".")[1]));
-        if (payload.role === "admin") {
+        // Supabase always sets payload.role = "authenticated" (PostgREST role).
+        // Admin role lives in app_metadata, set via SQL on auth.users.
+        const role: string =
+          (payload.app_metadata?.role as string | undefined) ??
+          (payload.user_metadata?.role as string | undefined) ??
+          "";
+        if (role === "admin") {
           setIsAdmin(true);
         }
       } catch {
