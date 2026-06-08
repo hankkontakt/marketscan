@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   FlaskConical, Play, Plus, Trash2, BarChart2, ChevronRight,
   Lock, Globe, Loader2, Check, X, Clock, RefreshCw,
+  Filter, History, TrendingUp, ChevronDown,
 } from "lucide-react";
 import {
   useStrategies, useCreateStrategy, useDeleteStrategy, useTriggerBacktest,
@@ -311,6 +312,119 @@ function StrategyCard({ strategy }: { strategy: Strategy }) {
   );
 }
 
+// ─── How it works explainer ───────────────────────────────────────────────────
+
+function HowItWorksBox() {
+  const [open, setOpen] = useState(false);
+
+  const STEPS = [
+    {
+      icon: Filter,
+      title: "Definiera dina regler",
+      text: "Välj vilka aktier strategin ska köpa — t.ex. \"betyg ≥ 65 och köpsignal STARK\". Du sätter också max antal positioner (t.ex. 15 aktier) och hur du fördelar kapitalet.",
+    },
+    {
+      icon: History,
+      title: "Systemet spelar tillbaka historiken",
+      text: "Backtestet går igenom varje dag i historiken och frågar: \"Vilka aktier uppfyllde dina regler denna dag?\" — precis som om du hade suttit vid datorn varje morgon och kört screener.",
+    },
+    {
+      icon: TrendingUp,
+      title: "Se resultatet",
+      text: "Du får en graf som visar hur 100 000 kr hade vuxit (eller krympt), plus tre nyckeltal: Avkastning (%), Sharpe-kvot (avkastning per risk-enhet — över 1 är bra) och Max drawdown (största tillfälliga förlust).",
+    },
+  ];
+
+  const TERMS = [
+    { term: "Rebalansering", def: "Hur ofta portföljen justeras — månadsvis innebär att du säljer/köper en gång i månaden för att matcha dina regler igen." },
+    { term: "Viktning", def: "Lika: alla aktier får lika stor del av kapitalet. Betyg-viktad: aktier med högre betyg får mer kapital. Kelly: matematisk formel som anpassar storleken efter sannolikhet." },
+    { term: "Sharpe-kvot", def: "Mäter hur mycket avkastning du fick per riskenhet. Över 1 = bra, över 2 = utmärkt, under 0 = sämre än att stå i kassan." },
+    { term: "Max drawdown", def: "Den värsta tillfälliga nedgången under perioden, t.ex. -18% betyder att portföljen som värst tappade 18% från en topp innan den återhämtade sig." },
+  ];
+
+  return (
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] overflow-hidden">
+      {/* Always-visible header */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[var(--color-bg-elevated)] transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <FlaskConical size={14} strokeWidth={1.5} className="text-[var(--color-accent)]" />
+          <span className="text-sm font-medium text-[var(--color-text-secondary)]">Vad är Strategi Lab?</span>
+        </div>
+        <ChevronDown
+          size={14}
+          strokeWidth={1.5}
+          className={cn("text-[var(--color-text-muted)] transition-transform", open && "rotate-180")}
+        />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-5 border-t border-[var(--color-border)]">
+
+          {/* One-liner */}
+          <p className="pt-3 text-sm text-[var(--color-text-primary)] leading-relaxed">
+            Strategi Lab låter dig testa en köpregel mot historisk data — <em>utan att riskera riktiga pengar</em>.
+            Du ser vad som hade hänt om du följt din strategi under de senaste månaderna.
+          </p>
+
+          {/* 3-step workflow */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {STEPS.map((s, i) => (
+              <div key={i} className="rounded-lg p-3 bg-[var(--color-bg-elevated)] space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-[var(--color-accent)] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                    {i + 1}
+                  </span>
+                  <span className="text-xs font-semibold text-[var(--color-text-primary)]">{s.title}</span>
+                </div>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{s.text}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Example */}
+          <div
+            className="rounded-lg px-3 py-2.5 text-xs space-y-1"
+            style={{
+              background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)",
+            }}
+          >
+            <p className="font-semibold text-[var(--color-text-secondary)]">Exempel: "Kvalitets-momentum"</p>
+            <p className="text-[var(--color-text-muted)]">
+              Betyg ≥ 65 · Signal STARK · Max 15 aktier · Lika viktning · Rebalansera månadsvis · Startkapital 100 000 kr
+            </p>
+            <p className="text-[var(--color-text-muted)]">
+              → Backtestet visar: +34% avkastning, Sharpe 1.4, max drawdown -12%. Det innebär att strategin
+              historiskt gett bra avkastning med måttlig risk.
+            </p>
+          </div>
+
+          {/* Glossary */}
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-[var(--color-text-secondary)]">Ordlista</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {TERMS.map(({ term, def }) => (
+                <div key={term} className="text-xs">
+                  <span className="font-medium text-[var(--color-text-primary)]">{term}: </span>
+                  <span className="text-[var(--color-text-muted)]">{def}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Caveat */}
+          <p className="text-[10px] text-[var(--color-text-muted)] border-t border-[var(--color-border)] pt-2">
+            ⚠ Historisk avkastning är ingen garanti för framtida resultat. Backtest visar hur strategin <em>hade presterat</em> — inte hur den <em>kommer</em> att prestera. Använd som ett verktyg för att förstå en strategis karaktär, inte som en köprekommendation.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export function StrategiLabView() {
@@ -349,12 +463,8 @@ export function StrategiLabView() {
         </div>
       </div>
 
-      {/* Info box */}
-      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 text-xs text-[var(--color-text-muted)] space-y-1">
-        <p className="font-medium text-[var(--color-text-secondary)]">Hur det fungerar</p>
-        <p>Strategi Lab simulerar en screener-baserad portfölj mot historiska betygssnapshots (score_history).</p>
-        <p>Datan byggs upp löpande av nattliga scanner-körningar — ju mer historik, desto tillförlitligare backtest.</p>
-      </div>
+      {/* How it works — expanded explainer */}
+      <HowItWorksBox />
 
       {/* Create form */}
       {showCreate && <CreateStrategyForm onClose={() => setShowCreate(false)} />}

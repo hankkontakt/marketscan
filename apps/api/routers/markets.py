@@ -1,7 +1,9 @@
 """
 Sector and global market data endpoints.
-Sector heatmap from scan_results, global indices via Finnhub.
+Sector heatmap from scan_results, global indices via Finnhub (primary)
+or yfinance (fallback when FINNHUB_API_KEY is not set).
 """
+import asyncio
 import logging
 import time
 import httpx
@@ -154,52 +156,96 @@ INDEX_SYMBOLS = [
 ]
 
 
+async def _fetch_indices_yfinance() -> list[GlobalIndexOut]:
+    """Fallback: fetch index data via yfinance when Finnhub key is unavailable."""
+    # yfinance uses same ^ symbols as Finnhub for indices; DAX uses ^GDAXI not ^DAX
+    YF_SYMBOLS = [
+        ("^OMX",     "OMXS30"),
+        ("^GSPC",    "S&P 500"),
+        ("^IXIC",    "Nasdaq"),
+        ("^DJI",     "Dow Jones"),
+        ("^FTSE",    "FTSE 100"),
+        ("^GDAXI",   "DAX"),
+        ("^STOXX50E","Euro Stoxx 50"),
+        ("^N225",    "Nikkei 225"),
+        ("^HSI",     "Hang Seng"),
+    ]
+
+    def _blocking() -> list[GlobalIndexOut]:
+        try:
+            import yfinance as yf
+        except ImportError:
+            return []
+
+        results: list[GlobalIndexOut] = []
+        for symbol, name in YF_SYMBOLS:
+            try:
+                t = yf.Ticker(symbol)
+                fi = t.fast_info
+                price = fi.get("last_price") or fi.get("regularMarketPrice")  # type: ignore[union-attr]
+                prev = fi.get("previous_close")  # type: ignore[union-attr]
+                if price:
+                    change = round(((price - prev) / prev) * 100, 2) if prev else None
+                    results.append(GlobalIndexOut(name=name, price=round(price, 2), change_pct=change))
+            except Exception as exc:
+                logger.debug("yfinance index %s failed: %s", symbol, exc)
+        return results
+
+    try:
+        return await asyncio.to_thread(_blocking)
+    except Exception as exc:
+        logger.warning("yfinance indices fallback failed: %s", exc)
+        return []
+
+
 @router.get("/indices", response_model=GlobalMarketsOut)
 async def get_global_indices():
     """Global index snapshot.
-    P2-6: Fetches all indices in parallel (asyncio.gather) instead of sequentially.
-    Total latency = slowest single call, not sum of all calls.
-    Cached 5 minutes to reduce Finnhub API usage.
+    Primary: Finnhub (parallel requests, 5-min cache).
+    Fallback: yfinance when FINNHUB_API_KEY is not configured.
     """
-    # Check cache first
+    # Cache hit
     cached = _get_cached_indices()
     if cached is not None:
         return GlobalMarketsOut(indices=cached)
 
-    if not settings.FINNHUB_API_KEY:
-        return GlobalMarketsOut(indices=[])
+    indices: list[GlobalIndexOut] = []
 
-    import asyncio
-
-    async def _fetch_index(client: httpx.AsyncClient, finnhub_symbol: str, name: str):
-        try:
-            resp = await client.get(
-                f"https://finnhub.io/api/v1/quote?symbol={finnhub_symbol}",
-                headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("c"):
-                return GlobalIndexOut(
-                    name=name,
-                    price=data["c"],
-                    change_pct=(
-                        round(((data["c"] - data["pc"]) / data["pc"]) * 100, 2)
-                        if data.get("pc")
-                        else None
-                    ),
+    if settings.FINNHUB_API_KEY:
+        async def _fetch_index(client: httpx.AsyncClient, finnhub_symbol: str, name: str):
+            try:
+                resp = await client.get(
+                    f"https://finnhub.io/api/v1/quote?symbol={finnhub_symbol}",
+                    headers={"X-Finnhub-Token": settings.FINNHUB_API_KEY},
                 )
-        except Exception as e:
-            logger.debug("Finnhub index %s failed: %s", finnhub_symbol, e)
-        return None
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("c"):
+                    return GlobalIndexOut(
+                        name=name,
+                        price=data["c"],
+                        change_pct=(
+                            round(((data["c"] - data["pc"]) / data["pc"]) * 100, 2)
+                            if data.get("pc")
+                            else None
+                        ),
+                    )
+            except Exception as e:
+                logger.debug("Finnhub index %s failed: %s", finnhub_symbol, e)
+            return None
 
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        results = await asyncio.gather(
-            *[_fetch_index(client, sym, name) for sym, name in INDEX_SYMBOLS],
-            return_exceptions=True,
-        )
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            results = await asyncio.gather(
+                *[_fetch_index(client, sym, name) for sym, name in INDEX_SYMBOLS],
+                return_exceptions=True,
+            )
+        indices = [r for r in results if isinstance(r, GlobalIndexOut)]
 
-    indices = [r for r in results if isinstance(r, GlobalIndexOut)]
+    # If Finnhub unavailable or returned nothing — fall back to yfinance
+    if not indices:
+        logger.info("Finnhub indices empty or unavailable — falling back to yfinance")
+        indices = await _fetch_indices_yfinance()
+
     _set_cached_indices(indices)
     return GlobalMarketsOut(indices=indices)
 
