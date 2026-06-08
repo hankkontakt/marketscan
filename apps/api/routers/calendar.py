@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from httpx import AsyncClient
 from apps.api.core.config import settings
 from apps.api.dependencies import get_supabase, get_user_supabase
-from apps.api.core.security import get_current_user, User
+from apps.api.core.security import get_optional_user, User
 
 logger = logging.getLogger(__name__)
 
@@ -75,13 +75,14 @@ async def get_earnings_calendar(
     from_date: str | None = None,
     to_date: str | None = None,
     scope: str = Query("mine", regex="^(mine|all)$"),
-    user: User | None = Depends(get_current_user),
+    user: User | None = Depends(get_optional_user),
     sb=Depends(get_user_supabase),
 ):
     """Upcoming earnings reports.
 
     scope=mine (default): filter to user's watchlist+portfolio tickers only.
     scope=all: all available earnings (Finnhub global feed, may be sparse).
+    Unauthenticated requests always return all events regardless of scope.
     """
     if not settings.FINNHUB_API_KEY:
         return {"events": []}
@@ -138,13 +139,14 @@ async def get_dividends_calendar(
     from_date: str | None = None,
     to_date: str | None = None,
     scope: str = Query("mine", regex="^(mine|all)$"),
-    user: User | None = Depends(get_current_user),
+    user: User | None = Depends(get_optional_user),
     sb=Depends(get_user_supabase),
 ):
     """Dividend calendar.
 
     scope=mine (default): fetch dividends for user's watchlist+portfolio tickers.
     scope=all: fetch for top-scoring universe tickers.
+    Unauthenticated requests fall back to universe tickers regardless of scope.
     """
     if not settings.FINNHUB_API_KEY:
         return {"events": []}
