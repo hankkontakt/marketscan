@@ -73,12 +73,12 @@ function Step0({
           <div className="space-y-1.5">
             <FileRow
               label="Positioner (krävs)"
-              desc="\"Mitt innehav fördelat per konto\" → Ladda ner som .csv"
+              desc={'"Mitt innehav fördelat per konto" → Ladda ner som .csv'}
               required
             />
             <FileRow
               label="Inköpskurs (valfri)"
-              desc="\"Inköpskurs\" → Ladda ner historisk inköpskurs som .csv"
+              desc={'"Inköpskurs" → Ladda ner historisk inköpskurs som .csv'}
               required={false}
             />
           </div>
