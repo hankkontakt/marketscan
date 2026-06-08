@@ -2,12 +2,15 @@
 JWT validation — validates Supabase-issued tokens.
 
 Primary:  local HS256 check against SUPABASE_JWT_SECRET (no network roundtrip).
-Fallback: if SUPABASE_JWT_SECRET is not configured, validate via Supabase API.
+Fallback: if the secret is missing or wrong, validate via async httpx call to
+          Supabase REST API.  This path is ~100 ms slower but never blocks the
+          event loop (unlike the old synchronous supabase-python SDK approach).
 
 Admin check reads role from profiles table (not from JWT, where it is
 always "authenticated"). Requires a supabase-admin client to bypass RLS.
 """
 import logging
+import httpx
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -25,19 +28,28 @@ class User(BaseModel):
     role: str = "user"
 
 
-def _decode_via_supabase_api(token: str) -> dict:
-    """Fallback: validate token by calling Supabase auth.getUser().
-    Used when SUPABASE_JWT_SECRET is not configured.
-    Adds ~100 ms network latency per request but is always correct.
+async def _validate_via_supabase_api(token: str) -> dict:
+    """Async fallback: call Supabase /auth/v1/user to validate the token.
+
+    Uses httpx so the event loop is never blocked.  Only called when the
+    local HS256 decode fails (wrong/missing SUPABASE_JWT_SECRET).
     """
     try:
-        from supabase import create_client
-        sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
-        resp = sb.auth.get_user(token)
-        user = resp.user
-        if not user:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.SUPABASE_URL}/auth/v1/user",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "apikey": settings.SUPABASE_ANON_KEY,
+                },
+            )
+        if resp.status_code != 200:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ogiltig token")
-        return {"sub": user.id, "email": user.email}
+        data = resp.json()
+        uid = data.get("id")
+        if not uid:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ogiltig token")
+        return {"sub": uid, "email": data.get("email")}
     except HTTPException:
         raise
     except Exception as exc:
@@ -45,15 +57,15 @@ def _decode_via_supabase_api(token: str) -> dict:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ogiltig token")
 
 
-def _decode(token: str) -> dict:
+async def _decode(token: str) -> dict:
+    """Decode and validate a Supabase JWT.  Async to support the API fallback."""
     secret = settings.SUPABASE_JWT_SECRET
     if not secret:
-        # JWT secret not configured — fall back to Supabase API validation
         logger.warning(
-            "SUPABASE_JWT_SECRET is not set; falling back to Supabase API token "
-            "validation (slower). Set the env var for fast local validation."
+            "SUPABASE_JWT_SECRET is not set; using Supabase API fallback. "
+            "Set the env var for fast local validation."
         )
-        return _decode_via_supabase_api(token)
+        return await _validate_via_supabase_api(token)
     try:
         return jwt.decode(
             token,
@@ -64,9 +76,9 @@ def _decode(token: str) -> dict:
     except jwt.ExpiredSignatureError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token har gått ut")
     except jwt.PyJWTError:
-        # Local decode failed — could be a wrong secret; try Supabase API as last resort
+        # Wrong secret or malformed token — try the API as a last resort.
         logger.debug("Local JWT decode failed, trying Supabase API fallback")
-        return _decode_via_supabase_api(token)
+        return await _validate_via_supabase_api(token)
 
 
 async def get_current_user(
@@ -74,7 +86,7 @@ async def get_current_user(
 ) -> User:
     if not cred:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autentisering krävs")
-    payload = _decode(cred.credentials)
+    payload = await _decode(cred.credentials)
     uid = payload.get("sub")
     if not uid:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token saknar sub")
