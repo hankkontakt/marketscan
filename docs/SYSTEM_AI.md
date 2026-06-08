@@ -10,6 +10,7 @@
 
 | Datum | Fas | Ändring | Fil |
 |---|---|---|---|
+| 2026-06-08 | fix | **🔴 ARKITEKTURÄNDRING — import "Nätverksfel" löst.** `API_BASE = NEXT_PUBLIC_API_URL ?? ""` gav tom sträng (Vercel injicerar `NEXT_PUBLIC_API_URL=""`, och `??` fångar inte tom sträng) → browsern POST:ade till **samma origin** → web-deploymentens Vercel Deployment Protection redirectade till SSO → `fetch()` kastade TypeError → "Nätverksfel". Fix: `API_BASE = NEXT_PUBLIC_API_URL \|\| "https://marketscan-api.vercel.app"` (`\|\|` fångar även tom sträng) → browsern anropar API-domänen DIREKT (CORS verifierat live: OPTIONS+POST → 200/401 med rätt headers). **Tog även bort `rewrites()`-proxyn** (fas0 nedan) — den proxade genom den skyddade deploymenten. | `apps/web/lib/api.ts`, `apps/web/next.config.ts` |
 | 2026-06-08 | fix | yfinance fallback för globala index: byt `fast_info.get()` → `Ticker.history(period="2d")` — fast_info stödjer inte `.get()` i nyare yfinance-versioner och fungerar inte för index utanför börsstängning | `apps/api/routers/markets.py` |
 | 2026-06-08 | feat | Nytt screener-filter: **land** — `/api/scan/countries` endpoint, `country` i `ScanParams`, `useCountries()` hook, FilterRail-dropdown i utvikat läge | `screener.py`, `api.ts`, `useScreener.ts`, `FilterRail.tsx` |
 | 2026-06-08 | fix | Admin "Mått"-histogram: färgkodade staplar (röd/gul/blå/grön per betygsnivå), räknarvärde ovanför varje stapel, ta bort `minHeight` på tomma staplar, byt signaltabell mot horisontell stapelchart | `AdminSections.tsx` |
@@ -77,13 +78,14 @@
 │  api/main.py (Vercel shim → apps/api)   │
 │  vercel.json: maxDuration=60            │
 └─────────────────────────────────────────┘
-         ↑ /api/* (server-side proxy)
+         ↑ direkt cross-origin fetch (CORS)
 ┌─────────────────────────────────────────┐
 │  Vercel: web-…-hankkontakts-…vercel.app │
 │  Next.js 14 (App Router)                │
 │  apps/web/                              │
-│  API_BASE = "" (relativa URL:er)        │
-│  rewrites: /api/* → marketscan-api      │
+│  API_BASE = NEXT_PUBLIC_API_URL         │
+│    || "https://marketscan-api…"         │
+│  (ingen proxy — direkt till API-domän)  │
 └─────────────────────────────────────────┘
          ↓
 ┌─────────────────────────────────────────┐
@@ -118,12 +120,15 @@
 
 ### Hur frontend når API:t
 
-1. `apps/web/lib/api.ts`: `API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""`
-2. Tom sträng → relativa URL:er `/api/...`
-3. `apps/web/next.config.ts`: `rewrites()` → `/api/*` → `https://marketscan-api.vercel.app/api/*`
-4. Proxyn är server-side → webbläsaren ser en domän → ingen CORS
+1. `apps/web/lib/api.ts`: `API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://marketscan-api.vercel.app"`
+2. Browsern anropar **API-domänen direkt** (cross-origin). CORS i `apps/api/main.py` tillåter web-domänen via `allow_origin_regex`.
+3. **Ingen `rewrites()`-proxy.** Den togs bort 2026-06-08.
 
-> **OBS**: Sätt ALDRIG `NEXT_PUBLIC_API_URL` på Vercel web-projektet. Tom sträng + proxy är rätt.
+> **🔴 OBS — läs detta innan du rör API-routingen:**
+> - Använd `||`, **aldrig** `??`. Vercel injicerar `NEXT_PUBLIC_API_URL=""` (tom sträng) i web-projektet, och `?? ""` behåller den tomma strängen → `API_BASE=""` → browsern POST:ar till **samma origin**.
+> - Web-deploymenten har **Vercel Deployment Protection** (SSO-redirect). En same-origin `/api/*`-POST redirectas då cross-origin → `fetch()` kastar TypeError → **"Nätverksfel"**. Detta var roten till import-buggen.
+> - **Proxa INTE** `/api/*` same-origin via `rewrites()` — det routar genom den skyddade deploymenten och återinför buggen.
+> - Default-värdet `https://marketscan-api.vercel.app` är hårdkodat så fixen håller även om Vercel-env-varen saknas/är tom. Sätt gärna `NEXT_PUBLIC_API_URL` korrekt ändå, men koden är robust utan den.
 
 ### Vercel-shim (`api/main.py`)
 
@@ -268,8 +273,9 @@ SEGMENT_THRESHOLDS = {"large_cap": 10B, "mid_cap": 2B, "small_cap": 300M}  # USD
 ### API-klient
 
 `apps/web/lib/api.ts`:
-- `API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""`
+- `API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://marketscan-api.vercel.app"` (direkt till API-domänen, `||` inte `??` — se §2 "Hur frontend når API:t")
 - Lägger till Supabase JWT automatiskt om session finns
+- 55s `AbortController`-timeout → `ApiError(408, ...)`; nätverks-TypeError → `ApiError(0, "Nätverksfel ...")`
 - Kastar `ApiError` (med HTTP-statuskod) vid fel
 
 ### PWA
