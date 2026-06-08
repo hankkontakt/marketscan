@@ -10,6 +10,13 @@
 
 | Datum | Fas | Ändring | Fil |
 |---|---|---|---|
+| 2026-06-08 | fix | yfinance fallback för globala index: byt `fast_info.get()` → `Ticker.history(period="2d")` — fast_info stödjer inte `.get()` i nyare yfinance-versioner och fungerar inte för index utanför börsstängning | `apps/api/routers/markets.py` |
+| 2026-06-08 | feat | Nytt screener-filter: **land** — `/api/scan/countries` endpoint, `country` i `ScanParams`, `useCountries()` hook, FilterRail-dropdown i utvikat läge | `screener.py`, `api.ts`, `useScreener.ts`, `FilterRail.tsx` |
+| 2026-06-08 | fix | Admin "Mått"-histogram: färgkodade staplar (röd/gul/blå/grön per betygsnivå), räknarvärde ovanför varje stapel, ta bort `minHeight` på tomma staplar, byt signaltabell mot horisontell stapelchart | `AdminSections.tsx` |
+| 2026-06-08 | feat | Admin "Inställningar" komplett: actionable setup-guider för GH_DISPATCH_TOKEN, R2 Storage, Supabase service role, admin-SQL, databas-migrationer, universum-expansion | `AdminSections.tsx` |
+| 2026-06-08 | fix | Service worker: `apiRoute` (NetworkOnly) placerad FÖRST i `runtimeCaching` — `defaultCache` från `@serwist/next` hade en NetworkFirst+10s-regel för `/api/*` GET som tog prioritet | `apps/web/app/sw.ts` |
+| 2026-06-08 | fix | Admin `security.py`: rollkälla justerad till `app_metadata.role` (JWT) + `asyncio.to_thread` runt Supabase-anrop | `apps/api/core/security.py` |
+| 2026-06-08 | fix | Oversikt "Dagens marknad": tom up/down-lista visar nu "Ingen prisdata för idag — kör pipeline" istf blank | `apps/web/app/(app)/oversikt/OversiktView.tsx` |
 | 2026-06-08 | fas0 | Skapa tom `apps/__init__.py` — `from apps.api.main import app` kräver att `apps` är ett Python-paket | `apps/__init__.py` |
 | 2026-06-08 | fas0 | Fix path-bugg i Vercel-shim: `dirname(abspath(__file__))` gav `<repo>/api`, inte `<repo>` | `api/main.py` |
 | 2026-06-08 | fas0 | Lägg till Next.js `rewrites()` proxy `/api/*` → `marketscan-api.vercel.app` | `apps/web/next.config.ts` |

@@ -276,16 +276,24 @@ function TabMarket() {
               <span className="text-xs font-semibold text-[var(--color-text-primary)]">Dagens marknad</span>
             </div>
             <div className="px-4 py-3">
-              <div className="flex items-center gap-1 mb-2">
-                <TrendingUp size={11} strokeWidth={1.5} className="text-[var(--color-up)]" />
-                <span className="text-[10px] font-medium text-[var(--color-up)]">Störst upp</span>
-              </div>
-              {movers.up.slice(0, isExpert ? 5 : 3).map((m: TopMover) => <MoverRow key={m.ticker} item={m} />)}
-              <div className="flex items-center gap-1 mt-3 mb-2">
-                <TrendingDown size={11} strokeWidth={1.5} className="text-[var(--color-down)]" />
-                <span className="text-[10px] font-medium text-[var(--color-down)]">Störst ned</span>
-              </div>
-              {movers.down.slice(0, isExpert ? 5 : 3).map((m: TopMover) => <MoverRow key={m.ticker} item={m} />)}
+              {movers.up.length === 0 && movers.down.length === 0 ? (
+                <p className="text-[11px] text-[var(--color-text-muted)] text-center py-3">
+                  Ingen prisdata för idag — kör pipeline för att uppdatera.
+                </p>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1 mb-2">
+                    <TrendingUp size={11} strokeWidth={1.5} className="text-[var(--color-up)]" />
+                    <span className="text-[10px] font-medium text-[var(--color-up)]">Störst upp</span>
+                  </div>
+                  {movers.up.slice(0, isExpert ? 5 : 3).map((m: TopMover) => <MoverRow key={m.ticker} item={m} />)}
+                  <div className="flex items-center gap-1 mt-3 mb-2">
+                    <TrendingDown size={11} strokeWidth={1.5} className="text-[var(--color-down)]" />
+                    <span className="text-[10px] font-medium text-[var(--color-down)]">Störst ned</span>
+                  </div>
+                  {movers.down.slice(0, isExpert ? 5 : 3).map((m: TopMover) => <MoverRow key={m.ticker} item={m} />)}
+                </>
+              )}
             </div>
           </div>
 
