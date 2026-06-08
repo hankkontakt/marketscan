@@ -1,0 +1,275 @@
+# MarketScan — Komplett systemdokumentation (AI-underhåll)
+
+> **Underhållsprotokoll**: Uppdatera denna fil varje gång du ändrar kod, hittar en bugg,
+> eller upptäcker en förbättringsmöjlighet — även om det inte hör ihop med uppgiften du
+> arbetar med just nu. Lägg till under rätt sektion nedan.
+
+---
+
+## 0. Underhållsprotokoll (senaste ändringar)
+
+| Datum | Fas | Ändring | Fil |
+|---|---|---|---|
+| 2026-06-08 | fas0 | Skapa tom `apps/__init__.py` — `from apps.api.main import app` kräver att `apps` är ett Python-paket | `apps/__init__.py` |
+| 2026-06-08 | fas0 | Fix path-bugg i Vercel-shim: `dirname(abspath(__file__))` gav `<repo>/api`, inte `<repo>` | `api/main.py` |
+| 2026-06-08 | fas0 | Lägg till Next.js `rewrites()` proxy `/api/*` → `marketscan-api.vercel.app` | `apps/web/next.config.ts` |
+| 2026-06-08 | fas1 | Ny migration: RLS-härdning alla user-tabeller + `client_errors`-tabell | `supabase/migrations/018_rls_hardening.sql` |
+| 2026-06-08 | fas1 | Lägg till `@limiter.limit("10/minute")` på `/api/debug/client-error` | `apps/api/core/request_id.py` |
+| 2026-06-08 | fas1 | Strama CORS-regex från `.*hankkontakts.*` till `web-[a-z0-9-]+-hankkontakts-projects` | `apps/api/main.py` |
+| 2026-06-08 | fas2 | FX-normalisering av `market_cap` (SEK→USD) före segment-klassificering | `backend_worker/db_loader.py` |
+| 2026-06-08 | fas2 | UTF-8-härdning: `client_encoding="UTF8"` + `encoding="utf-8"` till `to_csv()` | `backend_worker/db_loader.py` |
+| 2026-06-08 | fas3 | DEPRECATED-header på `hrp_optimizer.py`, `portfolio_snapshot.py`, `load_data.py` | alla tre filer |
+
+---
+
+## 1. Systemöversikt
+
+### Arkitektur
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  GitHub Actions  (stock-scanner + marketscan repo)        │
+│  PYTHONPATH="marketscan:stock-scanner"                    │
+│  backend_worker/pipeline/entrypoint.py --mode morning     │
+│      ↓                                                    │
+│  _fast_pipeline()                                         │
+│    1. Läs parquet (stock-scanner/reports/)                │
+│    2. Uppdatera priser via yfinance (~10 sek)             │
+│    3. Spara ny parquet                                    │
+│    4. COPY → Supabase (psycopg2 bulk, ~2 sek)            │
+│    5. Ladda upp snapshot till R2 (valfritt)               │
+└──────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│  Vercel: marketscan-api.vercel.app       │
+│  FastAPI (Python serverless)             │
+│  apps/api/main.py (full app)             │
+│  api/main.py (Vercel shim → apps/api)   │
+│  vercel.json: maxDuration=60            │
+└─────────────────────────────────────────┘
+         ↑ /api/* (server-side proxy)
+┌─────────────────────────────────────────┐
+│  Vercel: web-…-hankkontakts-…vercel.app │
+│  Next.js 14 (App Router)                │
+│  apps/web/                              │
+│  API_BASE = "" (relativa URL:er)        │
+│  rewrites: /api/* → marketscan-api      │
+└─────────────────────────────────────────┘
+         ↓
+┌─────────────────────────────────────────┐
+│  Supabase (Postgres + Auth + RLS)       │
+│  scan_results  — ingen RLS (publik läs) │
+│  profiles/portfolios/etc — RLS aktivt   │
+└─────────────────────────────────────────┘
+```
+
+### Repo-struktur
+
+| Katalog | Innehåll |
+|---|---|
+| `apps/api/` | FastAPI-app, routers, core |
+| `apps/web/` | Next.js 14 frontend |
+| `backend_worker/` | Pipeline-stöd: db_loader, r2_uploader, ml_trainer m.fl. |
+| `backend_worker/pipeline/` | GitHub Actions entrypoint |
+| `supabase/migrations/` | SQL-migrationer 001–018 |
+| `api/` | Vercel-shim som re-exportar FastAPI-appen |
+| `docs/` | Denna fil + PIPELINE_SETUP.md |
+
+---
+
+## 2. Deploy-arkitektur (Vercel)
+
+### Två separata projekt
+
+| Projekt | URL | Konfiguration |
+|---|---|---|
+| `marketscan-api` | `https://marketscan-api.vercel.app` | `vercel.json`: `functions: {"apps/api/main.py": {maxDuration: 60}}` |
+| `web` | `https://web-…-hankkontakts-projects.vercel.app` | Next.js |
+
+### Hur frontend når API:t
+
+1. `apps/web/lib/api.ts`: `API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""`
+2. Tom sträng → relativa URL:er `/api/...`
+3. `apps/web/next.config.ts`: `rewrites()` → `/api/*` → `https://marketscan-api.vercel.app/api/*`
+4. Proxyn är server-side → webbläsaren ser en domän → ingen CORS
+
+> **OBS**: Sätt ALDRIG `NEXT_PUBLIC_API_URL` på Vercel web-projektet. Tom sträng + proxy är rätt.
+
+### Vercel-shim (`api/main.py`)
+
+```python
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # <repo>
+sys.path.insert(0, _repo_root)
+from apps.api.main import app
+```
+
+`apps/__init__.py` **måste existera** (tomt) för att `from apps.api.main import app` ska fungera.
+
+---
+
+## 3. Pipeline (GitHub Actions)
+
+### Entrypoint
+
+```
+backend_worker/pipeline/entrypoint.py  run(mode)
+```
+
+**Fast path** (morning / evening / manual):
+1. Ladda senaste `scored_universe_*.parquet` från `stock-scanner/reports/`
+2. Uppdatera priser med `core.data_fetcher.fetch_prices_only()` (~10 sek)
+3. Hoppa över ML-predictions (yfinance per ticker → hänger i timmar utan cache)
+4. Spara uppdaterad parquet
+5. `db_loader.load_scan()` → Supabase via `COPY`
+6. `r2_uploader.upload_score_snapshot()` (om R2-nycklar finns)
+
+**Full path** (weekly / smallcap):
+- Kör `core.daily_pipeline.run_pipeline(mode)` med SIGALRM-timeout (75 min)
+- Fallback: läs senaste sparad parquet om timeout
+
+### Kända gotchas
+
+| Problem | Lösning |
+|---|---|
+| `run_pipeline('morning')` hänger (nyheter/AI/SMTP) | Fast path kringgår `run_pipeline()` helt |
+| ML-predictions hänger (yfinance cache saknas) | Hoppa över i fast path |
+| `invalid input syntax for type integer: "12.8"` | `ml_rank`/`piotroski_f` castas till `Int64` i `_prepare_df` |
+| `ValueError: Invalid endpoint: ` (boto3) | `_r2_configured()` guard returnerar tidigt om R2-variabler saknas |
+| Nästan alla bolag klassas som `large_cap` | SEK-värden normaliseras till USD via `_FX_TO_USD`-map (fas2-fix) |
+
+---
+
+## 4. FastAPI-app (`apps/api/`)
+
+### Middleware-ordning (utifrån in)
+
+1. `GZipMiddleware` (minimum_size=1000)
+2. `CORSMiddleware`
+   - `allow_origins` = från `settings.CORS_ORIGINS`
+   - `allow_origin_regex` = `r"https://web-[a-z0-9-]+-hankkontakts-projects\.vercel\.app"`
+3. `SecurityHeadersMiddleware` (via `add_security_headers`)
+4. `SlowAPIMiddleware` (rate limiting)
+5. `RequestIDMiddleware` (X-Request-ID, logging)
+
+### Routers
+
+| Router | Prefix | Auth |
+|---|---|---|
+| `screener` | `/api` | publik (scan_results utan RLS) |
+| `stocks` | `/api` | publik |
+| `portfolio` | — | kräver JWT |
+| `ai` | `/api` | kräver JWT, rate-limitad |
+| `admin` | `/api` | `require_admin` |
+| `calendar` | `/api` | publik |
+| `debug` | `/api/debug` | `/health` kräver admin; `/client-error` publik, rate-limitad |
+
+### Konfiguration (`apps/api/core/config.py`)
+
+Läser från `.env` och miljövariabler via pydantic-settings. Alla API-nycklar deklareras här.
+
+### Säkerhetsregler
+
+- `GH_CHECKOUT_TOKEN` — aldrig i frontend/bundeln, bara backend-secret
+- `service_role`-nyckel — bara i `backend_worker`/admin-endpoints
+- Logga aldrig tokens, lösenord eller PII
+- `/api/debug/*` — MÅSTE vara admin-skyddat (läcker systeminformation)
+- `/api/debug/client-error` — rate-limitad 10/min/IP via slowapi
+
+---
+
+## 5. Databas (Supabase)
+
+### Migreringsöversikt
+
+| Migration | Innehåll |
+|---|---|
+| 001 | Grundschema: scan_results, profiles, portfolios, holdings, watchlist, price_alerts, saved_screens, pipeline_runs |
+| 002 | portfolio_snapshots |
+| 003 | ai_cache |
+| 004 | ml_predictions |
+| 005 | smallcap_results |
+| 006 | paper_trading (paper_portfolios, paper_trades, paper_positions) |
+| 007 | backtest_results |
+| 008 | sector_rotation |
+| 009 | portfolio_optimizations |
+| 010 | universe_candidates |
+| 011 | options_data |
+| 012 | notification_preferences (+ uppdaterad handle_new_user trigger) |
+| 013 | notifications |
+| 014 | transactions |
+| 015 | insider_trades |
+| 016 | ai_journal |
+| 017 | user_ticker_requests |
+| **018** | **RLS-härdning: FOR ALL WITH CHECK på alla user-tabeller; client_errors-tabell** |
+
+### RLS-principer
+
+- `scan_results` — **ingen RLS** (publik läsning, service_role skriver)
+- Alla user-tabeller — `FOR ALL USING ((select auth.uid()) = user_id) WITH CHECK (...)`
+- Cached `(select auth.uid())` föredras över `auth.uid()` direkt (performance)
+- `notifications` — INSERT reserverat för service_role (backend); users: SELECT/UPDATE/DELETE
+- `client_errors` — ingen policy = bara service_role kan läsa/skriva
+
+### scan_results COPY-laddning
+
+```python
+# db_loader.load_scan()
+buf = io.StringIO()
+prepared.to_csv(buf, index=False, header=False, na_rep="", encoding="utf-8")
+buf.seek(0)
+with psycopg2.connect(dsn, client_encoding="UTF8") as con:
+    cur.execute("TRUNCATE scan_results;")
+    cur.copy_expert("COPY scan_results (...) FROM STDIN WITH (FORMAT csv, NULL '')", buf)
+```
+
+### Segment-klassificering
+
+`market_cap` normaliseras till USD med statisk FX-map innan tröskeltestning:
+
+```python
+_FX_TO_USD = {"SEK": 0.093, "EUR": 1.08, "USD": 1.0, ...}  # uppdatera periodiskt
+SEGMENT_THRESHOLDS = {"large_cap": 10B, "mid_cap": 2B, "small_cap": 300M}  # USD
+```
+
+---
+
+## 6. Frontend (`apps/web/`)
+
+### API-klient
+
+`apps/web/lib/api.ts`:
+- `API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""`
+- Lägger till Supabase JWT automatiskt om session finns
+- Kastar `ApiError` (med HTTP-statuskod) vid fel
+
+### PWA
+
+Serwist (`@serwist/next`) konfigurerat i `next.config.ts`. Service worker: `app/sw.ts` → `public/sw.js`. Inaktiverat i `development`.
+
+---
+
+## 7. Kända förbättringsmöjligheter (backlog)
+
+| ID | Beskrivning | Prioritet |
+|---|---|---|
+| B1 | ML-predictions i fast pipeline: behöver lokal OHLCV-cache för att aktiveras | Låg |
+| B2 | FX-rater i `_FX_TO_USD` är statiska — uppdatera kvartalsvis eller hämta dynamiskt | Låg |
+| B3 | `portfolio_snapshot.py` som GH Actions cron-jobb — aktivera om snapshotfunktionen behöver bakgrundskörning | Medel |
+| B4 | `price_alert_checker.py` — planerad notificationkälla (Fas 6) | Medel |
+| B5 | Shared rate-limit counter för Vercel (nuvar per-instans) — Upstash Redis | Låg |
+| B6 | Supabase Connection Pooling (port 6543) för production scalability | Medel |
+
+---
+
+## 8. Felsökningsguide
+
+| Symptom | Rotorsak | Lösning |
+|---|---|---|
+| `500 FUNCTION_INVOCATION_FAILED` på API | Import-tids-krasch | Kontrollera `apps/__init__.py` finns, `api/main.py` har rätt `dirname(dirname(...))` |
+| "Failed to fetch" i frontend | `NEXT_PUBLIC_API_URL` satt fel eller proxy saknas | Sätt tom sträng + verifiera `rewrites()` i `next.config.ts` |
+| Tom aktielista trots pipeline-data | API returnerar 500 | Testa `curl https://marketscan-api.vercel.app/api/scan?limit=2` |
+| Pipeline hänger efter XGBoost-varning | `run_pipeline()` anropar nyheter/AI/SMTP | Fast path kringgår — kör `manual`/`morning`/`evening` |
+| `invalid input syntax for type integer` | `ml_rank` är float i parquet | Redan fixat i `_prepare_df` (round + Int64) |
+| Nästan allt `large_cap` | SEK-värden jämfördes mot USD-trösklar | Fixat: `_to_usd()` normaliserar med FX-map |
+| Mojibake i `entry_signal` | Fel encoding vid COPY | Fixat: `client_encoding="UTF8"` + `encoding="utf-8"` |
+| `ModuleNotFoundError: No module named 'core'` | `PYTHONPATH` saknar stock-scanner | GH Actions workflow: `PYTHONPATH: "marketscan:stock-scanner"` |
