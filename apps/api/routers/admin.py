@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from httpx import AsyncClient
 from apps.api.core.security import get_current_user, require_admin, User
 from apps.api.core.config import settings
-from apps.api.dependencies import get_supabase, get_supabase_admin
+from apps.api.dependencies import get_supabase, get_supabase_admin, get_user_supabase
 
 
 logger = logging.getLogger(__name__)
@@ -385,6 +385,26 @@ def run_diagnostics(
             results["latest_run"] = f"Fel: {e}"
 
     return results
+
+
+@router.get("/diagnostics/deep")
+def deep_diagnostics(
+    user: User = Depends(require_admin),
+    sb_user=Depends(get_user_supabase),
+    sb_admin=Depends(get_supabase_admin),
+):
+    """
+    Comprehensive self-diagnostics in ONE call: env vars, per-table
+    authenticated-context reachability (catches the 42501 GRANT class of bugs
+    that are invisible to service_role), and inferred migration state.
+
+    Returns {ok, summary, issues[], env, tables, migrations}. An empty `issues`
+    list means the backend is healthy. This is the first thing to check when
+    something "just doesn't work" — it turns a long debugging session into one
+    request.
+    """
+    from apps.api.core.diagnostics import run_diagnostics
+    return run_diagnostics(sb_user, sb_admin)
 
 
 # ─── Cache management ─────────────────────────────────────────────────────────
