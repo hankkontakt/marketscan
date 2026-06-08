@@ -6,8 +6,15 @@ Fallback: if the secret is missing or wrong, validate via async httpx call to
           Supabase REST API.  This path is ~100 ms slower but never blocks the
           event loop (unlike the old synchronous supabase-python SDK approach).
 
-Admin check reads role from profiles table (not from JWT, where it is
-always "authenticated"). Requires a supabase-admin client to bypass RLS.
+Admin role resolution (two sources, first match wins):
+  1. JWT fast path — app_metadata.role == "admin" extracted directly from the
+     token payload. Set this via SQL (service_role only, user cannot forge it):
+       UPDATE auth.users
+       SET raw_app_meta_data = raw_app_meta_data || '{"role":"admin"}'
+       WHERE email = 'your@email.com';
+     User must re-login after this SQL for the new JWT to carry the claim.
+  2. DB slow path — profiles.role == "admin" column.  Wrapped in asyncio.to_thread
+     so the synchronous Supabase SDK never blocks the event loop.
 """
 import logging
 import httpx
@@ -49,7 +56,12 @@ async def _validate_via_supabase_api(token: str) -> dict:
         uid = data.get("id")
         if not uid:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ogiltig token")
-        return {"sub": uid, "email": data.get("email")}
+        # Include app_metadata so require_admin can use the JWT fast path
+        return {
+            "sub": uid,
+            "email": data.get("email"),
+            "app_metadata": data.get("app_metadata") or {},
+        }
     except HTTPException:
         raise
     except Exception as exc:
@@ -90,7 +102,12 @@ async def get_current_user(
     uid = payload.get("sub")
     if not uid:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token saknar sub")
-    return User(id=uid, email=payload.get("email"), role=payload.get("role", "user"))
+    # Extract the app-level role from app_metadata (can only be set via service_role,
+    # not by the user themselves — safe to trust). Falls back to "user".
+    # Note: payload.get("role") is always "authenticated" (PostgREST role) — not the app role.
+    app_metadata = payload.get("app_metadata") or {}
+    app_role = app_metadata.get("role") or "user"
+    return User(id=uid, email=payload.get("email"), role=app_role)
 
 
 async def get_optional_user(
@@ -105,20 +122,33 @@ async def get_optional_user(
 
 
 async def require_admin(user: User = Depends(get_current_user)) -> User:
-    """Verify that the authenticated user has the 'admin' role in profiles table.
+    """Verify that the authenticated user has admin role.
 
-    Reads from profiles (via service-role client) so the check is against the
-    database value — not the JWT claim, which is always 'authenticated'.
+    Fast path: role already extracted from app_metadata in the JWT (set via
+    Supabase SQL: UPDATE auth.users SET raw_app_meta_data = raw_app_meta_data ||
+    '{"role":"admin"}' WHERE email = '...').  This is the preferred method —
+    no extra DB roundtrip needed.
+
+    Slow path (fallback): check profiles.role column.  Wrapped in
+    asyncio.to_thread so the sync Supabase SDK never blocks the event loop.
     """
+    # ── Fast path: role in JWT app_metadata ──────────────────────────────
+    if user.role == "admin":
+        return user
+
+    # ── Slow path: check profiles table ──────────────────────────────────
+    import asyncio
     from apps.api.dependencies import get_supabase_admin
     sb_admin = get_supabase_admin()
     try:
-        profile = (
-            sb_admin.table("profiles")
-            .select("role")
-            .eq("id", user.id)
-            .single()
-            .execute()
+        profile = await asyncio.to_thread(
+            lambda: (
+                sb_admin.table("profiles")
+                .select("role")
+                .eq("id", user.id)
+                .single()
+                .execute()
+            )
         )
         if not profile.data or profile.data.get("role") != "admin":
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin-behörighet krävs")
