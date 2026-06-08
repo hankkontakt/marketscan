@@ -292,7 +292,8 @@ class ImportPreviewItem(BaseModel):
     ticker: str | None = None
     shares: float | None = None
     cost_basis: float | None = None
-    current_price: float | None = None
+    current_price: float | None = None   # derived from marknadsvarde / shares
+    marknadsvarde: float | None = None   # total market value at export time
     mapped: bool = False
     purchase_date: str | None = None   # YYYY-MM-DD from inkopskurser
     isin: str | None = None
@@ -363,6 +364,8 @@ async def import_avanza_preview(body: AvanzaImportIn):
             ticker=row["ticker"],
             shares=row["shares"],
             cost_basis=row["cost_basis"],
+            current_price=row.get("current_price"),
+            marknadsvarde=row.get("marknadsvarde"),
             mapped=row["mapped"],
             purchase_date=purchase_date,
             isin=isin or None,
@@ -395,10 +398,37 @@ async def import_confirm(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
     portfolio_id = port.data[0]["id"]
 
-    created = 0
+    stocks_created = 0
+    funds_created = 0
+
     for row in body.rows:
-        # Skip funds and rows without a resolved ticker
-        if not row.ticker or row.shares is None:
+        if row.shares is None:
+            continue
+
+        # ── Funds: save to fund_holdings ──────────────────────────────────────
+        if row.av_typ == "FUND":
+            if not row.isin:
+                continue
+            try:
+                fund_data: dict = {
+                    "portfolio_id": portfolio_id,
+                    "isin":          row.isin,
+                    "name":          row.name,
+                    "shares":        row.shares,
+                    "cost_basis":    row.cost_basis,
+                    "current_price": row.current_price,
+                    "marknadsvarde": row.marknadsvarde,
+                }
+                if row.purchase_date:
+                    fund_data["purchase_date"] = row.purchase_date
+                sb.table("fund_holdings").insert(fund_data).execute()
+                funds_created += 1
+            except Exception as e:
+                logger.debug("Could not save fund holding %s: %s", row.isin, e)
+            continue
+
+        # ── Stocks: save to holdings ───────────────────────────────────────────
+        if not row.ticker:
             continue
 
         ticker = row.ticker.upper()
@@ -441,9 +471,101 @@ async def import_confirm(
                     tx_data["amount"] = round(row.cost_basis * row.shares, 2)
                 sb.table("transactions").insert(tx_data).execute()
             except Exception as e:
-                # Non-fatal — holding is saved even if transaction fails
                 logger.debug("Could not create import transaction for %s: %s", ticker, e)
 
-        created += 1
+        stocks_created += 1
 
-    return {"created": created, "total": len(body.rows)}
+    return {
+        "created": stocks_created + funds_created,
+        "stocks_created": stocks_created,
+        "funds_created": funds_created,
+        "total": len(body.rows),
+    }
+
+
+# ─── Fund Holdings ────────────────────────────────────────────────────────────
+
+
+class FundHoldingOut(BaseModel):
+    id: str
+    isin: str
+    name: str
+    shares: float
+    cost_basis: float | None = None
+    current_price: float | None = None
+    marknadsvarde: float | None = None
+    purchase_date: str | None = None
+    added_at: str | None = None
+    # Derived
+    return_pct: float | None = None
+    current_value: float | None = None
+    cost_value: float | None = None
+
+
+@router.get("/funds", response_model=list[FundHoldingOut])
+async def get_fund_holdings(
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Return all fund holdings for the user's portfolio."""
+    port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
+    if not port.data:
+        return []
+    portfolio_id = port.data[0]["id"]
+
+    res = sb.table("fund_holdings").select("*").eq("portfolio_id", portfolio_id).execute()
+    funds = res.data or []
+
+    out = []
+    for f in funds:
+        shares = float(f.get("shares") or 0)
+        cost_basis = float(f["cost_basis"]) if f.get("cost_basis") is not None else None
+        current_price = float(f["current_price"]) if f.get("current_price") is not None else None
+        marknadsvarde = float(f["marknadsvarde"]) if f.get("marknadsvarde") is not None else None
+
+        # Prefer stored marknadsvarde; otherwise calculate from current_price
+        current_value = marknadsvarde if marknadsvarde else (current_price * shares if current_price else None)
+        cost_value = cost_basis * shares if cost_basis else None
+
+        return_pct: float | None = None
+        if cost_basis and current_price and cost_basis > 0:
+            return_pct = round((current_price - cost_basis) / cost_basis * 100, 2)
+
+        out.append(FundHoldingOut(
+            id=f["id"],
+            isin=f["isin"],
+            name=f["name"],
+            shares=shares,
+            cost_basis=cost_basis,
+            current_price=current_price,
+            marknadsvarde=marknadsvarde,
+            purchase_date=f.get("purchase_date"),
+            added_at=f.get("added_at"),
+            return_pct=return_pct,
+            current_value=round(current_value, 2) if current_value else None,
+            cost_value=round(cost_value, 2) if cost_value else None,
+        ))
+
+    return out
+
+
+@router.delete("/funds/{fund_id}", status_code=204)
+async def remove_fund_holding(
+    fund_id: str,
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Remove a fund holding (ownership-verified via RLS)."""
+    port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
+    if not port.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
+    portfolio_id = port.data[0]["id"]
+
+    res = (
+        sb.table("fund_holdings").delete()
+        .eq("id", fund_id)
+        .eq("portfolio_id", portfolio_id)
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Fondinnehavet hittades inte")

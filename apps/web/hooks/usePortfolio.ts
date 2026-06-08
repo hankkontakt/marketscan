@@ -173,3 +173,38 @@ export function useSaveRebalancingTarget() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rebalancing-targets"] }),
   });
 }
+
+// ─── Fund Holdings ─────────────────────────────────────────────────────────────
+
+export interface FundHolding {
+  id: string;
+  isin: string;
+  name: string;
+  shares: number;
+  cost_basis: number | null;
+  current_price: number | null;
+  marknadsvarde: number | null;
+  purchase_date: string | null;
+  added_at: string | null;
+  return_pct: number | null;
+  current_value: number | null;
+  cost_value: number | null;
+}
+
+export function useFundHoldings() {
+  return useQuery<FundHolding[]>({
+    queryKey: ["fund-holdings"],
+    queryFn: () => api<FundHolding[]>("/api/portfolio/funds"),
+    staleTime: 2 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useRemoveFundHolding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api(`/api/portfolio/funds/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fund-holdings"] }),
+  });
+}

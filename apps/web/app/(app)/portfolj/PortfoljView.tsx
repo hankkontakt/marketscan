@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check, TrendingUp, Building2, Target, Receipt, BarChart3, Upload, Download, AlertCircle, Loader2 } from "lucide-react";
-import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk, useTransactions, useTWR, useDeleteTransaction } from "@/hooks/usePortfolio";
+import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk, useTransactions, useTWR, useDeleteTransaction, useFundHoldings, useRemoveFundHolding, type FundHolding } from "@/hooks/usePortfolio";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { ImportModal } from "@/components/portfolio/ImportModal";
@@ -18,8 +18,11 @@ import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 export function PortfoljView() {
   const { data: portfolio, isLoading } = usePortfolio();
+  const { data: fundHoldings = [], isLoading: fundsLoading } = useFundHoldings();
   const remove = useRemoveHolding();
+  const removeFund = useRemoveFundHolding();
   const addHolding = useAddHolding();
+  const [tab, setTab] = useState<"aktier" | "fonder" | "total">("aktier");
   const [showAdd, setShowAdd] = useState(false);
   const [addTicker, setAddTicker] = useState("");
   const [addShares, setAddShares] = useState("");
@@ -37,8 +40,14 @@ export function PortfoljView() {
 
   const holdings = portfolio?.holdings ?? [];
 
-  const totalValue = holdings.reduce((sum, h) => sum + (h.price ?? 0) * h.shares, 0);
-  const totalCost = holdings.reduce((sum, h) => sum + (h.cost_basis ?? 0) * h.shares, 0);
+  const stocksValue = holdings.reduce((sum, h) => sum + (h.price ?? 0) * h.shares, 0);
+  const stocksCost  = holdings.reduce((sum, h) => sum + (h.cost_basis ?? 0) * h.shares, 0);
+  const fundsValue  = fundHoldings.reduce((sum, f) => sum + (f.current_value ?? f.cost_value ?? 0), 0);
+  const fundsCost   = fundHoldings.reduce((sum, f) => sum + (f.cost_value ?? 0), 0);
+  const totalValue  = stocksValue + fundsValue;
+  const totalCost   = stocksCost + fundsCost;
+
+  // Backwards compat alias
   const totalReturn = totalCost > 0 ? (totalValue - totalCost) / totalCost : null;
 
   async function askAI() {
@@ -77,11 +86,11 @@ export function PortfoljView() {
         <div>
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Min portfölj</h1>
           <p className="text-xs mt-0.5 text-[var(--color-text-muted)]">
-            {holdings.length} innehav
+            {holdings.length} aktier{fundHoldings.length > 0 ? ` · ${fundHoldings.length} fonder` : ""}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {totalValue > 0 && (
+          {(stocksValue > 0 || fundsValue > 0) && (
             <div className="text-right">
               <div className="text-2xl font-bold tabular text-[var(--color-text-primary)]">
                 {formatPrice(totalValue)}
@@ -91,8 +100,13 @@ export function PortfoljView() {
                   {formatPctChange(totalReturn)}{" "}
                   <span className="inline-flex items-center gap-1">
                     total avkastning
-                    <InfoTooltip text="Portföljens totala avkastning sedan start." />
+                    <InfoTooltip text="Portföljens totala avkastning sedan start (aktier + fonder)." />
                   </span>
+                </div>
+              )}
+              {fundsValue > 0 && (
+                <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                  {formatPrice(stocksValue)} aktier · {formatPrice(fundsValue)} fonder
                 </div>
               )}
             </div>
@@ -123,6 +137,30 @@ export function PortfoljView() {
       {/* Import modal */}
       {showImport && (
         <ImportModal onClose={() => { setShowImport(false); }} />
+      )}
+
+      {/* Tab switcher — only shown when there's something to switch between */}
+      {(holdings.length > 0 || fundHoldings.length > 0) && (
+        <div className="flex gap-1.5">
+          {(["aktier", "fonder", "total"] as const).map((t) => {
+            const count = t === "aktier" ? holdings.length : t === "fonder" ? fundHoldings.length : holdings.length + fundHoldings.length;
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize",
+                  tab === t
+                    ? "bg-[var(--color-accent)] text-white"
+                    : "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]",
+                )}
+              >
+                {t === "aktier" ? "Aktier" : t === "fonder" ? "Fonder" : "Totalt"}{" "}
+                <span className="opacity-70">({count})</span>
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {/* Add holding form */}
@@ -193,79 +231,107 @@ export function PortfoljView() {
         </div>
       )}
 
-      {/* Holdings table */}
-      {holdings.length === 0 ? (
-        <EmptyPortfolio onAddClick={() => setShowAdd(true)} />
-      ) : (
-        <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
-                {["Aktie", "Antal", "Kurs", "Idag", "Värde", "Totalbetyg", "Köpläge", ""].map((h) => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[11px] font-medium text-[var(--color-text-muted)]">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {holdings.map((h, i) => (
-                <tr
-                  key={h.id}
-                  className="bg-[var(--color-bg-surface)]"
-                  style={{ borderBottom: "1px solid var(--color-border)" }}
-                >
-                  <td className="px-4 py-3">
-                    <Link href={`/aktie/${h.ticker}`}
-                          className="hover:text-[var(--color-accent)] transition-colors">
-                      <div className="font-semibold text-[var(--color-text-primary)] truncate max-w-36">{h.name}</div>
-                      <div className="font-mono text-[var(--color-text-muted)] text-[11px] mt-0.5">{h.ticker}</div>
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 tabular font-mono text-[var(--color-text-secondary)]">
-                    {h.shares}
-                  </td>
-                  <td className="px-4 py-3 tabular font-mono text-[var(--color-text-primary)]">
-                    {formatPrice(h.price)}
-                  </td>
-                  <td className={cn("px-4 py-3 tabular font-mono", changeClass(h.change_pct))}>
-                    {formatPctChange(h.change_pct)}
-                  </td>
-                  <td className="px-4 py-3 tabular font-mono text-[var(--color-text-primary)]">
-                    {formatPrice((h.price ?? 0) * h.shares)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={cn("font-mono font-bold text-xs", scoreColorClass(h.score_total))}>
-                      {h.score_total != null ? formatScore(h.score_total) : "—"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {h.entry_signal && (
-                      <span className={cn("px-2 py-0.5 rounded text-[11px] font-medium", signalClass(h.entry_signal))}>
-                        {signalLabel(h.entry_signal)}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => remove.mutate(h.id)}
-                      className="text-[var(--color-text-muted)] hover:text-[var(--color-down)] transition-colors"
-                      aria-label="Ta bort innehav"
+      {/* Holdings tables — conditional on active tab */}
+
+      {/* Aktier tab */}
+      {(tab === "aktier" || tab === "total") && (
+        <>
+          {tab === "total" && holdings.length > 0 && (
+            <p className="text-xs font-medium text-[var(--color-text-muted)] -mb-2">Aktier</p>
+          )}
+          {holdings.length === 0 ? (
+            tab === "aktier" && <EmptyPortfolio onAddClick={() => setShowAdd(true)} />
+          ) : (
+            <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
+                    {["Aktie", "Antal", "Kurs", "Idag", "Värde", "Totalbetyg", "Köpläge", ""].map((h) => (
+                      <th key={h} className="px-4 py-2.5 text-left text-[11px] font-medium text-[var(--color-text-muted)]">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {holdings.map((h) => (
+                    <tr
+                      key={h.id}
+                      className="bg-[var(--color-bg-surface)]"
+                      style={{ borderBottom: "1px solid var(--color-border)" }}
                     >
-                      <Trash2 size={13} strokeWidth={1.5} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      <td className="px-4 py-3">
+                        <Link href={`/aktie/${h.ticker}`}
+                              className="hover:text-[var(--color-accent)] transition-colors">
+                          <div className="font-semibold text-[var(--color-text-primary)] truncate max-w-36">{h.name}</div>
+                          <div className="font-mono text-[var(--color-text-muted)] text-[11px] mt-0.5">{h.ticker}</div>
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 tabular font-mono text-[var(--color-text-secondary)]">
+                        {h.shares}
+                      </td>
+                      <td className="px-4 py-3 tabular font-mono text-[var(--color-text-primary)]">
+                        {formatPrice(h.price)}
+                      </td>
+                      <td className={cn("px-4 py-3 tabular font-mono", changeClass(h.change_pct))}>
+                        {formatPctChange(h.change_pct)}
+                      </td>
+                      <td className="px-4 py-3 tabular font-mono text-[var(--color-text-primary)]">
+                        {formatPrice((h.price ?? 0) * h.shares)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={cn("font-mono font-bold text-xs", scoreColorClass(h.score_total))}>
+                          {h.score_total != null ? formatScore(h.score_total) : "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {h.entry_signal && (
+                          <span className={cn("px-2 py-0.5 rounded text-[11px] font-medium", signalClass(h.entry_signal))}>
+                            {signalLabel(h.entry_signal)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => remove.mutate(h.id)}
+                          className="text-[var(--color-text-muted)] hover:text-[var(--color-down)] transition-colors"
+                          aria-label="Ta bort innehav"
+                        >
+                          <Trash2 size={13} strokeWidth={1.5} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Allocation + Risk — plan §10: "allokering-donut + riskanalys" */}
-      {holdings.length > 1 && (
+      {/* Fonder tab */}
+      {(tab === "fonder" || tab === "total") && (
+        <>
+          {tab === "total" && fundHoldings.length > 0 && (
+            <p className="text-xs font-medium text-[var(--color-text-muted)] mt-2 -mb-2">Fonder</p>
+          )}
+          {fundHoldings.length === 0 ? (
+            tab === "fonder" && (
+              <div className="rounded-xl p-10 text-center border bg-[var(--color-bg-surface)] border-[var(--color-border)] space-y-2">
+                <p className="text-sm text-[var(--color-text-muted)]">Inga fonder importerade ännu</p>
+                <p className="text-xs text-[var(--color-text-muted)]">Importera från Avanza för att se dina fonder här.</p>
+              </div>
+            )
+          ) : (
+            <FundTable funds={fundHoldings} onRemove={(id) => removeFund.mutate(id)} />
+          )}
+        </>
+      )}
+
+      {/* Allocation + Risk — shown on aktier/total tabs only */}
+      {holdings.length > 1 && (tab === "aktier" || tab === "total") && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <AllocationDonut holdings={holdings} totalValue={totalValue} />
+          <AllocationDonut holdings={holdings} totalValue={stocksValue} />
           <RiskPanel holdings={holdings} />
         </div>
       )}
@@ -706,6 +772,95 @@ function RiskPanelSkeleton() {
             <div className="skeleton h-2 w-full rounded" />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Fund Table ────────────────────────────────────────────────────────────────
+
+function FundTable({ funds, onRemove }: { funds: FundHolding[]; onRemove: (id: string) => void }) {
+  const totalValue = funds.reduce((s, f) => s + (f.current_value ?? f.cost_value ?? 0), 0);
+  const totalCost  = funds.reduce((s, f) => s + (f.cost_value ?? 0), 0);
+  const totalReturn = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null;
+
+  return (
+    <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
+      {/* Summary row */}
+      {funds.length > 1 && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--color-bg-surface)] border-b border-[var(--color-border)]">
+          <span className="text-xs text-[var(--color-text-muted)]">{funds.length} fonder</span>
+          <div className="flex items-center gap-3 text-xs tabular font-mono">
+            <span className="text-[var(--color-text-secondary)]">{formatPrice(totalValue)}</span>
+            {totalReturn != null && (
+              <span className={cn(changeClass(totalReturn / 100))}>
+                {totalReturn >= 0 ? "+" : ""}{totalReturn.toFixed(1)}%
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
+            {["Fond", "Andelar", "Köpkurs", "Kurs nu", "+/−", "Värde", ""].map((h) => (
+              <th key={h} className="px-4 py-2.5 text-left text-[11px] font-medium text-[var(--color-text-muted)]">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {funds.map((f) => {
+            const retPct = f.return_pct;
+            return (
+              <tr
+                key={f.id}
+                className="bg-[var(--color-bg-surface)]"
+                style={{ borderBottom: "1px solid var(--color-border)" }}
+              >
+                <td className="px-4 py-3">
+                  <div className="font-semibold text-[var(--color-text-primary)] truncate max-w-48">{f.name}</div>
+                  <div className="font-mono text-[var(--color-text-muted)] text-[10px] mt-0.5">{f.isin}</div>
+                  {f.purchase_date && (
+                    <div className="text-[10px] text-[var(--color-text-muted)]">
+                      köpt {f.purchase_date}
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3 tabular font-mono text-[var(--color-text-secondary)]">
+                  {f.shares.toLocaleString("sv-SE")}
+                </td>
+                <td className="px-4 py-3 tabular font-mono text-[var(--color-text-secondary)]">
+                  {f.cost_basis != null ? `${f.cost_basis.toFixed(2)} kr` : "—"}
+                </td>
+                <td className="px-4 py-3 tabular font-mono text-[var(--color-text-primary)]">
+                  {f.current_price != null ? `${f.current_price.toFixed(2)} kr` : "—"}
+                </td>
+                <td className={cn("px-4 py-3 tabular font-mono", retPct != null ? changeClass(retPct / 100) : "text-[var(--color-text-muted)]")}>
+                  {retPct != null ? `${retPct >= 0 ? "+" : ""}${retPct.toFixed(1)}%` : "—"}
+                </td>
+                <td className="px-4 py-3 tabular font-mono text-[var(--color-text-primary)]">
+                  {formatPrice(f.current_value ?? f.cost_value)}
+                </td>
+                <td className="px-4 py-3">
+                  <button
+                    onClick={() => onRemove(f.id)}
+                    className="text-[var(--color-text-muted)] hover:text-[var(--color-down)] transition-colors"
+                    aria-label="Ta bort fond"
+                  >
+                    <Trash2 size={13} strokeWidth={1.5} />
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <div className="px-4 py-2 text-[10px] text-[var(--color-text-muted)] bg-[var(--color-bg-elevated)] border-t border-[var(--color-border)]">
+        Kurs baseras på exporten från Avanza. Importera igen för att uppdatera priser.
       </div>
     </div>
   );

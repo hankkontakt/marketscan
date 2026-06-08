@@ -14,7 +14,8 @@ interface ImportPreviewItem {
   ticker: string | null;
   shares: number | null;
   cost_basis: number | null;
-  current_price: number | null;
+  current_price: number | null;   // derived from marknadsvarde / shares
+  marknadsvarde: number | null;   // total market value at export time
   mapped: boolean;
   purchase_date: string | null;
   isin: string | null;
@@ -184,6 +185,17 @@ function FileInput({
 
 // ──── Step 1: preview ────────────────────────────────────────────────────────
 
+function ReturnBadge({ cost, current }: { cost: number | null; current: number | null }) {
+  if (!cost || !current || cost <= 0) return null;
+  const pct = ((current - cost) / cost) * 100;
+  const pos = pct >= 0;
+  return (
+    <span className={cn("text-[11px] font-mono", pos ? "text-emerald-400" : "text-red-400")}>
+      {pos ? "+" : ""}{pct.toFixed(1)}%
+    </span>
+  );
+}
+
 function Step1({
   preview,
   overrides,
@@ -199,34 +211,37 @@ function Step1({
   onBack: () => void;
   confirming: boolean;
 }) {
+  const [tab, setTab] = useState<"aktier" | "fonder">("aktier");
+
   const stocks = preview.filter((r) => r.av_typ !== "FUND");
   const funds  = preview.filter((r) => r.av_typ === "FUND");
 
-  const totalWithTicker = stocks.filter((r, i) => {
+  const totalWithTicker = stocks.filter((r) => {
     const idx = preview.indexOf(r);
     return !!(overrides[idx]?.toUpperCase() || r.ticker);
   }).length;
 
-  const unmappedCount = stocks.filter((r, i) => {
+  const unmappedCount = stocks.filter((r) => {
     const idx = preview.indexOf(r);
     return !(overrides[idx]?.toUpperCase() || r.ticker);
   }).length;
 
   const hasPurchaseDates = preview.some((r) => r.purchase_date);
+  const totalImport = totalWithTicker + funds.length;
 
   return (
     <div className="space-y-4">
       {/* Summary bar */}
       <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
         <span>
-          {stocks.length} aktier hittade{funds.length > 0 ? `, ${funds.length} fonder (hoppas över)` : ""}
+          {stocks.length} aktier · {funds.length} fonder
         </span>
         <span className={unmappedCount > 0 ? "text-[var(--color-warn)]" : "text-[var(--color-up)]"}>
-          {totalWithTicker} mappade · {unmappedCount} omappade
+          {totalWithTicker} aktier mappade{unmappedCount > 0 ? ` · ${unmappedCount} omappade` : ""}
         </span>
       </div>
 
-      {/* Info: inkopskurser provided → purchase dates auto-filled */}
+      {/* Info: purchase dates auto-filled */}
       {hasPurchaseDates && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-accent-soft)] border border-[var(--color-accent)]/20 text-[11px] text-[var(--color-accent)]">
           <Info size={12} className="shrink-0" />
@@ -234,9 +249,30 @@ function Step1({
         </div>
       )}
 
-      {/* Preview table */}
+      {/* Tab switcher (only show if there are both stocks and funds) */}
+      {stocks.length > 0 && funds.length > 0 && (
+        <div className="flex gap-1">
+          {(["aktier", "fonder"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
+                tab === t
+                  ? "bg-[var(--color-accent)] text-white"
+                  : "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]",
+              )}
+            >
+              {t === "aktier" ? `Aktier (${stocks.length})` : `Fonder (${funds.length})`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Preview list */}
       <div className="space-y-1 max-h-64 overflow-y-auto">
-        {stocks.map((row, _) => {
+        {/* Stock rows */}
+        {tab === "aktier" && stocks.map((row) => {
           const i = preview.indexOf(row);
           const ticker = overrides[i]?.toUpperCase() || row.ticker;
           const hasTicker = !!ticker;
@@ -260,7 +296,6 @@ function Step1({
                   )}
                 </div>
               </div>
-
               <div className="flex items-center">
                 {hasTicker ? (
                   <span className="font-mono font-semibold text-[var(--color-accent)]">{ticker}</span>
@@ -277,33 +312,58 @@ function Step1({
           );
         })}
 
-        {/* Funds — shown greyed out */}
-        {funds.map((row, _) => {
+        {/* Fund rows */}
+        {(tab === "fonder" || stocks.length === 0) && funds.map((row) => {
           const i = preview.indexOf(row);
+          const returnPct = row.cost_basis && row.current_price && row.cost_basis > 0
+            ? ((row.current_price - row.cost_basis) / row.cost_basis) * 100
+            : null;
           return (
             <div
               key={i}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] opacity-50 text-xs"
+              className="px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-xs space-y-1"
             >
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-[var(--color-text-muted)] truncate">{row.name}</div>
-                <div className="font-mono text-[var(--color-text-muted)] text-[11px]">
-                  Fond — hoppas över
-                </div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="font-medium text-[var(--color-text-primary)] truncate">{row.name}</div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-bg-surface)] text-[var(--color-text-muted)] shrink-0">FOND</span>
               </div>
-              <span className="text-[11px] px-2 py-0.5 rounded bg-[var(--color-bg-surface)] text-[var(--color-text-muted)]">
-                FOND
-              </span>
+              <div className="font-mono text-[var(--color-text-muted)] flex flex-wrap gap-x-3">
+                {row.shares != null && <span>{row.shares} andelar</span>}
+                {row.cost_basis != null && <span>GAV {row.cost_basis.toFixed(2)} kr</span>}
+                {row.current_price != null && (
+                  <span className="text-[var(--color-text-secondary)]">
+                    kurs {row.current_price.toFixed(2)} kr
+                  </span>
+                )}
+                {returnPct != null && (
+                  <ReturnBadge cost={row.cost_basis} current={row.current_price} />
+                )}
+                {row.marknadsvarde != null && (
+                  <span className="text-[var(--color-text-secondary)]">
+                    värde {row.marknadsvarde.toLocaleString("sv-SE", { maximumFractionDigits: 0 })} kr
+                  </span>
+                )}
+                {row.purchase_date && (
+                  <span className="text-[var(--color-accent)]">köpt {row.purchase_date}</span>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
 
       {/* Unmapped warning */}
-      {unmappedCount > 0 && (
+      {unmappedCount > 0 && tab === "aktier" && (
         <p className="flex items-center gap-1.5 text-[11px] text-[var(--color-warn)]">
           <AlertTriangle size={12} strokeWidth={1.5} />
           {unmappedCount} aktier saknar ticker — ange dem manuellt ovan för att inkludera dem.
+        </p>
+      )}
+
+      {/* Fund info */}
+      {tab === "fonder" && funds.length > 0 && (
+        <p className="text-[11px] text-[var(--color-text-muted)]">
+          Kurs och värde baseras på exporten från Avanza. Fondpriser uppdateras när du importerar på nytt.
         </p>
       )}
 
@@ -311,13 +371,13 @@ function Step1({
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={onConfirm}
-          disabled={confirming || totalWithTicker === 0}
+          disabled={confirming || totalImport === 0}
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white disabled:opacity-40 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] transition-colors"
         >
           {confirming ? (
             <><Loader2 size={14} className="animate-spin" />Importerar...</>
           ) : (
-            <><Check size={14} />Importera {totalWithTicker} innehav</>
+            <><Check size={14} />Importera {totalWithTicker} aktier{funds.length > 0 ? ` + ${funds.length} fonder` : ""}</>
           )}
         </button>
         <button

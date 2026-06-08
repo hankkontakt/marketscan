@@ -1,15 +1,20 @@
 """
-Local JWT validation — no network roundtrip per request.
-Validates Supabase-issued HS256 tokens against SUPABASE_JWT_SECRET.
+JWT validation — validates Supabase-issued tokens.
+
+Primary:  local HS256 check against SUPABASE_JWT_SECRET (no network roundtrip).
+Fallback: if SUPABASE_JWT_SECRET is not configured, validate via Supabase API.
 
 Admin check reads role from profiles table (not from JWT, where it is
 always "authenticated"). Requires a supabase-admin client to bypass RLS.
 """
+import logging
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from apps.api.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -20,18 +25,48 @@ class User(BaseModel):
     role: str = "user"
 
 
+def _decode_via_supabase_api(token: str) -> dict:
+    """Fallback: validate token by calling Supabase auth.getUser().
+    Used when SUPABASE_JWT_SECRET is not configured.
+    Adds ~100 ms network latency per request but is always correct.
+    """
+    try:
+        from supabase import create_client
+        sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
+        resp = sb.auth.get_user(token)
+        user = resp.user
+        if not user:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ogiltig token")
+        return {"sub": user.id, "email": user.email}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.debug("Supabase API token validation failed: %s", exc)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ogiltig token")
+
+
 def _decode(token: str) -> dict:
+    secret = settings.SUPABASE_JWT_SECRET
+    if not secret:
+        # JWT secret not configured — fall back to Supabase API validation
+        logger.warning(
+            "SUPABASE_JWT_SECRET is not set; falling back to Supabase API token "
+            "validation (slower). Set the env var for fast local validation."
+        )
+        return _decode_via_supabase_api(token)
     try:
         return jwt.decode(
             token,
-            settings.SUPABASE_JWT_SECRET,
+            secret,
             audience="authenticated",
             algorithms=["HS256"],
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token har gått ut")
     except jwt.PyJWTError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ogiltig token")
+        # Local decode failed — could be a wrong secret; try Supabase API as last resort
+        logger.debug("Local JWT decode failed, trying Supabase API fallback")
+        return _decode_via_supabase_api(token)
 
 
 async def get_current_user(

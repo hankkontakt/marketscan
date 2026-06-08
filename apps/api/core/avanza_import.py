@@ -313,6 +313,8 @@ def parse_positioner_csv(content: str | bytes) -> list[dict]:
         # GAV (SEK) is the cost basis in local currency — prefer it over GAV
         gav_raw = row.get("GAV (SEK)") or row.get("GAV") or ""
         gav_sek = parse_swedish_number(gav_raw)
+        # Marknadsvärde = total market value at export time (antal × current NAV)
+        marknadsvarde = parse_swedish_number(row.get("Marknadsvärde", "") or row.get("Marknadsvarde", "") or "")
         isin = row.get("ISIN", "").strip()
         marknad = row.get("Marknad", "").strip()
         av_typ = row.get("Typ", "").strip().upper()
@@ -327,16 +329,23 @@ def parse_positioner_csv(content: str | bytes) -> list[dict]:
         if ticker is None and av_typ != "FUND":
             ticker = find_ticker(namn)
 
+        # Derive current price per unit from market value if available
+        current_price: float | None = None
+        if marknadsvarde and volym and volym > 0:
+            current_price = round(marknadsvarde / volym, 4)
+
         rows.append({
-            "name":       namn,
-            "kortnamn":   kortnamn,
-            "ticker":     ticker,
-            "shares":     volym,
-            "cost_basis": gav_sek,
-            "isin":       isin,
-            "marknad":    marknad,
-            "av_typ":     av_typ,
-            "mapped":     ticker is not None,
+            "name":          namn,
+            "kortnamn":      kortnamn,
+            "ticker":        ticker,
+            "shares":        volym,
+            "cost_basis":    gav_sek,
+            "current_price": current_price,
+            "marknadsvarde": marknadsvarde,
+            "isin":          isin,
+            "marknad":       marknad,
+            "av_typ":        av_typ,
+            "mapped":        ticker is not None,
         })
 
     return rows
