@@ -91,31 +91,31 @@ function DetailPanel({ item }: { item: SignalAnalytics }) {
         <div className="px-6 py-4 bg-[var(--color-bg-elevated)] space-y-4 border-b border-[var(--color-border)]">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
             <div>
-              <div className="text-[var(--color-text-muted)]">Median hålltid</div>
+              <div className="text-[var(--color-text-muted)]">Typisk hålltid</div>
               <div className="text-[var(--color-text-primary)] font-medium">
                 {item.median_hold_days != null ? `${item.median_hold_days.toFixed(0)} dagar` : "–"}
               </div>
             </div>
             <div>
-              <div className="text-[var(--color-text-muted)]">75:e percentil hålltid</div>
+              <div className="text-[var(--color-text-muted)]">75% håller upp till</div>
               <div className="text-[var(--color-text-primary)] font-medium">
                 {item.pct75_hold_days != null ? `${item.pct75_hold_days.toFixed(0)} dagar` : "–"}
               </div>
             </div>
             <div>
-              <div className="text-[var(--color-text-muted)]">Win rate 20d</div>
+              <div className="text-[var(--color-text-muted)]">Gick upp efter 20 d</div>
               <div><WinRateBadge v={item.win_rate_20d} /></div>
             </div>
             <div>
-              <div className="text-[var(--color-text-muted)]">Antal observationer</div>
-              <div className="text-[var(--color-text-primary)] font-medium">{item.sample_count}</div>
+              <div className="text-[var(--color-text-muted)]">Historiska exempel</div>
+              <div className="text-[var(--color-text-primary)] font-medium">{item.sample_count} st</div>
             </div>
           </div>
 
           {/* Forward return chart */}
           {barData.length > 0 && (
             <div>
-              <p className="text-xs text-[var(--color-text-muted)] mb-2">Genomsnittlig framåtavkastning</p>
+              <p className="text-xs text-[var(--color-text-muted)] mb-2">Genomsnittlig kursutveckling efter signalbyte</p>
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={barData} barSize={32}>
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-text-muted)" }} tickLine={false} axisLine={false} />
@@ -138,7 +138,7 @@ function DetailPanel({ item }: { item: SignalAnalytics }) {
           {/* Recent examples */}
           {!isLoading && data?.examples && data.examples.length > 0 && (
             <div>
-              <p className="text-xs text-[var(--color-text-muted)] mb-2">Senaste exempel</p>
+              <p className="text-xs text-[var(--color-text-muted)] mb-2">Senaste aktier med detta signalbyte</p>
               <div className="space-y-1">
                 {data.examples.slice(0, 6).map((ex, i) => (
                   <div key={i} className="flex items-center gap-3 text-xs">
@@ -157,7 +157,7 @@ function DetailPanel({ item }: { item: SignalAnalytics }) {
                           : ex.current_signal === "SVAG" ? "bg-red-500/10 text-red-400"
                           : "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]"
                       )}>
-                        nu: {ex.current_signal}
+                        idag: {ex.current_signal}
                       </span>
                     )}
                   </div>
@@ -169,7 +169,7 @@ function DetailPanel({ item }: { item: SignalAnalytics }) {
           {/* Sector breakdown */}
           {item.sector_breakdown && Object.keys(item.sector_breakdown).length > 0 && (
             <div>
-              <p className="text-xs text-[var(--color-text-muted)] mb-2">Avkastning per sektor (20d)</p>
+              <p className="text-xs text-[var(--color-text-muted)] mb-2">Kursutveckling per sektor (20 dagar)</p>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(item.sector_breakdown)
                   .sort((a, b) => b[1] - a[1])
@@ -216,30 +216,30 @@ export function SignalAnalyticsView() {
       <div>
         <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Signalanalys</h1>
         <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-          Statistik för hur aktier beter sig efter signalövergångar — baserat på score_history
+          Vad händer egentligen med en aktiekurs när köpläget förändras?
         </p>
       </div>
 
       {/* Info */}
-      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 text-xs text-[var(--color-text-muted)] space-y-1">
-        <p className="font-medium text-[var(--color-text-secondary)]">Vad är signalanalys?</p>
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 text-xs text-[var(--color-text-muted)] space-y-2">
+        <p className="font-medium text-[var(--color-text-secondary)]">Hur fungerar det?</p>
         <p>
-          Varje gång en aktie byter signal (t.ex. VÄNTA→STARK) registreras det i signal_transitions.
-          Här aggregeras statistik för hur priset förändrats i genomsnitt 5, 10, 20 och 60 dagar efter transitionen,
-          hur länge signalen vanligtvis håller, och var vinster/förluster sker.
+          Varje gång en aktie byter köpläge — till exempel från "Vänta" till "Stark" — registreras
+          det automatiskt. Den här sidan visar hur aktiekursen i genomsnitt rört sig <strong>5, 10, 20 och 60 dagar</strong> efter
+          att en sådan förändring skett, samt hur ofta det gick plus (vinstprocent).
         </p>
-        <p className="text-[var(--color-text-muted)]">
-          Obs: Datan byggs upp löpande — ju mer historik, desto mer tillförlitliga siffror.
-          Minst 3 observationer krävs för att en transition visas.
+        <p>
+          Ju fler historiska observationer, desto mer tillförlitliga siffror.
+          Rader med färre än 3 observationer visas inte.
         </p>
       </div>
 
       {/* Filter */}
       <div className="flex gap-2">
         {([
-          [undefined,         "Alla typer"],
-          ["entry_signal",    "Inträde-signal"],
-          ["trend_signal",    "Trend-signal"],
+          [undefined,         "Alla"],
+          ["entry_signal",    "Köpläge"],
+          ["trend_signal",    "Trend"],
         ] as const).map(([val, label]) => (
           <button
             key={String(val)}
@@ -267,10 +267,11 @@ export function SignalAnalyticsView() {
         <div className="flex flex-col items-center py-16 gap-3 text-center">
           <Activity size={36} strokeWidth={1} className="text-[var(--color-text-muted)]" />
           <p className="text-sm text-[var(--color-text-muted)]">
-            Inga signaltransitioner hittades ännu.
+            Inga signalbyten hittades ännu
           </p>
           <p className="text-xs text-[var(--color-text-muted)] max-w-xs">
-            Data samlas in löpande av score_tracker.py. Kom tillbaka efter att screener körts ett antal gånger.
+            Data byggs upp automatiskt när systemet kör sina dagliga analyser.
+            Kom tillbaka om ett par dagar för att se statistik.
           </p>
         </div>
       ) : (
@@ -278,12 +279,12 @@ export function SignalAnalyticsView() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[var(--color-border)]">
-                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Transition</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">N</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Win% (20d)</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Avg retur 20d</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Avg retur 60d</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Median hålltid</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Signalbyte</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Antal</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Vinst 20 dagar</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Snittavk. 20 d</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Snittavk. 60 d</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Typisk hålltid</th>
                 <th className="px-4 py-3 w-8" />
               </tr>
             </thead>

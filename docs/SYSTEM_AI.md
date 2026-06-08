@@ -26,6 +26,22 @@
 | 2026-06-08 | infra | NavRail: lade till Strategi Lab (FlaskConical) + Signalanalys (Activity) | `NavRail.tsx` |
 | 2026-06-08 | infra | PortfoljView: lade till länk-kort till djupgående riskanalys | `PortfoljView.tsx` |
 | 2026-06-08 | infra | Nya TS-typer: RiskMetrics, FactorExposure, CorrelationMatrix, OptimizeResult, RebalanceResult, AlertRule, TriggeredAlert, Strategy, StrategyRun, SignalAnalytics | `types/portfolio.ts`, `types/alerts.ts`, `types/strategy.ts` |
+| 2026-06-08 | fix | Next.js 15: `params: Promise<{id}>` + `await params` i `/strategi-lab/[id]/page.tsx` | `strategi-lab/[id]/page.tsx` |
+| 2026-06-08 | fix | Kalender 401: byt `get_current_user` → `get_optional_user` i `/calendar`-endpoints | `apps/api/routers/calendar.py` |
+| 2026-06-08 | fix | Admin JWT: `payload.role` är alltid `"authenticated"` — custom roller ligger i `payload.app_metadata.role` | `kontrollpanel/page.tsx`, `NavRail.tsx` |
+| 2026-06-08 | fix | SQL för att sätta admin-roll: `UPDATE auth.users SET raw_app_meta_data = raw_app_meta_data \|\| '{"role":"admin"}' WHERE id = '<uid>'` | (Supabase SQL-editor) |
+| 2026-06-08 | feat | Compare-vy: yfinance-fallback för aktier utanför universumet via `_yfinance_fundamentals()` | `apps/api/routers/stocks.py` |
+| 2026-06-08 | feat | Globala index: yfinance-fallback (`^OMX ^GSPC ^IXIC ^DJI ^FTSE ^GDAXI ^STOXX50E ^N225 ^HSI`) när FINNHUB_API_KEY saknas | `apps/api/routers/markets.py` |
+| 2026-06-08 | feat | MultiFactorRadar: stapel/radar-toggle (`BarView` / `RadarView`) med Recharts RadarChart | `apps/web/components/charts/MultiFactorRadar.tsx` |
+| 2026-06-08 | feat | Strategy Lab: HowItWorksBox-komponent med collapsible förklarare på klarspråk | `apps/web/app/(app)/strategi-lab/StrategiLabView.tsx` |
+| 2026-06-08 | feat | Avanza-import: omskriven `ImportModal.tsx` med tvåfilsuppladdning (positioner + inkopskurs) | `apps/web/components/portfolio/ImportModal.tsx` |
+| 2026-06-08 | feat | Avanza-import: `parse_positioner_csv`, `parse_inkopskurser_csv`, `kortnamn_to_ticker`, `get_buy_date` | `apps/api/core/avanza_import.py` |
+| 2026-06-08 | feat | Avanza-import: ny endpoint `POST /api/portfolio/import/avanza/preview` — parsar båda CSV-filerna server-side | `apps/api/routers/portfolio.py` |
+| 2026-06-08 | feat | Avanza-import: `/import/confirm` skapar nu `buy`-transaktion med köpdatum när `purchase_date` är känt | `apps/api/routers/portfolio.py` |
+| 2026-06-08 | fix | Admin-sektioner (Status/Hälsa/Universum/Mått) visade ingenting vid API-fel — nu visas `ErrorBlock` med retry-knapp | `apps/web/components/admin/AdminSections.tsx` |
+| 2026-06-08 | fix | Marknadsöversikt: "Finnhub API-nyckel krävs"-meddelande ersatt med generisk feltext + retry-knapp | `apps/web/app/(app)/marknad/MarknadView.tsx` |
+| 2026-06-08 | fix | Strategi Lab subtitle: teknisk text → klarspråk ("Testa hur en aktieväljarstrategi hade presterat historiskt") | `StrategiLabView.tsx` |
+| 2026-06-08 | fix | Signalanalys: all intern terminologi bortplockat (score_tracker.py, signal_transitions, entry_signal); kolumnnamn och beskrivningar på klarspråk | `SignalAnalyticsView.tsx` |
 
 ---
 

@@ -444,7 +444,7 @@ export function StrategiLabView() {
         <div>
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Strategi Lab</h1>
           <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-            Backtestar screener-strategier mot historisk data från score_history
+            Testa hur en aktieväljarstrategi hade presterat historiskt
           </p>
         </div>
         <div className="flex items-center gap-2">

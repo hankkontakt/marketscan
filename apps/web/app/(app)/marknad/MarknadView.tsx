@@ -7,7 +7,7 @@ import { SectorHeatmap, GlobalIndexPanel, useSectorOverview, useGlobalIndices } 
 
 export function MarknadView() {
   const { data: sectors, isLoading: secLoading } = useSectorOverview();
-  const { data: markets, isLoading: mktLoading } = useGlobalIndices();
+  const { data: markets, isLoading: mktLoading, error: mktError, refetch: mktRefetch } = useGlobalIndices();
 
   return (
     <div className="space-y-6">
@@ -23,9 +23,18 @@ export function MarknadView() {
           ? <div className="skeleton h-32 rounded-lg" />
           : markets?.indices && markets.indices.length > 0
           ? <GlobalIndexPanel indices={markets.indices} />
-          : <p className="text-sm text-[var(--color-text-muted)] text-center py-6">
-              Indexdata ej tillgänglig (Finnhub API-nyckel krävs)
-            </p>
+          : <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <p className="text-sm text-[var(--color-text-muted)]">
+                {mktError ? "Kunde inte hämta indexdata just nu" : "Ingen indexdata tillgänglig"}
+              </p>
+              <button
+                onClick={() => mktRefetch()}
+                className="text-xs text-[var(--color-accent)] hover:underline flex items-center gap-1"
+              >
+                <ChevronUp size={12} className="rotate-180" />
+                Försök igen
+              </button>
+            </div>
         }
       </div>
 

@@ -10,7 +10,10 @@ from apps.api.dependencies import get_user_supabase, get_supabase_admin
 from apps.api.core.security import get_current_user, User
 from apps.api.schemas.portfolio import HoldingIn, HoldingOut, PortfolioOut
 from apps.api.core.enrichment import enrich_with_scan_data
-from apps.api.core.avanza_import import parse_avanza_csv, build_preview
+from apps.api.core.avanza_import import (
+    parse_avanza_csv, build_preview,
+    parse_positioner_csv, parse_inkopskurser_csv, get_buy_date,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,14 +294,13 @@ class ImportPreviewItem(BaseModel):
     cost_basis: float | None = None
     current_price: float | None = None
     mapped: bool = False
+    purchase_date: str | None = None   # YYYY-MM-DD from inkopskurser
+    isin: str | None = None
+    av_typ: str | None = None          # "STOCK" | "FUND" | ""
 
 
 class ImportPreviewIn(BaseModel):
     rows: list[dict]
-
-
-class ImportConfirmIn(BaseModel):
-    rows: list[ImportPreviewItem]
 
 
 class ImportPreviewOut(BaseModel):
@@ -312,11 +314,17 @@ class ImportConfirmIn(BaseModel):
     rows: list[ImportPreviewItem]
 
 
+# New endpoint input: raw CSV text (positioner + optional inkopskurser)
+class AvanzaImportIn(BaseModel):
+    positioner_csv: str
+    inkopskurser_csv: str | None = None
+
+
 @router.post("/import/preview", response_model=ImportPreviewOut)
 async def import_preview(rows: ImportPreviewIn):
     """Preview Avanza CSV import with ticker mapping.
     Accepts parsed rows (sent from frontend after client-side CSV parse)."""
-    preview = build_preview([r.model_dump() for r in rows.rows])
+    preview = build_preview(rows.rows)  # rows.rows is already list[dict]
     mapped = [r for r in preview if r["mapped"]]
     unmapped = [r for r in preview if not r["mapped"]]
 
@@ -328,13 +336,60 @@ async def import_preview(rows: ImportPreviewIn):
     )
 
 
+@router.post("/import/avanza/preview", response_model=ImportPreviewOut)
+async def import_avanza_preview(body: AvanzaImportIn):
+    """
+    Parse Avanza positioner + inkopskurser CSV and return an enriched import preview.
+
+    positioner_csv:  raw text of the 'positioner_per_konto' or 'positioner_sammanstallda' file
+    inkopskurser_csv: raw text of the 'inkopskurs' file (optional — used for purchase dates)
+    """
+    rows = parse_positioner_csv(body.positioner_csv)
+
+    inkopskurser: dict = {}
+    if body.inkopskurser_csv:
+        inkopskurser = parse_inkopskurser_csv(body.inkopskurser_csv)
+
+    preview: list[ImportPreviewItem] = []
+    for row in rows:
+        isin = row.get("isin") or ""
+        shares = row.get("shares")
+        purchase_date = None
+        if isin and shares is not None:
+            purchase_date = get_buy_date(isin, shares, inkopskurser)
+
+        preview.append(ImportPreviewItem(
+            name=row["name"],
+            ticker=row["ticker"],
+            shares=row["shares"],
+            cost_basis=row["cost_basis"],
+            mapped=row["mapped"],
+            purchase_date=purchase_date,
+            isin=isin or None,
+            av_typ=row.get("av_typ"),
+        ))
+
+    mapped_count = sum(1 for r in preview if r.mapped)
+    unmapped_count = len(preview) - mapped_count
+
+    return ImportPreviewOut(
+        rows=preview,
+        mapped_count=mapped_count,
+        unmapped_count=unmapped_count,
+        total=len(preview),
+    )
+
+
 @router.post("/import/confirm", status_code=201)
 async def import_confirm(
     body: ImportConfirmIn,
     user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
-    """Confirm import: create holdings and user_ticker_requests."""
+    """
+    Confirm import: create holdings + optional buy transactions.
+    Rows with av_typ='FUND' or no ticker are silently skipped.
+    """
     port = sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
     if not port.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
@@ -342,27 +397,53 @@ async def import_confirm(
 
     created = 0
     for row in body.rows:
+        # Skip funds and rows without a resolved ticker
         if not row.ticker or row.shares is None:
             continue
 
         ticker = row.ticker.upper()
 
-        # Create user_ticker_request if not in universe
-        exists = sb.table("scan_results").select("ticker").eq("ticker", ticker).limit(1).execute()
-        if not exists.data:
-            sb.table("user_ticker_requests").upsert({
-                "ticker": ticker,
-                "user_id": user.id,
-                "name": row.name,
-                "source": "import",
-            }, on_conflict="ticker").execute()
+        # Queue out-of-universe tickers for next pipeline run
+        try:
+            exists = sb.table("scan_results").select("ticker").eq("ticker", ticker).limit(1).execute()
+            if not exists.data:
+                sb.table("user_ticker_requests").upsert({
+                    "ticker": ticker,
+                    "user_id": user.id,
+                    "name": row.name,
+                    "source": "import",
+                }, on_conflict="ticker").execute()
+        except Exception as e:
+            logger.debug("Could not queue ticker request for %s: %s", ticker, e)
 
+        # Insert the holding
         sb.table("holdings").insert({
             "portfolio_id": portfolio_id,
             "ticker": ticker,
             "shares": row.shares,
             "cost_basis": row.cost_basis,
         }).execute()
+
+        # If purchase_date is known, also record a buy transaction so TWR works
+        if row.purchase_date:
+            try:
+                tx_data: dict = {
+                    "user_id": user.id,
+                    "portfolio_id": portfolio_id,
+                    "ticker": ticker,
+                    "type": "buy",
+                    "shares": row.shares,
+                    "price": row.cost_basis,
+                    "note": "Importerad från Avanza",
+                    "traded_at": row.purchase_date,
+                }
+                if row.cost_basis is not None and row.shares is not None:
+                    tx_data["amount"] = round(row.cost_basis * row.shares, 2)
+                sb.table("transactions").insert(tx_data).execute()
+            except Exception as e:
+                # Non-fatal — holding is saved even if transaction fails
+                logger.debug("Could not create import transaction for %s: %s", ticker, e)
+
         created += 1
 
     return {"created": created, "total": len(body.rows)}

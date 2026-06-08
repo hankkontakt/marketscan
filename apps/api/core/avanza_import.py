@@ -150,6 +150,44 @@ _BUILTIN_MAP: dict[str, str] = {
 }
 
 
+# ── Market suffix mapping: Avanza market code → Yahoo Finance suffix ──────────
+_MARKET_SUFFIX: dict[str, str | None] = {
+    "XSTO": ".ST",   # Nasdaq Stockholm
+    "FNSE": ".ST",   # First North Sweden
+    "NGMX": ".ST",   # Nordic Growth Market
+    "XHEL": ".HE",   # Helsinki
+    "XCSE": ".CO",   # Copenhagen
+    "XOSL": ".OL",   # Oslo
+    "XLON": ".L",    # London
+    "XETR": ".DE",   # Frankfurt / Xetra
+    "XPAR": ".PA",   # Euronext Paris
+    "XAMS": ".AS",   # Euronext Amsterdam
+    "XMIL": ".MI",   # Borsa Italiana
+    "XNYS": "",      # NYSE (no suffix in Yahoo)
+    "XNAS": "",      # Nasdaq (no suffix)
+    "FUND": None,    # Actively managed fund — no exchange-traded ticker
+}
+
+
+def kortnamn_to_ticker(kortnamn: str, marknad: str) -> str | None:
+    """
+    Derive Yahoo Finance ticker from Avanza kortnamn + market code.
+    Examples:
+      "INVE B" + "XSTO" → "INVE-B.ST"
+      "NCAB"   + "XSTO" → "NCAB.ST"
+      "AAPL"   + "XNAS" → "AAPL"
+    Returns None for funds (FUND) or unknown markets.
+    """
+    key = (marknad or "").upper().strip()
+    if key not in _MARKET_SUFFIX:
+        return None  # unknown market — don't guess
+    suffix = _MARKET_SUFFIX[key]
+    if suffix is None:
+        return None  # actively managed fund
+    base = kortnamn.strip().replace(" ", "-")
+    return f"{base}{suffix}" if base else None
+
+
 def normalize_name(name: str) -> str:
     return (
         name.lower()
@@ -239,6 +277,139 @@ def parse_avanza_csv(content: str | bytes) -> list[dict]:
         rows.append(result)
 
     return rows
+
+
+def parse_positioner_csv(content: str | bytes) -> list[dict]:
+    """
+    Parse Avanza 'positioner' CSV exported via Min ekonomi → Analys → Exportera data.
+
+    Supports both variants:
+    - Per konto:      Kontonummer;Namn;Kortnamn;Volym;Marknadsvärde;GAV (SEK);GAV;Valuta;Land;ISIN;Marknad;Typ
+    - Sammanstallda: Namn;Kortnamn;Volym;Marknadsvärde;GAV (SEK);GAV;Valuta;Land;ISIN;Marknad;Typ
+
+    Returns a list of dicts with:
+        name, kortnamn, ticker, shares, cost_basis, isin, marknad, av_typ, mapped
+    """
+    if isinstance(content, bytes):
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+    else:
+        text = content
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=";")
+
+    rows: list[dict] = []
+    for row in reader:
+        row = {k: (v or "").strip() for k, v in row.items()}  # type: ignore[assignment]
+
+        namn = row.get("Namn", "").strip()
+        if not namn:
+            continue
+
+        kortnamn = row.get("Kortnamn", "").strip()
+        volym = parse_swedish_number(row.get("Volym", ""))
+        # GAV (SEK) is the cost basis in local currency — prefer it over GAV
+        gav_raw = row.get("GAV (SEK)") or row.get("GAV") or ""
+        gav_sek = parse_swedish_number(gav_raw)
+        isin = row.get("ISIN", "").strip()
+        marknad = row.get("Marknad", "").strip()
+        av_typ = row.get("Typ", "").strip().upper()
+
+        if volym is None or volym <= 0:
+            continue
+
+        # Primary: derive ticker from kortnamn + market code (exact, no guessing)
+        ticker = kortnamn_to_ticker(kortnamn, marknad)
+
+        # Fallback for stocks with unknown market: name-based lookup
+        if ticker is None and av_typ != "FUND":
+            ticker = find_ticker(namn)
+
+        rows.append({
+            "name":       namn,
+            "kortnamn":   kortnamn,
+            "ticker":     ticker,
+            "shares":     volym,
+            "cost_basis": gav_sek,
+            "isin":       isin,
+            "marknad":    marknad,
+            "av_typ":     av_typ,
+            "mapped":     ticker is not None,
+        })
+
+    return rows
+
+
+def parse_inkopskurser_csv(
+    content: str | bytes,
+) -> dict[str, list[tuple[str, float]]]:
+    """
+    Parse Avanza 'Historiska inköpskurser' CSV.
+
+    Format: Datum;Konto;ISIN;Namn;Inköpskurs (SEK);Antal
+
+    Returns: {isin: [(date_str, antal), ...]} sorted ascending by date.
+    Used to derive the original purchase date for each holding.
+    """
+    if isinstance(content, bytes):
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+    else:
+        text = content
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=";")
+
+    result: dict[str, list[tuple[str, float]]] = {}
+    for row in reader:
+        isin  = (row.get("ISIN") or "").strip()
+        datum = (row.get("Datum") or "").strip()
+
+        # "Antal" column name may vary slightly
+        antal_str = ""
+        for k, v in row.items():
+            if "antal" in (k or "").lower():
+                antal_str = v or ""
+                break
+        antal = parse_swedish_number(antal_str)
+
+        if not isin or not datum or antal is None:
+            continue
+
+        if isin not in result:
+            result[isin] = []
+        result[isin].append((datum, antal))
+
+    # Sort each ISIN's snapshots ascending (oldest first)
+    for isin_key in result:
+        result[isin_key].sort(key=lambda x: x[0])
+
+    return result
+
+
+def get_buy_date(
+    isin: str,
+    current_antal: float,
+    inkopskurser: dict[str, list[tuple[str, float]]],
+) -> str | None:
+    """
+    Estimate the purchase date from inkopskurser history.
+
+    Strategy:
+    1. Find the earliest snapshot where antal matches current_antal (±0.1% tolerance).
+    2. If no exact match, return the first date the ISIN appears in the file.
+    """
+    snapshots = inkopskurser.get(isin, [])
+    if not snapshots:
+        return None
+    tol = max(0.001, abs(current_antal) * 0.001)
+    for date_str, antal in snapshots:  # already sorted ascending
+        if abs(antal - current_antal) <= tol:
+            return date_str
+    return snapshots[0][0]  # fallback: first appearance
 
 
 def build_preview(rows: list[dict], custom_map: dict[str, str] | None = None) -> list[dict]:
