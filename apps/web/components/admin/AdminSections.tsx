@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   RefreshCw, Play, Database, ExternalLink, CheckCircle2,
   XCircle, AlertTriangle, Copy, Key, Cloud, GitBranch, Table2,
-  Users, TrendingUp,
+  Users, TrendingUp, Loader2,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { KpiCard, StatusPill, RunsTable, DistTable, type PipelineRun } from "./StatusHelpers";
@@ -98,129 +98,303 @@ export function StatusSection() {
   );
 }
 
-// ─── Pipeline ────────────────────────────────────────────────────────────────
+// ─── Pipeline / GitHub Actions ────────────────────────────────────────────────
 
-const PIPELINE_MODES = [
-  { mode: "morning", label: "Morgon" },
-  { mode: "evening", label: "Kväll" },
-  { mode: "weekly", label: "Vecka" },
-  { mode: "smallcap", label: "Småbolag" },
-  { mode: "refresh_missing", label: "Fyll saknad data" },
-  { mode: "retry_rate_limited", label: "Kör om rate-limitade" },
-] as const;
+interface WorkflowInputDef {
+  key: string;
+  label: string;
+  type: "text" | "select" | "toggle";
+  placeholder?: string;
+  options?: string[];
+  defaultVal?: string;
+}
+
+interface WorkflowDef {
+  file: string;
+  label: string;
+  desc: string;
+  inputs?: WorkflowInputDef[];
+}
+
+const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
+  {
+    title: "Pipeline",
+    workflows: [
+      {
+        file: "pipeline.yml",
+        label: "Daglig pipeline",
+        desc: "Hämtar marknadsdata och kör scoring för alla aktier",
+        inputs: [
+          {
+            key: "mode",
+            label: "Läge",
+            type: "select",
+            options: ["morning", "evening", "weekly", "smallcap", "targeted", "refresh_missing", "retry_rate_limited"],
+            defaultVal: "morning",
+          },
+          {
+            key: "tickers",
+            label: "Tickers (targeted)",
+            type: "text",
+            placeholder: "VOLV-B.ST, TSLA (valfritt)",
+          },
+        ],
+      },
+      { file: "score_tracker.yml",    label: "Score-spårning",   desc: "Spårar dagliga förändringar i totalbetyg" },
+      { file: "risk_analysis.yml",    label: "Riskanalys",       desc: "Beräknar portföljriskmått (VaR, Sharpe, etc.)" },
+      { file: "smart_alerts.yml",     label: "Smarta varningar", desc: "Utvärderar regler och skickar signalvarningar" },
+      { file: "signal_analytics.yml", label: "Signalanalys",     desc: "Beräknar framåtavkastning och win-rate per signal" },
+    ],
+  },
+  {
+    title: "ML & Backtest",
+    workflows: [
+      { file: "ml_train.yml", label: "ML-träning", desc: "Tränar om LightGBM LambdaRank-rankeraren (walk-forward)" },
+      {
+        file: "strategy_backtester.yml",
+        label: "Strategitest",
+        desc: "Backtesting av en specifik strategi mot historisk data",
+        inputs: [{ key: "strategy_id", label: "Strategi-ID", type: "text", placeholder: "uuid (valfritt, kör alla om tomt)" }],
+      },
+      {
+        file: "backtest_runner.yml",
+        label: "Backtester",
+        desc: "Kör den generella backtesting-pipeline",
+        inputs: [{ key: "strategy", label: "Strategi", type: "text", placeholder: "t.ex. momentum (valfritt)" }],
+      },
+    ],
+  },
+  {
+    title: "Universum",
+    workflows: [
+      { file: "universe_discovery.yml", label: "Universum-discovery", desc: "Söker nya aktier via Finviz och lägger till i universumet" },
+      { file: "smallcap_scan.yml",      label: "Småbolagsscan",       desc: "Djupscan av småbolag med utökade kriterier" },
+      { file: "sector_rotation.yml",    label: "Sektorsrotation",     desc: "Analyserar och loggar sektorsrotationsmönster" },
+    ],
+  },
+  {
+    title: "Verktyg",
+    workflows: [
+      {
+        file: "options_scan.yml",
+        label: "Optionsscan",
+        desc: "Söker ovanliga optionsflöden",
+        inputs: [{ key: "tickers", label: "Tickers", type: "text", placeholder: "VOLV-B.ST, TSLA (valfritt)" }],
+      },
+      {
+        file: "digest.yml",
+        label: "Digest-mail",
+        desc: "Skickar daglig marknadssammanfattning via Resend",
+        inputs: [{ key: "dry_run", label: "Testläge (skicka ej)", type: "toggle", defaultVal: "false" }],
+      },
+    ],
+  },
+];
 
 export function PipelineSection() {
-  const { data: runs = [], isLoading, refetch } = useQuery({
+  const { data: runs = [], isLoading: runsLoading, refetch } = useQuery({
     queryKey: ["pipeline-runs"],
     queryFn: () => api<PipelineRun[]>("/api/admin/pipeline-runs"),
     staleTime: 30_000,
   });
 
-  const triggerMutation = useMutation({
-    mutationFn: (body: { mode: string; tickers?: string[] }) =>
-      api<{ status: string; mode: string; link: string }>("/api/admin/pipeline/trigger", {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
+  // Per-workflow trigger state: pending / ok / error
+  const [wfState, setWfState] = useState<
+    Record<string, { pending?: boolean; ok?: boolean; link?: string; error?: string }>
+  >({});
+
+  // Per-workflow input values (initialised with defaults)
+  const [inputVals, setInputVals] = useState<Record<string, Record<string, string>>>(() => {
+    const init: Record<string, Record<string, string>> = {};
+    for (const cat of WORKFLOW_CATEGORIES) {
+      for (const wf of cat.workflows) {
+        init[wf.file] = {};
+        for (const inp of wf.inputs ?? []) {
+          if (inp.defaultVal !== undefined) init[wf.file][inp.key] = inp.defaultVal;
+        }
+      }
+    }
+    return init;
   });
 
-  const [targetedInput, setTargetedInput] = useState("");
+  const setInputVal = (file: string, key: string, val: string) =>
+    setInputVals((s) => ({ ...s, [file]: { ...(s[file] ?? {}), [key]: val } }));
 
-  const handleTrigger = (mode: string) => {
-    triggerMutation.mutate(
-      { mode },
-      { onSuccess: () => { setTimeout(refetch, 2000); } },
-    );
-  };
-
-  const handleTargeted = () => {
-    const tickers = targetedInput.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean);
-    if (tickers.length === 0) return;
-    triggerMutation.mutate(
-      { mode: "targeted", tickers },
-      { onSuccess: () => {
-        setTargetedInput("");
-        setTimeout(refetch, 2000);
-      }},
-    );
+  const triggerWorkflow = async (wf: WorkflowDef) => {
+    setWfState((s) => ({ ...s, [wf.file]: { pending: true } }));
+    try {
+      const inputs: Record<string, string> = {};
+      for (const inp of wf.inputs ?? []) {
+        const val = inputVals[wf.file]?.[inp.key] ?? inp.defaultVal ?? "";
+        if (val !== "") inputs[inp.key] = val;
+      }
+      const result = await api<{ status: string; link: string }>("/api/admin/workflow/trigger", {
+        method: "POST",
+        body: JSON.stringify({ workflow: wf.file, inputs }),
+      });
+      setWfState((s) => ({ ...s, [wf.file]: { ok: true, link: result.link } }));
+      setTimeout(refetch, 3000);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Kunde inte starta workflow";
+      setWfState((s) => ({ ...s, [wf.file]: { error: msg } }));
+    }
   };
 
   return (
     <div className="space-y-5 mt-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-sm font-medium text-[var(--color-text-secondary)]">Pipeline-kontroll</h2>
+        <h2 className="text-sm font-medium text-[var(--color-text-secondary)]">GitHub Actions</h2>
+        <a
+          href="https://github.com/hankkontakt/marketscan/actions"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-[var(--color-accent)] flex items-center gap-1 hover:underline"
+        >
+          <ExternalLink size={11} strokeWidth={1.5} />
+          Öppna GitHub
+        </a>
       </div>
 
-      {/* Trigger buttons */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        {PIPELINE_MODES.map(({ mode, label }) => (
-          <button
-            key={mode}
-            onClick={() => handleTrigger(mode)}
-            disabled={triggerMutation.isPending}
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium
-                       bg-[var(--color-accent-soft)] text-[var(--color-accent)] border border-[var(--color-accent)]/20
-                       hover:bg-[var(--color-accent)]/20 transition-colors disabled:opacity-40"
-          >
-            <Play size={12} strokeWidth={1.5} />
-            {label}
-          </button>
-        ))}
-      </div>
+      {WORKFLOW_CATEGORIES.map((cat) => (
+        <div
+          key={cat.title}
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] overflow-hidden"
+        >
+          {/* Category header */}
+          <div className="px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+            <h3 className="text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+              {cat.title}
+            </h3>
+          </div>
 
-      {triggerMutation.isSuccess && (
-        <div className="flex items-center gap-2 text-xs text-[var(--color-up)]">
-          <CheckCircle2 size={14} />
-          Pipeline {triggerMutation.data?.mode} startad —
-          <a href={triggerMutation.data?.link} target="_blank" rel="noopener noreferrer"
-             className="text-[var(--color-accent)] hover:underline flex items-center gap-0.5">
-            visa i GitHub <ExternalLink size={10} />
-          </a>
-        </div>
-      )}
-      {triggerMutation.isError && (
-        <div className="flex items-center gap-2 text-xs text-[var(--color-down)]">
-          <XCircle size={14} />
-          {triggerMutation.error instanceof ApiError
-            ? triggerMutation.error.message
-            : "Kunde inte starta pipeline"}
-        </div>
-      )}
+          {/* Workflow rows */}
+          <div className="divide-y divide-[var(--color-border)]">
+            {cat.workflows.map((wf) => {
+              const st = wfState[wf.file] ?? {};
+              return (
+                <div key={wf.file} className="px-4 py-3 space-y-2">
+                  {/* Label row */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-[var(--color-text-primary)]">{wf.label}</p>
+                      <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed">{wf.desc}</p>
+                    </div>
 
-      {/* Targeted tickers */}
-      <div className="rounded-xl p-4 border border-[var(--color-border)] bg-[var(--color-bg-surface)]">
-        <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">Riktade tickers</h3>
-        <p className="text-[10px] text-[var(--color-text-muted)] mb-2">
-          Komma-separerade tickers (max 50). Startar en pipeline som hämtar just dessa.
-        </p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={targetedInput}
-            onChange={(e) => setTargetedInput(e.target.value)}
-            placeholder="VOLV-B.ST, TSLA, SSAB A.ST"
-            className="flex-1 h-9 px-3 rounded-lg text-xs bg-[var(--color-bg-elevated)]
-                       text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]
-                       outline-none border border-[var(--color-border)] focus:ring-2 focus:ring-[var(--color-accent)]"
-          />
-          <button
-            onClick={handleTargeted}
-            disabled={triggerMutation.isPending || !targetedInput.trim()}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white
-                       hover:opacity-90 transition-opacity disabled:opacity-40"
-          >
-            Kör
-          </button>
-        </div>
-      </div>
+                    {/* Status badge */}
+                    {st.pending && (
+                      <span className="flex items-center gap-1 text-[10px] text-[var(--color-text-muted)] shrink-0">
+                        <Loader2 size={11} className="animate-spin" />
+                        Startar…
+                      </span>
+                    )}
+                    {!st.pending && st.ok && (
+                      <a
+                        href={st.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[10px] text-[var(--color-up)] hover:underline shrink-0"
+                      >
+                        <CheckCircle2 size={11} />
+                        Startad
+                        <ExternalLink size={9} />
+                      </a>
+                    )}
+                    {!st.pending && st.error && (
+                      <span
+                        className="text-[10px] text-[var(--color-down)] max-w-[180px] truncate shrink-0"
+                        title={st.error}
+                      >
+                        <XCircle size={11} className="inline mr-0.5" />
+                        {st.error}
+                      </span>
+                    )}
 
-      {/* Runs history */}
-      <p className="text-xs text-[var(--color-text-muted)]">
-        Pipeline startas automatiskt av GitHub Actions (morgon 06:15, kväll 18:30, veckovis söndag 08:00).
-        Manuell körning via knapparna ovan.
+                    <button
+                      onClick={() => triggerWorkflow(wf)}
+                      disabled={!!st.pending}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shrink-0
+                                 bg-[var(--color-accent-soft)] text-[var(--color-accent)]
+                                 border border-[var(--color-accent)]/20
+                                 hover:bg-[var(--color-accent)]/20 transition-colors disabled:opacity-40"
+                    >
+                      <Play size={11} strokeWidth={1.5} />
+                      Starta
+                    </button>
+                  </div>
+
+                  {/* Inline inputs */}
+                  {wf.inputs && wf.inputs.length > 0 && (
+                    <div className="flex flex-wrap gap-2.5 pt-0.5">
+                      {wf.inputs.map((inp) => {
+                        const val = inputVals[wf.file]?.[inp.key] ?? inp.defaultVal ?? "";
+
+                        if (inp.type === "select" && inp.options) {
+                          return (
+                            <div key={inp.key} className="flex items-center gap-1.5">
+                              <label className="text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">
+                                {inp.label}:
+                              </label>
+                              <select
+                                value={val}
+                                onChange={(e) => setInputVal(wf.file, inp.key, e.target.value)}
+                                className="h-7 px-2 rounded-md text-[10px] bg-[var(--color-bg-elevated)]
+                                           text-[var(--color-text-primary)] border border-[var(--color-border)]
+                                           outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+                              >
+                                {inp.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            </div>
+                          );
+                        }
+
+                        if (inp.type === "toggle") {
+                          return (
+                            <label key={inp.key} className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={val === "true"}
+                                onChange={(e) => setInputVal(wf.file, inp.key, String(e.target.checked))}
+                                className="w-3.5 h-3.5 accent-[var(--color-accent)]"
+                              />
+                              <span className="text-[10px] text-[var(--color-text-muted)]">{inp.label}</span>
+                            </label>
+                          );
+                        }
+
+                        // text
+                        return (
+                          <div key={inp.key} className="flex items-center gap-1.5">
+                            <label className="text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">
+                              {inp.label}:
+                            </label>
+                            <input
+                              type="text"
+                              value={val}
+                              onChange={(e) => setInputVal(wf.file, inp.key, e.target.value)}
+                              placeholder={inp.placeholder}
+                              className="h-7 px-2 rounded-md text-[10px] bg-[var(--color-bg-elevated)]
+                                         text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]
+                                         border border-[var(--color-border)] outline-none focus:ring-1
+                                         focus:ring-[var(--color-accent)] min-w-[160px]"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <p className="text-[11px] text-[var(--color-text-muted)]">
+        Pipeline körs automatiskt (morgon 06:15, kväll 18:30, veckovis söndag 08:00).
+        Knapparna ovan triggar manuella körningar via GitHub Actions API.
       </p>
 
-      {isLoading
+      {runsLoading
         ? <div className="skeleton h-48 rounded-xl" />
         : <RunsTable runs={runs} />
       }

@@ -57,6 +57,30 @@ class PipelineTriggerIn(BaseModel):
     tickers: list[str] | None = None  # for targeted mode
 
 
+class WorkflowTriggerIn(BaseModel):
+    workflow: str          # filename e.g. "pipeline.yml"
+    inputs: dict[str, str] = {}  # only inputs defined in the workflow
+
+
+# Registry: maps workflow filename → which input keys it accepts
+# ONLY keys listed here are forwarded — extras cause GitHub 422
+_WORKFLOW_INPUTS: dict[str, set[str]] = {
+    "pipeline.yml":           {"mode", "tickers"},
+    "score_tracker.yml":      set(),
+    "risk_analysis.yml":      set(),
+    "smart_alerts.yml":       set(),
+    "signal_analytics.yml":   set(),
+    "strategy_backtester.yml":{"strategy_id"},
+    "backtest_runner.yml":    {"strategy"},
+    "ml_train.yml":           set(),
+    "universe_discovery.yml": set(),
+    "smallcap_scan.yml":      set(),
+    "sector_rotation.yml":    set(),
+    "options_scan.yml":       {"tickers"},
+    "digest.yml":             {"dry_run"},
+}
+
+
 class PipelineQueueItem(BaseModel):
     ticker: str
     name: str | None = None
@@ -173,51 +197,107 @@ def universe_stats(
     }
 
 
-# ─── Pipeline Trigger ─────────────────────────────────────────────────────────
+# ─── Workflow Trigger ─────────────────────────────────────────────────────────
+
+REPO = "hankkontakt/marketscan"
+GH_API = "https://api.github.com"
+
+
+async def _dispatch_workflow(token: str, workflow: str, inputs: dict[str, str]) -> None:
+    """POST workflow_dispatch to GitHub API.
+    Only sends inputs that are defined for this workflow (prevents 422).
+    Raises HTTPException on failure.
+    """
+    allowed = _WORKFLOW_INPUTS.get(workflow, set())
+    safe_inputs = {k: v for k, v in inputs.items() if k in allowed and v != ""}
+
+    async with AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            f"{GH_API}/repos/{REPO}/actions/workflows/{workflow}/dispatches",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json={"ref": "main", "inputs": safe_inputs},
+        )
+        if resp.status_code not in (204, 201, 200):
+            body_text = resp.text[:300]
+            logger.warning("GitHub dispatch failed %s → %s %s", workflow, resp.status_code, body_text)
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                f"GitHub svarade {resp.status_code} — kontrollera att GH_DISPATCH_TOKEN har 'workflow'-scope och att workflow-filen finns på main-branchen",
+            )
+
 
 @router.post("/pipeline/trigger", status_code=202)
 async def trigger_pipeline(
     body: PipelineTriggerIn,
     user: User = Depends(require_admin),
 ):
-    """Trigger a GitHub Actions pipeline run via workflow_dispatch.
-
-    Requires GH_DISPATCH_TOKEN env var (PAT with workflow scope).
-    Returns 202 + link to the workflow run.
+    """Legacy endpoint — kept for backwards compatibility.
+    Delegates to the generic workflow trigger using pipeline.yml.
     """
     import os
     token = os.environ.get("GH_DISPATCH_TOKEN", "")
     if not token:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GH_DISPATCH_TOKEN saknas — pipeline-trigger ej konfigurerad")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GH_DISPATCH_TOKEN saknas — lägg till i Vercel env vars")
 
     inputs: dict[str, str] = {"mode": body.mode}
     if body.tickers:
         inputs["tickers"] = ",".join(body.tickers[:50])
 
     try:
-        async with AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                "https://api.github.com/repos/hankkontakt/marketscan/actions/workflows/pipeline.yml/dispatches",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                },
-                json={"ref": "main", "inputs": inputs},
-            )
-            if resp.status_code not in (204, 201, 200):
-                logger.warning("GitHub dispatch failed: %s %s", resp.status_code, resp.text)
-                raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"GitHub API svarade {resp.status_code}")
-
-        return {
-            "status": "triggered",
-            "mode": body.mode,
-            "link": "https://github.com/hankkontakt/marketscan/actions",
-        }
+        await _dispatch_workflow(token, "pipeline.yml", inputs)
+        return {"status": "triggered", "mode": body.mode, "link": f"https://github.com/{REPO}/actions"}
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Pipeline trigger failed: %s", e)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Kunde inte starta pipeline: {e}")
+
+
+@router.post("/workflow/trigger", status_code=202)
+async def trigger_workflow(
+    body: WorkflowTriggerIn,
+    user: User = Depends(require_admin),
+):
+    """Generic workflow trigger — dispatches any registered GitHub Actions workflow.
+
+    Only inputs that are defined for the workflow are forwarded.
+    Extra/unknown inputs are silently dropped (prevents GitHub 422).
+
+    Requires GH_DISPATCH_TOKEN env var with 'workflow' scope.
+    """
+    import os
+    token = os.environ.get("GH_DISPATCH_TOKEN", "")
+    if not token:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GH_DISPATCH_TOKEN saknas — lägg till i Vercel env vars")
+
+    if body.workflow not in _WORKFLOW_INPUTS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Okänt workflow: {body.workflow}. Tillåtna: {', '.join(sorted(_WORKFLOW_INPUTS))}")
+
+    try:
+        await _dispatch_workflow(token, body.workflow, body.inputs)
+        return {
+            "status": "triggered",
+            "workflow": body.workflow,
+            "link": f"https://github.com/{REPO}/actions",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Workflow trigger failed (%s): %s", body.workflow, e)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Kunde inte starta {body.workflow}: {e}")
+
+
+@router.get("/workflow/list")
+def list_workflows(user: User = Depends(require_admin)):
+    """List all triggerable workflows with their accepted inputs."""
+    return [
+        {"workflow": wf, "inputs": sorted(inputs)}
+        for wf, inputs in _WORKFLOW_INPUTS.items()
+    ]
 
 
 @router.get("/pipeline/queue", response_model=list[PipelineQueueItem])
