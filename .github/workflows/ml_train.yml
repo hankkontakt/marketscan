@@ -1,26 +1,80 @@
 name: ML Training
 
+# Tränar LightGBM LambdaRank-rankeraren (ml_ranker.py).
+# Flöde:
+#   1. build_ml_dataset.py  — hämtar 3 år prishistorik via yfinance → data/ml/universe_training.parquet
+#   2. train_ranker.py      — tränar + utvärderar walk-forward → models/ml_ranker_universe.pkl
+#   3. Committar modellen tillbaka till stock-scanner (används av nästa pipeline-körning)
+
 on:
   schedule:
-    - cron: "0 6 * * 0"  # Every Sunday at 06:00 UTC
+    - cron: "0 6 * * 0"   # Söndagar 06:00 UTC (08:00 Stockholm sommar)
   workflow_dispatch:
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "stock-scanner"  # gör 'core.*' och 'scripts.*' importerbara
 
 jobs:
   train:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend_worker
+    timeout-minutes: 90
+
     steps:
-      - uses: actions/checkout@v4
+      # ── Checkout ──────────────────────────────────────────────────────────────
+
+      - name: Checkout marketscan
+        uses: actions/checkout@v4
+        with:
+          path: marketscan
+
+      - name: Checkout stock-scanner
+        uses: actions/checkout@v4
+        with:
+          repository: hankkontakt/stock-scanner
+          token: ${{ secrets.GH_CHECKOUT_TOKEN }}
+          path: stock-scanner
+
+      # ── Python setup ─────────────────────────────────────────────────────────
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+
       - name: Install dependencies
+        run: pip install -r marketscan/backend_worker/requirements.txt
+
+      # ── Steg 1: Bygg träningsdataset ─────────────────────────────────────────
+      # Hämtar månadsslutspriser + tekniska features för varje ticker via yfinance.
+      # Tar ~20-40 min för hela universumet beroende på rate limits.
+      # Kan köras utan hemligheter (yfinance är gratis).
+
+      - name: Build training dataset
+        working-directory: stock-scanner
         run: |
-          pip install pandas numpy xgboost scikit-learn yfinance python-dotenv
-      - name: Train ML models
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python ml_trainer.py | tee ml_output.json
+          python -m scripts.build_ml_dataset --universe universe --years 3
+          echo "Dataset klar: $(du -sh data/ml/universe_training.parquet 2>/dev/null || echo 'ej hittad')"
+
+      # ── Steg 2: Träna LightGBM-rankeraren ────────────────────────────────────
+      # Kör walk-forward-validering och jämför mot XGBoost-baseline.
+      # Sparar modell om IC > 0.050 och slår XGBoost.
+
+      - name: Train LightGBM ranker
+        working-directory: stock-scanner
+        run: python -m scripts.train_ranker --compare
+
+      # ── Steg 3: Committa modellen tillbaka till stock-scanner ─────────────────
+      # Modellen (models/ml_ranker_universe.pkl) används automatiskt av nästa
+      # pipeline-körning via predict_ranker() i core/ml_ranker.py.
+
+      - name: Commit trained model
+        working-directory: stock-scanner
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/ml_ranker_universe.pkl models/ml_ranker_universe_metrics.json || true
+          git add models/model_comparison_universe.json || true
+          git diff --staged --quiet && echo "Ingen förändring i modellen" || \
+            git commit -m "chore: uppdaterad ML-ranker (walk-forward söndagskörning) [skip ci]"
+          git push || echo "Push misslyckades — token saknar skrivrättighet (läs docs/KOMMANDON.md)"

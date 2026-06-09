@@ -6,15 +6,10 @@ on:
   workflow_dispatch:
     inputs:
       strategy:
-        description: "Strategy name"
+        description: "Strategy name (momentum/mean_reversion/trend_following/factor)"
         required: true
         default: "momentum"
-        type: choice
-        options:
-          - momentum
-          - mean_reversion
-          - trend_following
-          - factor
+        type: string
 
 jobs:
   backtest:
