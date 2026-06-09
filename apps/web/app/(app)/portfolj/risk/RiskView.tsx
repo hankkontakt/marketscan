@@ -212,7 +212,7 @@ function RebalanceDriftView() {
             <span className="w-12 text-right tabular-nums text-[var(--color-text-muted)]">{h.current_pct.toFixed(1)}%</span>
             <span className={cn("w-16 text-right font-medium", actionColor(h.action))}>
               {actionLabel(h.action)}
-              {h.amount_sek && ` ${(h.amount_sek / 1000).toFixed(0)}k`}
+              {h.amount_sek ? ` ${Math.round(h.amount_sek).toLocaleString("sv-SE")} kr` : ""}
             </span>
           </div>
         ))}

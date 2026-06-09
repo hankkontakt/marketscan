@@ -220,9 +220,27 @@ def get_risk_analytics(
         sector_values[h.get("sector") or "Övrigt"] += w
     sector_hhi = round(sum(v ** 2 for v in sector_values.values()), 4)
 
+    # Return-based metrics (Sharpe, Sortino, drawdown, VaR/CVaR, CAGR) need a
+    # price-return time series, which scan_results doesn't have. Compute them
+    # live from 1y daily history (Yahoo via httpx). Best-effort — if there isn't
+    # enough history we keep the simplified beta/vol from scan_results.
+    live = {}
+    try:
+        from apps.api.core.risk_calc import compute_live_risk
+        live = compute_live_risk(holdings)
+    except Exception as e:  # pragma: no cover — defensive
+        logger.warning("live risk computation skipped: %s", e)
+
     return RiskMetrics(
-        beta_market      = round(port_beta, 4),
-        volatility_ann   = port_vol_ann,
+        sharpe_ratio     = live.get("sharpe_ratio"),
+        sortino_ratio    = live.get("sortino_ratio"),
+        total_return_pct = live.get("total_return_pct"),
+        cagr_pct         = live.get("cagr_pct"),
+        max_drawdown_pct = live.get("max_drawdown_pct"),
+        var_95_pct       = live.get("var_95_pct"),
+        cvar_95_pct      = live.get("cvar_95_pct"),
+        beta_market      = live.get("beta_market") if live.get("beta_market") is not None else round(port_beta, 4),
+        volatility_ann   = live.get("volatility_ann") if live.get("volatility_ann") is not None else port_vol_ann,
         num_holdings     = len(holdings),
         top_holding_pct  = top_holding_pct,
         sector_hhi       = sector_hhi,

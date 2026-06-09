@@ -202,11 +202,57 @@ async def _fetch_indices_yfinance() -> list[GlobalIndexOut]:
         return []
 
 
+_YAHOO_INDEX_SYMBOLS = [
+    ("^OMX", "OMXS30"), ("^GSPC", "S&P 500"), ("^IXIC", "Nasdaq"),
+    ("^DJI", "Dow Jones"), ("^FTSE", "FTSE 100"), ("^GDAXI", "DAX"),
+    ("^STOXX50E", "Euro Stoxx 50"), ("^N225", "Nikkei 225"), ("^HSI", "Hang Seng"),
+]
+
+
+async def _fetch_indices_yahoo() -> list[GlobalIndexOut]:
+    """Fallback via Yahoo's v8 chart endpoint over httpx.
+
+    Replaces the old yfinance fallback — yfinance is deliberately NOT in the API
+    serverless bundle (see apps/api/requirements.txt), so that path always
+    returned [] in production and the UI showed 'Ingen indexdata tillgänglig'.
+    httpx IS in the bundle, so this works on Vercel.
+    """
+    async def _one(client: httpx.AsyncClient, symbol: str, name: str):
+        try:
+            r = await client.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                params={"range": "2d", "interval": "1d"},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; MarketScan/1.0)"},
+            )
+            if r.status_code != 200:
+                return None
+            meta = r.json()["chart"]["result"][0]["meta"]
+            price = meta.get("regularMarketPrice") or meta.get("previousClose")
+            prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+            if not price:
+                return None
+            change = round((float(price) - float(prev)) / float(prev) * 100, 2) if prev else None
+            return GlobalIndexOut(name=name, price=round(float(price), 2), change_pct=change)
+        except Exception as e:
+            logger.debug("Yahoo index %s failed: %s", symbol, e)
+            return None
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            results = await asyncio.gather(
+                *[_one(client, s, n) for s, n in _YAHOO_INDEX_SYMBOLS]
+            )
+        return [r for r in results if isinstance(r, GlobalIndexOut)]
+    except Exception as e:
+        logger.warning("Yahoo indices fallback failed: %s", e)
+        return []
+
+
 @router.get("/indices", response_model=GlobalMarketsOut)
 async def get_global_indices():
     """Global index snapshot.
     Primary: Finnhub (parallel requests, 5-min cache).
-    Fallback: yfinance when FINNHUB_API_KEY is not configured.
+    Fallback: Yahoo v8 chart over httpx (Finnhub free tier returns 0 for indices).
     """
     # Cache hit
     cached = _get_cached_indices()
@@ -245,10 +291,10 @@ async def get_global_indices():
             )
         indices = [r for r in results if isinstance(r, GlobalIndexOut)]
 
-    # If Finnhub unavailable or returned nothing — fall back to yfinance
+    # If Finnhub unavailable or returned nothing — fall back to Yahoo via httpx
     if not indices:
-        logger.info("Finnhub indices empty or unavailable — falling back to yfinance")
-        indices = await _fetch_indices_yfinance()
+        logger.info("Finnhub indices empty or unavailable — falling back to Yahoo")
+        indices = await _fetch_indices_yahoo()
 
     _set_cached_indices(indices)
     return GlobalMarketsOut(indices=indices)
