@@ -106,6 +106,15 @@ export function KalenderView() {
     return new Date(n.getFullYear(), n.getMonth(), 1);
   });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // IPO hidden by default — most users don't care about new listings
+  const [hiddenTypes, setHiddenTypes] = useState<Set<EventType>>(new Set(["ipo"]));
+
+  const toggleType = (type: EventType) =>
+    setHiddenTypes((prev) => {
+      const next = new Set(prev);
+      next.has(type) ? next.delete(type) : next.add(type);
+      return next;
+    });
 
   const monthStart = currentMonth.toISOString().slice(0, 10);
   const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).toISOString().slice(0, 10);
@@ -168,18 +177,24 @@ export function KalenderView() {
 
   useEffect(() => { fetchAllEvents(); }, [fetchAllEvents]);
 
-  const selectedEvents = selectedDay ? (eventsByDate[selectedDay] || []) : [];
+  const selectedEvents = selectedDay
+    ? (eventsByDate[selectedDay] || []).filter((ev) => !hiddenTypes.has(ev.type))
+    : [];
 
-  // Count event types on a given day for dot display
+  // Visible event types on a given day (respects hiddenTypes filter)
   const dayEventTypes = (dayStr: string): EventType[] => {
     const dayEvents = eventsByDate[dayStr];
     if (!dayEvents) return [];
     const seen = new Set<EventType>();
     for (const ev of dayEvents) {
-      seen.add(ev.type);
+      if (!hiddenTypes.has(ev.type)) seen.add(ev.type);
     }
     return Array.from(seen);
   };
+
+  // Total visible events on a day (for the +N overflow label)
+  const dayVisibleCount = (dayStr: string): number =>
+    (eventsByDate[dayStr] || []).filter((ev) => !hiddenTypes.has(ev.type)).length;
 
   return (
     <div className="space-y-5">
@@ -215,14 +230,31 @@ export function KalenderView() {
         </button>
       </div>
 
-      {/* Legend */}
-      <div className="flex gap-4 text-[11px] text-[var(--color-text-secondary)]">
-        {EVENT_TYPES.map((et) => (
-          <div key={et.key} className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full" style={{ background: et.color }} />
-            {et.label}
-          </div>
-        ))}
+      {/* Legend — click to toggle event types */}
+      <div className="flex flex-wrap gap-2 text-[11px]">
+        {EVENT_TYPES.map((et) => {
+          const hidden = hiddenTypes.has(et.key);
+          return (
+            <button
+              key={et.key}
+              onClick={() => toggleType(et.key)}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors",
+                hidden
+                  ? "border-[var(--color-border)] text-[var(--color-text-muted)] bg-transparent opacity-50"
+                  : "border-transparent text-[var(--color-text-secondary)] bg-[var(--color-bg-elevated)]",
+              )}
+              title={hidden ? `Visa ${et.label}` : `Dölj ${et.label}`}
+            >
+              <span
+                className="w-2 h-2 rounded-full transition-opacity"
+                style={{ background: hidden ? "var(--color-text-muted)" : et.color }}
+              />
+              {et.label}
+              {hidden && <span className="text-[9px] opacity-60">av</span>}
+            </button>
+          );
+        })}
       </div>
 
       {/* Month navigator */}
@@ -272,7 +304,7 @@ export function KalenderView() {
               const inMonth = isSameMonth(day, currentMonth);
               const today = isSameDay(day, new Date());
               const types = dayEventTypes(dayStr);
-              const totalEvents = eventsByDate[dayStr]?.length || 0;
+              const totalEvents = dayVisibleCount(dayStr);
 
               return (
                 <button
