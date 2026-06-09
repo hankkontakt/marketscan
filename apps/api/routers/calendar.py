@@ -48,7 +48,7 @@ async def _fetch_ticker_dividends(
 
 
 def _get_user_tickers(sb) -> list[str]:
-    """Fetch user's watchlist + portfolio tickers for scope=mine filtering."""
+    """Fetch the user's watchlist + portfolio tickers (scope=mine)."""
     try:
         watch = sb.table("watchlist").select("ticker").execute()
         portfolio = sb.table("holdings").select("ticker").execute()
@@ -57,10 +57,32 @@ def _get_user_tickers(sb) -> list[str]:
             tickers.add(r["ticker"])
         for r in (portfolio.data or []):
             tickers.add(r["ticker"])
-        return list(tickers)[:_MAX_TICKER_FANOUT]
+        return list(tickers)
     except Exception as e:
         logger.debug("Could not fetch user tickers for calendar: %s", e)
         return []
+
+
+def _get_universe_tickers(sb, limit: int | None = None) -> list[str]:
+    """Fetch universe tickers (scope=all), highest-scoring first.
+    `limit` caps per-ticker fan-out for dividends; None = all (cheap set filter)."""
+    try:
+        q = sb.table("scan_results").select("ticker").order("score_total", desc=True)
+        if limit:
+            q = q.limit(limit)
+        res = q.execute()
+        return [r["ticker"] for r in (res.data or []) if r.get("ticker")]
+    except Exception as e:
+        logger.debug("Could not fetch universe tickers for calendar: %s", e)
+        return []
+
+
+def _scoped_tickers(sb, scope: str, user, fanout_limit: int | None = None) -> list[str]:
+    """Resolve which tickers a calendar request covers.
+    scope=mine -> watchlist + portfolio; scope=all -> universe."""
+    if scope == "mine" and user:
+        return _get_user_tickers(sb)
+    return _get_universe_tickers(sb, limit=fanout_limit)
 
 
 def _filter_by_tickers(events: list[dict], tickers: set[str]) -> list[dict]:
@@ -98,14 +120,17 @@ async def get_earnings_calendar(
             )
             resp.raise_for_status()
             data = resp.json()
-            events = data.get("earningsCalendar", [])[:100]
+            events = data.get("earningsCalendar", [])
 
-        if scope == "mine" and user:
-            user_tickers = set(_get_user_tickers(sb))
-            if user_tickers:
-                events = _filter_by_tickers(events, user_tickers)
+        # Scope: mine -> watchlist+portfolio, all -> universe. Filtering the
+        # global feed by the scoped ticker set is cheap (no extra API calls).
+        scoped = set(_scoped_tickers(sb, scope, user))
+        if scoped:
+            events = _filter_by_tickers(events, scoped)
+        else:
+            events = events[:100]
 
-        return {"events": events}
+        return {"events": events[:100]}
     except Exception as e:
         logger.warning("Finnhub earnings calendar failed: %s", e)
         return {"events": []}
@@ -154,25 +179,17 @@ async def get_dividends_calendar(
     f = from_date or today.isoformat()
     t = to_date or (today + timedelta(days=90)).isoformat()
 
-    # Determine which tickers to fetch dividends for
+    # Determine which tickers to fetch dividends for.
+    # mine -> watchlist+portfolio (no cap); all -> universe, capped because each
+    # ticker is a separate Finnhub call (free-tier rate limits).
     if scope == "mine" and user:
         tickers = _get_user_tickers(sb)
     else:
-        try:
-            tickers_res = (
-                sb.table("scan_results")
-                .select("ticker")
-                .order("score_total", desc=True)
-                .limit(25)
-                .execute()
-            )
-            tickers = [r["ticker"] for r in (tickers_res.data or [])]
-        except Exception as e:
-            logger.warning("Could not fetch universe tickers for dividend calendar: %s", e)
-            return {"events": []}
+        tickers = _get_universe_tickers(sb, limit=_MAX_TICKER_FANOUT)
 
     if not tickers:
         return {"events": []}
+    tickers = tickers[:_MAX_TICKER_FANOUT]  # safety cap on fan-out
 
     async with AsyncClient(timeout=15.0) as client:
         results = await asyncio.gather(
