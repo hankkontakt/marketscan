@@ -301,64 +301,84 @@ def list_workflows(user: User = Depends(require_admin)):
     ]
 
 
+_COMPANY_PROFILES_SQL = """\
+CREATE TABLE IF NOT EXISTS company_profiles (
+  ticker          TEXT        PRIMARY KEY,
+  description     TEXT,
+  employees       INTEGER,
+  website         TEXT,
+  industry        TEXT,
+  country         TEXT,
+  beta            NUMERIC(6,4),
+  week_52_high    NUMERIC(12,4),
+  week_52_low     NUMERIC(12,4),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_company_profiles_updated
+  ON company_profiles (updated_at DESC);\
+"""
+
+
 @router.post("/setup/company-profiles")
-def setup_company_profiles(user: User = Depends(require_admin)):
+def setup_company_profiles(
+    user: User = Depends(require_admin),
+    sb=Depends(get_supabase_admin),
+):
     """Create company_profiles table if it doesn't exist (migration 026).
 
-    Safe to call multiple times — uses CREATE TABLE IF NOT EXISTS.
-    Requires DATABASE_URL to be set (psycopg2 direct connection).
+    Strategy:
+      1. Check if table already exists via a lightweight Supabase query.
+      2. If DATABASE_URL is set (GitHub Actions / local), create it via psycopg2.
+      3. Otherwise return the SQL for the user to paste into Supabase SQL Editor.
     """
     import os
-    dsn = os.environ.get("DATABASE_URL")
-    if not dsn:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "DATABASE_URL saknas — kan inte skapa tabell",
-        )
+
+    # ── Step 1: check if table already exists ──────────────────────────────
     try:
-        import psycopg2
-    except ImportError:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "psycopg2 inte installerat på servern",
-        )
-
-    try:
-        conn = psycopg2.connect(dsn)
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS company_profiles (
-              ticker          TEXT        PRIMARY KEY,
-              description     TEXT,
-              employees       INTEGER,
-              website         TEXT,
-              industry        TEXT,
-              country         TEXT,
-              beta            NUMERIC(6,4),
-              week_52_high    NUMERIC(12,4),
-              week_52_low     NUMERIC(12,4),
-              updated_at      TIMESTAMPTZ DEFAULT NOW()
-            )
-        """)
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS idx_company_profiles_updated
-              ON company_profiles (updated_at DESC)
-        """)
-        conn.commit()
-
-        # Check how many profiles already exist
-        cur.execute("SELECT COUNT(*) FROM company_profiles")
-        count = cur.fetchone()[0]
-        conn.close()
-
+        result = sb.table("company_profiles").select("ticker", count="exact").limit(0).execute()
+        count = result.count or 0
         return {
             "ok": True,
-            "message": f"Tabell company_profiles OK — {count} profiler i databasen",
+            "already_exists": True,
+            "message": f"Tabell finns redan — {count} profiler i databasen",
             "count": count,
         }
-    except Exception as exc:
-        logger.error("setup_company_profiles failed: %s", exc)
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Misslyckades: {exc}")
+    except Exception:
+        pass  # Table doesn't exist yet — continue below
+
+    # ── Step 2: try psycopg2 if DATABASE_URL is available ──────────────────
+    dsn = os.environ.get("DATABASE_URL")
+    if dsn:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(dsn)
+            cur = conn.cursor()
+            for stmt in _COMPANY_PROFILES_SQL.split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    cur.execute(stmt)
+            conn.commit()
+            conn.close()
+            return {
+                "ok": True,
+                "message": "Tabell company_profiles skapad",
+                "count": 0,
+            }
+        except Exception as exc:
+            logger.error("setup_company_profiles psycopg2 failed: %s", exc)
+            # Fall through to SQL-copy path
+
+    # ── Step 3: DATABASE_URL not available — return SQL for manual execution ──
+    return {
+        "ok": False,
+        "needs_manual": True,
+        "message": (
+            "Tabellen finns inte än. Kör SQL:en nedan i "
+            "Supabase SQL Editor (supabase.com → ditt projekt → SQL Editor)."
+        ),
+        "sql": _COMPANY_PROFILES_SQL,
+    }
 
 
 @router.get("/pipeline/queue", response_model=list[PipelineQueueItem])

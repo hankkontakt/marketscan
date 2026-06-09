@@ -215,15 +215,21 @@ export function PipelineSection() {
 
   // Per-workflow setup state (DB migration buttons)
   const [setupState, setSetupState] = useState<
-    Record<string, { pending?: boolean; ok?: boolean; msg?: string; error?: string }>
-  >();
+    Record<string, { pending?: boolean; ok?: boolean; msg?: string; error?: string; sql?: string }>
+  >({});
 
   const runSetup = async (wf: WorkflowDef) => {
     if (!wf.setupEndpoint) return;
     setSetupState((s) => ({ ...s, [wf.file]: { pending: true } }));
     try {
-      const res = await api<{ ok: boolean; message: string }>( wf.setupEndpoint, { method: "POST" });
-      setSetupState((s) => ({ ...s, [wf.file]: { ok: true, msg: res.message } }));
+      const res = await api<{ ok: boolean; message: string; needs_manual?: boolean; sql?: string }>(
+        wf.setupEndpoint, { method: "POST" }
+      );
+      if (res.needs_manual) {
+        setSetupState((s) => ({ ...s, [wf.file]: { ok: false, msg: res.message, sql: res.sql } }));
+      } else {
+        setSetupState((s) => ({ ...s, [wf.file]: { ok: true, msg: res.message } }));
+      }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Setup misslyckades";
       setSetupState((s) => ({ ...s, [wf.file]: { error: msg } }));
@@ -338,7 +344,7 @@ export function PipelineSection() {
 
                     {/* Setup button (only for workflows with setupEndpoint) */}
                     {wf.setupEndpoint && (() => {
-                      const ss = setupState?.[wf.file] ?? {};
+                      const ss = setupState[wf.file] ?? {};
                       return (
                         <div className="flex items-center gap-1.5 shrink-0">
                           {ss.pending && (
@@ -358,7 +364,7 @@ export function PipelineSection() {
                               {ss.error}
                             </span>
                           )}
-                          {!ss.ok && (
+                          {!ss.ok && !ss.sql && (
                             <button
                               onClick={() => runSetup(wf)}
                               disabled={!!ss.pending}
@@ -387,6 +393,25 @@ export function PipelineSection() {
                       Starta
                     </button>
                   </div>
+
+                  {/* SQL panel — shown when server can't auto-create table */}
+                  {wf.setupEndpoint && setupState[wf.file]?.sql && (
+                    <div className="rounded-lg border border-[var(--color-warn)]/40 bg-[var(--color-warn-soft)] p-3 space-y-2">
+                      <p className="text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
+                        {setupState[wf.file]?.msg}
+                      </p>
+                      <pre className="text-[10px] font-mono bg-[var(--color-bg-elevated)] rounded p-2 overflow-x-auto whitespace-pre text-[var(--color-text-primary)] leading-relaxed">
+                        {setupState[wf.file]?.sql}
+                      </pre>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(setupState[wf.file]?.sql ?? "")}
+                        className="flex items-center gap-1 text-[10px] text-[var(--color-accent)] hover:underline"
+                      >
+                        <Copy size={10} />
+                        Kopiera SQL
+                      </button>
+                    </div>
+                  )}
 
                   {/* Inline inputs */}
                   {wf.inputs && wf.inputs.length > 0 && (
