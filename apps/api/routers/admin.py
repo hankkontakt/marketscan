@@ -219,7 +219,7 @@ async def _dispatch_workflow(token: str, workflow: str, inputs: dict[str, str]) 
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
             },
-            json={"ref": "main", "inputs": safe_inputs},
+            json={"ref": "master", "inputs": safe_inputs},
         )
         if resp.status_code not in (204, 201, 200):
             body_text = resp.text[:300]
