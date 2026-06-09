@@ -3,8 +3,11 @@ name: Score Tracker — snapshot daily scores
 on:
   # Runs after the main pipeline completes
   workflow_run:
-    workflows: ["Daily Pipeline"]
+    workflows: ["MarketScan Pipeline"]
     types: [completed]
+  # Fallback schedule: 06:30 UTC weekdays (in case workflow_run chain breaks)
+  schedule:
+    - cron: "30 6 * * 1-5"
   # Also allow manual trigger for backfill
   workflow_dispatch:
 
