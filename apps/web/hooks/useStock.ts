@@ -82,3 +82,31 @@ export function usePiotroski(ticker: string, enabled = true) {
     enabled: !!ticker && enabled,
   });
 }
+
+// ── Similar stocks ────────────────────────────────────────────────────────────
+
+export interface SimilarStockItem {
+  ticker: string;
+  name: string | null;
+  score_total: number | null;
+  sector: string | null;
+  similarity_pct: number;
+  price: number | null;
+  change_pct: number | null;
+  entry_signal: string | null;
+  ml_rank: number | null;
+}
+
+export interface SimilarStocksResponse {
+  ticker: string;
+  similar: SimilarStockItem[];
+}
+
+export function useSimilarStocks(ticker: string, enabled = true) {
+  return useQuery<SimilarStocksResponse>({
+    queryKey: ["similar-stocks", ticker],
+    queryFn: () => api<SimilarStocksResponse>(`/api/stocks/${ticker}/similar`),
+    staleTime: 30 * 60_000,  // 30 min — likheter ändras inte ofta
+    enabled: !!ticker && enabled,
+  });
+}

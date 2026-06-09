@@ -121,3 +121,49 @@ export function useSignalAnalyticsDetail(
     enabled: !!field && !!fromSignal && !!toSignal,
   });
 }
+
+// ─── Insider Radar ────────────────────────────────────────────────────────────
+
+export interface RecentInsiderTrade {
+  name: string | null;
+  role: string | null;
+  type: string;
+  amount: number | null;
+  shares: number | null;
+  trade_date: string;
+  source: string;
+}
+
+export interface InsiderCluster {
+  ticker: string;
+  name: string | null;
+  sector: string | null;
+  entry_signal: string | null;
+  score_total: number | null;
+  price: number | null;
+  change_pct: number | null;
+  ml_rank: number | null;
+  trade_count: number;
+  unique_insiders: number;
+  total_amount: number;
+  total_shares: number;
+  latest_date: string;
+  cluster_score: number;
+  recent_trades: RecentInsiderTrade[];
+}
+
+export function useInsiderRadar(
+  days = 30,
+  tradeType?: "buy" | "sell",
+  minAmount = 0,
+) {
+  const params = new URLSearchParams({ days: String(days), min_amount: String(minAmount) });
+  if (tradeType) params.set("trade_type", tradeType);
+
+  return useQuery<InsiderCluster[]>({
+    queryKey: ["insider-radar", days, tradeType, minAmount],
+    queryFn: () => api<InsiderCluster[]>(`/api/insider-radar?${params.toString()}`),
+    staleTime: 15 * 60_000,  // 15 min — insider data is updated nightly
+    retry: 1,
+  });
+}

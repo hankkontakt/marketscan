@@ -103,6 +103,24 @@ export function SectorHeatmap({ sectors }: { sectors: SectorSummary[] }) {
   );
 }
 
+// ─── Macro Regime ────────────────────────────────────────────
+
+export interface MacroRegime {
+  regime: string;
+  label: string;
+  description: string;
+  color: string;
+}
+
+export function useMacroRegime() {
+  return useQuery<MacroRegime>({
+    queryKey: ["macro-regime"],
+    queryFn: () => api<MacroRegime>("/api/markets/regime"),
+    staleTime: 30 * 60_000,
+    retry: 1,
+  });
+}
+
 // ─── Top Movers ─────────────────────────────────────────────
 
 export interface TopMover {

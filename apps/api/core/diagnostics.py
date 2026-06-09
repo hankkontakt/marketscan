@@ -40,6 +40,7 @@ MIGRATION_MARKERS = {
     "020_smart_alerts": "alert_rules",
     "021_strategy_lab": "strategies",
     "022_fund_holdings": "fund_holdings",
+    "024_prediction_outcomes": "prediction_outcomes",
 }
 
 # Env vars that must be present for core features to work, with the feature

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
-import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski } from "@/hooks/useStock";
+import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski, useSimilarStocks, type SimilarStockItem } from "@/hooks/useStock";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
@@ -101,6 +101,16 @@ export function StockView({ ticker }: Props) {
             >
               AI
             </Tabs.Trigger>
+            <Tabs.Trigger
+              value="liknande"
+              className={cn(
+                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+              )}
+            >
+              Liknande
+            </Tabs.Trigger>
           </Tabs.List>
 
           <div className="px-6 py-6">
@@ -109,6 +119,7 @@ export function StockView({ ticker }: Props) {
             <Tabs.Content value="analys"><AnalysTab ticker={ticker} /></Tabs.Content>
             <Tabs.Content value="rapporter"><RapporterTab ticker={ticker} stock={stock} /></Tabs.Content>
             <Tabs.Content value="ai"><AITab stock={stock} /></Tabs.Content>
+            <Tabs.Content value="liknande"><LiknandeTab ticker={ticker} /></Tabs.Content>
           </div>
         </Tabs.Root>
       </div>
@@ -622,6 +633,132 @@ function AITab({ stock }: { stock: ScanRow }) {
         <AnalysCommittee stock={stock} />
       </div>
     </div>
+  );
+}
+
+// ─── Liknande ────────────────────────────────────────────────────────────────
+
+function LiknandeTab({ ticker }: { ticker: string }) {
+  const { data, isLoading, error } = useSimilarStocks(ticker);
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="skeleton h-44 rounded-xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (error || !data?.similar?.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Inga liknande aktier hittades för {ticker}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-[var(--color-text-muted)]">
+        {data.similar.length} aktier med liknande faktorsignatur — baserat på 8 faktorpoäng via cosinus-likhet
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {data.similar.map((item) => (
+          <SimilarStockCard key={item.ticker} item={item} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const SIGNAL_COLORS: Record<string, string> = {
+  STARK:      "bg-[var(--color-up-soft)] text-[var(--color-up)]",
+  OK:         "bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
+  VÄNTA:      "bg-[var(--color-warn-soft)] text-[var(--color-warn)]",
+  EJ_AKTUELL: "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]",
+};
+const SIGNAL_LABELS: Record<string, string> = {
+  STARK:      "Stark",
+  OK:         "OK",
+  VÄNTA:      "Avvakta",
+  EJ_AKTUELL: "Ej aktuell",
+};
+
+function SimilarStockCard({ item }: { item: SimilarStockItem }) {
+  const signal = item.entry_signal ?? "EJ_AKTUELL";
+  const colorClass = SIGNAL_COLORS[signal] ?? SIGNAL_COLORS["EJ_AKTUELL"];
+  const label = SIGNAL_LABELS[signal] ?? signal;
+
+  return (
+    <a
+      href={`/aktie/${item.ticker}`}
+      className="group block rounded-xl border p-4 bg-[var(--color-bg-surface)] border-[var(--color-border)] hover:border-[var(--color-accent)] hover:bg-[var(--color-bg-elevated)] transition-colors"
+    >
+      {/* Header: ticker + similarity score */}
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="min-w-0">
+          <div className="font-semibold text-sm text-[var(--color-text-primary)] truncate group-hover:text-[var(--color-accent)] transition-colors">
+            {item.ticker}
+          </div>
+          {item.name && (
+            <div className="text-xs text-[var(--color-text-muted)] truncate mt-0.5">
+              {item.name}
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-sm font-bold tabular text-[var(--color-accent)]">
+            {item.similarity_pct.toFixed(0)}%
+          </div>
+          <div className="text-[10px] text-[var(--color-text-muted)]">likhet</div>
+        </div>
+      </div>
+
+      {/* Score + sector */}
+      <div className="flex items-center gap-2 mb-3 min-w-0">
+        {item.score_total != null && (
+          <span className={cn("text-xs font-bold tabular shrink-0", scoreColorClass(item.score_total))}>
+            {formatScore(item.score_total)}/100
+          </span>
+        )}
+        {item.sector && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] truncate">
+            {item.sector}
+          </span>
+        )}
+      </div>
+
+      {/* Price + daily change */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-mono tabular text-[var(--color-text-primary)]">
+          {item.price != null ? formatPrice(item.price) : "—"}
+        </span>
+        {item.change_pct != null && (
+          <span className={cn(
+            "text-xs font-mono tabular",
+            item.change_pct >= 0 ? "text-[var(--color-up)]" : "text-[var(--color-down)]",
+          )}>
+            {item.change_pct >= 0 ? "+" : ""}{item.change_pct.toFixed(2)}%
+          </span>
+        )}
+      </div>
+
+      {/* Signal badge + AI-top badge */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded", colorClass)}>
+          {label}
+        </span>
+        {item.ml_rank != null && item.ml_rank >= 90 && (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+            AI top
+          </span>
+        )}
+      </div>
+    </a>
   );
 }
 

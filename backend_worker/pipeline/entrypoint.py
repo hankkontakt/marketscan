@@ -303,6 +303,15 @@ def run(mode: str) -> None:
                 # R2 upload is non-fatal — missing creds or network error
                 # should never kill the pipeline that already loaded Supabase.
                 logger.warning("R2 upload skipped (non-fatal): %s", r2_exc)
+
+            # Log ML predictions to prediction_outcomes for outcome tracking
+            # (grunden för "AI lär sig av sina fel" + AI-prestanda-dashboard)
+            try:
+                from backend_worker.outcome_filler import log_predictions
+                n_logged = log_predictions(result, dsn)
+                logger.info("Logged %d ML predictions to prediction_outcomes", n_logged)
+            except Exception as po_exc:
+                logger.warning("ML prediction logging failed (non-fatal): %s", po_exc)
         else:
             logger.warning("No scored data to load into scan_results")
 

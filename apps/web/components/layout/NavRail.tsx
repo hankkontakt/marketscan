@@ -17,6 +17,9 @@ import {
   Shield,
   FlaskConical,
   Activity,
+  Brain,
+  Eye,
+  Newspaper,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -31,6 +34,8 @@ const NAV_ITEMS = [
   { href: "/bevakningar",      icon: Star,            label: "Bevakningar" },
   { href: "/strategi-lab",     icon: FlaskConical,    label: "Strategi Lab" },
   { href: "/signal-analytics", icon: Activity,        label: "Signalanalys" },
+  { href: "/insider-radar",    icon: Eye,             label: "Insider Radar" },
+  { href: "/daglig-briefing",  icon: Newspaper,       label: "Daglig Briefing" },
 ] as const;
 
 const BOTTOM_ITEMS = [
@@ -112,29 +117,52 @@ export function NavRail() {
           );
         })}
 
-        {/* Admin link — only visible for admin users */}
+        {/* Admin links — only visible for admin users */}
         {isAdmin && (
-          <Link
-            href="/kontrollpanel"
-            title="Kontrollpanel"
-            className={cn(
-              "group relative flex items-center justify-center w-10 h-10 rounded-xl transition-colors",
-              pathname.startsWith("/kontrollpanel")
-                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)]",
-            )}
-            aria-current={pathname.startsWith("/kontrollpanel") ? "page" : undefined}
-          >
-            {pathname.startsWith("/kontrollpanel") && (
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r bg-[var(--color-accent)]" />
-            )}
-            <Shield size={18} strokeWidth={1.5} />
-            <span className="absolute left-12 px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap
-                             pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50
-                             shadow-lg bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-strong)]">
-              Kontrollpanel
-            </span>
-          </Link>
+          <>
+            <Link
+              href="/kontrollpanel"
+              title="Kontrollpanel"
+              className={cn(
+                "group relative flex items-center justify-center w-10 h-10 rounded-xl transition-colors",
+                pathname.startsWith("/kontrollpanel")
+                  ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)]",
+              )}
+              aria-current={pathname.startsWith("/kontrollpanel") ? "page" : undefined}
+            >
+              {pathname.startsWith("/kontrollpanel") && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r bg-[var(--color-accent)]" />
+              )}
+              <Shield size={18} strokeWidth={1.5} />
+              <span className="absolute left-12 px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap
+                               pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50
+                               shadow-lg bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-strong)]">
+                Kontrollpanel
+              </span>
+            </Link>
+            <Link
+              href="/ai-prestanda"
+              title="AI-prestanda"
+              className={cn(
+                "group relative flex items-center justify-center w-10 h-10 rounded-xl transition-colors",
+                pathname.startsWith("/ai-prestanda")
+                  ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)]",
+              )}
+              aria-current={pathname.startsWith("/ai-prestanda") ? "page" : undefined}
+            >
+              {pathname.startsWith("/ai-prestanda") && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r bg-[var(--color-accent)]" />
+              )}
+              <Brain size={18} strokeWidth={1.5} />
+              <span className="absolute left-12 px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap
+                               pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50
+                               shadow-lg bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-strong)]">
+                AI-prestanda
+              </span>
+            </Link>
+          </>
         )}
       </div>
 

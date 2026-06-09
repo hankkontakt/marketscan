@@ -812,6 +812,8 @@ class SimilarStockOut(BaseModel):
     similarity_pct: float
     price: float | None = None
     change_pct: float | None = None
+    entry_signal: str | None = None
+    ml_rank: float | None = None
 
 
 class SimilarStocksResponse(BaseModel):
@@ -820,65 +822,101 @@ class SimilarStocksResponse(BaseModel):
 
 
 @router.get("/{ticker}/similar", response_model=SimilarStocksResponse)
-def get_similar_stocks(ticker: str, limit: int = 6, sb=Depends(get_supabase)):
-    """Find stocks with similar factor profiles using cosine similarity.
+def get_similar_stocks(ticker: str, limit: int = 8, sb=Depends(get_supabase)):
+    """Hitta aktier med liknande faktor-profil via cosinus-likhet.
 
-    Compares the target ticker's score vector against the universe.
-    Returns top-N most similar (excluding self), preferring same/near sector.
+    Feature-vektor: 8 faktor-delscorer (value, quality, momentum, growth,
+    risk, size, dividend, sentiment). Normaliseras till enhetsvektor.
+
+    Filtrering:
+      - Uteslut low_liquidity-aktier (svårhandlade)
+      - Uteslut EJ_AKTUELL (ingen köpsignal)
+      - score_total >= 25 (undvik skräp)
+
+    Rankning:
+      - Cosinus-likhet (primär)
+      - Sektor-boost: +8% för samma sektor (bättre peers i samma bransch)
+      - "Liknande men bättre": aktier med > target score_total
+        lyfts med en liten bonus (+3%)
+
+    Returns top-N mest liknande (exkl. sig själv).
     """
     t = _validate_ticker(ticker)
 
-    # Get target stock
-    target = sb.table("scan_results").select(
+    # Hämta målaktie
+    target_res = sb.table("scan_results").select(
         "ticker,name,score_total,score_value,score_quality,score_momentum,"
-        "score_growth,score_risk,score_dividend,score_sentiment,sector,price,change_pct"
+        "score_growth,score_risk,score_size,score_dividend,score_sentiment,"
+        "sector,entry_signal,low_liquidity,price,change_pct,ml_rank"
     ).eq("ticker", t).maybe_single().execute()
 
-    if not target.data:
+    if not target_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte i universum")
 
-    # Build target vector
-    target_fields = ["score_value", "score_quality", "score_momentum", "score_growth", "score_risk", "score_dividend", "score_sentiment"]
-    tv = [float(target.data.get(f, 0) or 0) for f in target_fields]
+    tgt = target_res.data
+    FACTOR_FIELDS = [
+        "score_value", "score_quality", "score_momentum", "score_growth",
+        "score_risk", "score_size", "score_dividend", "score_sentiment",
+    ]
+
+    # Bygg målvektor och normera till enhet
+    tv = [float(tgt.get(f) or 0) for f in FACTOR_FIELDS]
     tv_norm = sum(v * v for v in tv) ** 0.5
-    if tv_norm == 0:
+    if tv_norm < 1.0:
+        # Nollvektor — ingen data, returnera tomt svar
         return SimilarStocksResponse(ticker=ticker, similar=[])
 
-    target_sector = target.data.get("sector", "")
+    target_sector = tgt.get("sector") or ""
+    target_score  = float(tgt.get("score_total") or 50)
 
-    # Get all universe stocks
-    all_stocks = sb.table("scan_results").select(
+    # Hämta universum — filtrera direkt i DB
+    all_res = sb.table("scan_results").select(
         "ticker,name,score_total,score_value,score_quality,score_momentum,"
-        "score_growth,score_risk,score_dividend,score_sentiment,sector,price,change_pct"
-    ).neq("ticker", t).limit(200).execute()
+        "score_growth,score_risk,score_size,score_dividend,score_sentiment,"
+        "sector,entry_signal,low_liquidity,price,change_pct,ml_rank"
+    ).neq("ticker", t).neq(
+        "entry_signal", "EJ_AKTUELL"
+    ).eq(
+        "low_liquidity", False
+    ).gte("score_total", 25).limit(1000).execute()
 
-    rows = all_stocks.data or []
+    rows = all_res.data or []
     scored: list[tuple[float, dict]] = []
 
     for row in rows:
-        rv = [float(row.get(f, 0) or 0) for f in target_fields]
+        rv = [float(row.get(f) or 0) for f in FACTOR_FIELDS]
         rv_norm = sum(v * v for v in rv) ** 0.5
-        if rv_norm == 0:
+        if rv_norm < 1.0:
             continue
-        # Cosine similarity
+
+        # Cosinus-likhet
         dot = sum(a * b for a, b in zip(tv, rv))
         sim = dot / (tv_norm * rv_norm)
-        # Boost same-sector by 10%
-        if row.get("sector") and target_sector and row["sector"] == target_sector:
-            sim *= 1.1
+
+        # Sektor-boost: aktier i samma sektor är verkliga peers
+        if target_sector and row.get("sector") == target_sector:
+            sim *= 1.08
+
+        # "Liknande men bättre"-bonus: betonar aktier med bättre total-score
+        row_score = float(row.get("score_total") or 50)
+        if row_score > target_score:
+            sim *= 1.03
+
         scored.append((sim, row))
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
     similar = [
         SimilarStockOut(
-            ticker=r["ticker"],
-            name=r.get("name"),
-            score_total=r.get("score_total"),
-            sector=r.get("sector"),
-            similarity_pct=round(sim * 100, 0),
-            price=r.get("price"),
-            change_pct=r.get("change_pct"),
+            ticker          = r["ticker"],
+            name            = r.get("name"),
+            score_total     = r.get("score_total"),
+            sector          = r.get("sector"),
+            similarity_pct  = round(min(sim * 100, 100.0), 1),
+            price           = r.get("price"),
+            change_pct      = r.get("change_pct"),
+            entry_signal    = r.get("entry_signal"),
+            ml_rank         = r.get("ml_rank"),
         )
         for sim, r in scored[:limit]
     ]
