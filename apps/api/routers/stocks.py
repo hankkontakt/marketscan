@@ -858,13 +858,7 @@ def get_similar_stocks(ticker: str, limit: int = 8, sb=Depends(get_supabase)):
         "score_value", "score_quality", "score_momentum", "score_growth",
         "score_risk", "score_size", "score_dividend", "score_sentiment",
     ]
-
-    # Bygg målvektor och normera till enhet
-    tv = [float(tgt.get(f) or 0) for f in FACTOR_FIELDS]
-    tv_norm = sum(v * v for v in tv) ** 0.5
-    if tv_norm < 1.0:
-        # Nollvektor — ingen data, returnera tomt svar
-        return SimilarStocksResponse(ticker=ticker, similar=[])
+    N = len(FACTOR_FIELDS)
 
     target_sector = tgt.get("sector") or ""
     target_score  = float(tgt.get("score_total") or 50)
@@ -881,23 +875,59 @@ def get_similar_stocks(ticker: str, limit: int = 8, sb=Depends(get_supabase)):
     ).gte("score_total", 25).limit(1000).execute()
 
     rows = all_res.data or []
-    scored: list[tuple[float, dict]] = []
 
+    # ── Z-score-normalisera mot universumets medel/std ────────────────────────
+    # Cosinus-likhet på råa 0-100-scores ger ~1.0 för alla aktier (alla
+    # vektorer pekar åt samma håll). Z-score-normalisering centrerar och
+    # skalar varje feature → vektorer med olika profil pekar åt olika håll.
+    raw_vecs: list[list[float]] = []
+    valid_rows: list[dict] = []
     for row in rows:
         rv = [float(row.get(f) or 0) for f in FACTOR_FIELDS]
-        rv_norm = sum(v * v for v in rv) ** 0.5
-        if rv_norm < 1.0:
+        if sum(v * v for v in rv) ** 0.5 >= 1.0:
+            raw_vecs.append(rv)
+            valid_rows.append(row)
+
+    if not valid_rows:
+        return SimilarStocksResponse(ticker=ticker, similar=[])
+
+    # Beräkna per-feature medel och std över universumet
+    means = [sum(v[i] for v in raw_vecs) / len(raw_vecs) for i in range(N)]
+    stds  = [
+        max((sum((v[i] - means[i]) ** 2 for v in raw_vecs) / len(raw_vecs)) ** 0.5, 1e-6)
+        for i in range(N)
+    ]
+
+    def _zscore(vec: list[float]) -> list[float]:
+        return [(vec[i] - means[i]) / stds[i] for i in range(N)]
+
+    def _norm(vec: list[float]) -> float:
+        return sum(v * v for v in vec) ** 0.5
+
+    # Z-score-normalisera målvektorn
+    tv_raw = [float(tgt.get(f) or 0) for f in FACTOR_FIELDS]
+    tv_z   = _zscore(tv_raw)
+    tv_z_n = _norm(tv_z)
+    if tv_z_n < 1e-9:
+        return SimilarStocksResponse(ticker=ticker, similar=[])
+
+    scored: list[tuple[float, dict]] = []
+    for row, rv_raw in zip(valid_rows, raw_vecs):
+        rv_z   = _zscore(rv_raw)
+        rv_z_n = _norm(rv_z)
+        if rv_z_n < 1e-9:
             continue
 
-        # Cosinus-likhet
-        dot = sum(a * b for a, b in zip(tv, rv))
-        sim = dot / (tv_norm * rv_norm)
+        # Cosinus-likhet på z-normaliserade vektorer (Pearson-korrelation)
+        dot = sum(a * b for a, b in zip(tv_z, rv_z))
+        sim = dot / (tv_z_n * rv_z_n)
+        sim = max(0.0, sim)  # klipp negativa (motsatt profil → 0%)
 
         # Sektor-boost: aktier i samma sektor är verkliga peers
         if target_sector and row.get("sector") == target_sector:
             sim *= 1.08
 
-        # "Liknande men bättre"-bonus: betonar aktier med bättre total-score
+        # "Liknande men bättre"-bonus
         row_score = float(row.get("score_total") or 50)
         if row_score > target_score:
             sim *= 1.03
