@@ -51,9 +51,12 @@ def _fetch_one(client: httpx.Client, ticker: str) -> dict | None:
         if price is None:
             return None
         prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+        # change_pct is a FRACTION (0.0085 == 0.85%) — the frontend formats it
+        # with Intl percent style, which multiplies by 100. Returning a percent
+        # here (0.85) would render as 85%.
         change_pct = None
         if prev:
-            change_pct = round((float(price) - float(prev)) / float(prev) * 100, 2)
+            change_pct = round((float(price) - float(prev)) / float(prev), 4)
         return {"price": round(float(price), 2), "change_pct": change_pct}
     except Exception as e:
         logger.debug("price %s failed: %s", ticker, e)
