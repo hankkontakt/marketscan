@@ -1,4 +1,3 @@
-import { NavRail } from "@/components/layout/NavRail";
 import { TopBar } from "@/components/layout/TopBar";
 import { CommandPalette } from "@/components/command/CommandPalette";
 import { ExperienceProvider } from "@/components/providers/ExperienceProvider";
@@ -8,7 +7,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <ExperienceProvider>
       <div className="app-layout">
-        <NavRail />
         <TopBar />
         <main className="app-main">
           {children}

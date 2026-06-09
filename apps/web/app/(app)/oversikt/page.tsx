@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { OversiktView } from "./OversiktView";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Översikt" };
-
+/** /oversikt → Daglig Briefing är nu startsidan */
 export default function OversiktPage() {
-  return <OversiktView />;
+  redirect("/daglig-briefing");
 }
