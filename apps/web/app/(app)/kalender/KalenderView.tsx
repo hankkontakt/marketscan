@@ -230,28 +230,34 @@ export function KalenderView() {
         </button>
       </div>
 
-      {/* Legend — click to toggle event types */}
-      <div className="flex flex-wrap gap-2 text-[11px]">
+      {/* Legend + type toggles */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {EVENT_TYPES.map((et) => {
           const hidden = hiddenTypes.has(et.key);
           return (
             <button
               key={et.key}
               onClick={() => toggleType(et.key)}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors",
-                hidden
-                  ? "border-[var(--color-border)] text-[var(--color-text-muted)] bg-transparent opacity-50"
-                  : "border-transparent text-[var(--color-text-secondary)] bg-[var(--color-bg-elevated)]",
-              )}
+              className="flex items-center gap-2 group"
               title={hidden ? `Visa ${et.label}` : `Dölj ${et.label}`}
             >
-              <span
-                className="w-2 h-2 rounded-full transition-opacity"
-                style={{ background: hidden ? "var(--color-text-muted)" : et.color }}
-              />
-              {et.label}
-              {hidden && <span className="text-[9px] opacity-60">av</span>}
+              {/* Toggle pill */}
+              <span className={cn(
+                "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
+                hidden ? "bg-[var(--color-bg-elevated)] border border-[var(--color-border)]" : "bg-[var(--color-accent)]/20 border border-[var(--color-accent)]/30",
+              )}>
+                <span className={cn(
+                  "inline-block h-3 w-3 rounded-full transition-transform shadow-sm",
+                  hidden ? "translate-x-0.5 bg-[var(--color-text-muted)]" : "translate-x-3.5",
+                )} style={{ background: hidden ? undefined : et.color }} />
+              </span>
+              <span className={cn(
+                "flex items-center gap-1.5 text-[11px] transition-opacity",
+                hidden ? "opacity-40" : "text-[var(--color-text-secondary)]",
+              )}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: hidden ? "var(--color-text-muted)" : et.color }} />
+                {et.label}
+              </span>
             </button>
           );
         })}
