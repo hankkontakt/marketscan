@@ -45,5 +45,7 @@ jobs:
           fi
           python -m backend_worker.company_info_fetcher $TICKER_ARG
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL:    ${{ secrets.DATABASE_URL }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          FMP_API_KEY:     ${{ secrets.FMP_API_KEY }}
           PYTHONPATH: "."
