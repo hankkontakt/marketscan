@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Briefcase, TrendingUp, TrendingDown, Minus, Plus, X, Check } from "lucide-react";
+import { Star, TrendingUp, TrendingDown, Minus, Plus, X, Check } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
@@ -22,6 +22,20 @@ export function VerdictHeader({ stock }: Props) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [shares, setShares] = useState("");
   const [costBasis, setCostBasis] = useState("");
+
+  // Fallback: if scan_results.price is null (pipeline hasn't updated yet),
+  // use the most recent candle close from price history
+  const needsPriceFallback = stock.price == null;
+  const { data: priceHistory } = useQuery<{ candles: { close: number; time: number }[] }>({
+    queryKey: ["price-history", stock.ticker],
+    queryFn: () => api(`/api/stocks/${stock.ticker}/price-history`),
+    staleTime: 5 * 60_000,
+    enabled: needsPriceFallback,
+  });
+  const fallbackPrice = needsPriceFallback && priceHistory?.candles?.length
+    ? priceHistory.candles[priceHistory.candles.length - 1].close
+    : null;
+  const displayPrice = stock.price ?? fallbackPrice;
 
   const TrendIcon =
     stock.trend_signal === "Upptrend" ? TrendingUp :
@@ -130,11 +144,15 @@ export function VerdictHeader({ stock }: Props) {
         {/* Price */}
         <div className="flex flex-col items-end gap-1">
           <span className="font-mono tabular text-2xl font-bold text-[var(--color-text-primary)]">
-            {formatPrice(stock.price)}
+            {formatPrice(displayPrice)}
           </span>
-          <span className={cn("font-mono tabular text-sm font-medium", changeClass(stock.change_pct))}>
-            {formatPctChange(stock.change_pct)} idag
-          </span>
+          {stock.change_pct != null ? (
+            <span className={cn("font-mono tabular text-sm font-medium", changeClass(stock.change_pct))}>
+              {formatPctChange(stock.change_pct)} idag
+            </span>
+          ) : fallbackPrice != null ? (
+            <span className="text-xs text-[var(--color-text-muted)]">senaste stängning</span>
+          ) : null}
         </div>
       </div>
 

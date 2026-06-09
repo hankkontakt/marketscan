@@ -4,7 +4,17 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Users, Brain, TrendingUp, BarChart2, AlertCircle, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import type { ScanRow } from "@/types/scan";
+
+/** Strip markdown bold/italic/header formatting so raw AI text renders cleanly. */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")   // **bold** → bold
+    .replace(/\*(.+?)\*/g, "$1")        // *italic* → italic
+    .replace(/^#{1,3}\s+/gm, "")        // ## Heading → Heading
+    .trim();
+}
 
 interface CommitteeResult {
   ticker: string;
@@ -103,16 +113,19 @@ export function AnalysCommittee({ stock }: Props) {
         <AnalystCard
           icon={TrendingUp}
           name="Teknisk analytiker"
+          tooltip="Analyserar kursutveckling, volymmönster och tekniska indikatorer som RSI, MACD och glidande medelvärden (MA50/MA200). Identifierar trender, stöd- och motståndsnivåer samt om aktien är överköpt eller översåld."
           analysis={analysts.teknisk.analysis}
         />
         <AnalystCard
           icon={BarChart2}
           name="Fundamental analytiker"
+          tooltip="Granskar bolagets finanser: P/E-tal, ROE, skuldsättning, marginaler och tillväxt. Bedömer om aktien är rimligt värderad relativt sin historik och bransch. Piotroski F-score (0–9) mäter finansiell hälsa."
           analysis={analysts.fundamental.analysis}
         />
         <AnalystCard
           icon={Users}
           name="Sentimentanalytiker"
+          tooltip="Bedömer marknadssentiment, nyhetsflöde och analytikerkonsensus. Tittar på sektorstyrka relativt index, marknadsregim (bull/bear) och identifierar katalysatorer och stämningsförändringar."
           analysis={analysts.sentiment.analysis}
         />
       </div>
@@ -133,24 +146,28 @@ export function AnalysCommittee({ stock }: Props) {
   );
 }
 
-function AnalystCard({ icon: Icon, name, analysis }: {
+function AnalystCard({ icon: Icon, name, tooltip, analysis }: {
   icon: React.ElementType;
   name: string;
+  tooltip: string;
   analysis: string;
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  // Extract short verdict (first line or **text**) and detailed analysis
+  // Extract short verdict (first **bold** block) and the rest as detail
   const shortMatch = analysis.match(/^\*\*(.+?)\*\*/);
   const shortVerdict = shortMatch ? shortMatch[1] : "";
   const detailStart = shortMatch ? analysis.indexOf(shortMatch[0]) + shortMatch[0].length : 0;
-  const detailText = detailStart > 0 ? analysis.slice(detailStart).trim() : analysis;
+  const rawDetail = detailStart > 0 ? analysis.slice(detailStart).trim() : analysis;
+  // Strip remaining markdown so text reads naturally (no **Motivering:** etc.)
+  const detailText = stripMarkdown(rawDetail);
 
   return (
     <div className="rounded-xl p-4 border space-y-3 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-      <div className="flex items-center gap-2">
-        <Icon size={14} strokeWidth={1.5} />
+      <div className="flex items-center gap-1.5">
+        <Icon size={14} strokeWidth={1.5} className="text-[var(--color-text-muted)]" />
         <span className="text-xs font-medium text-[var(--color-text-secondary)]">{name}</span>
+        <InfoTooltip text={tooltip} side="top" />
       </div>
 
       {/* Short verdict — always visible */}

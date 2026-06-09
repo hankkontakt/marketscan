@@ -240,29 +240,6 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
         </div>
       )}
 
-      {/* Sammanfattning (U-10: döpte om från "AI-sammanfattning" — detta är en mall, inte AI) */}
-      {stock.score_total != null && (
-        <div className="xl:col-span-3 rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-          <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            <strong className={scoreColorClass(stock.score_total)}>
-              {stock.name}
-            </strong>{" "}
-            har ett Totalbetyg på{" "}
-            <strong className={scoreColorClass(stock.score_total)}>
-              {formatScore(stock.score_total)}/100
-            </strong>
-            {stock.entry_signal === "STARK" && " och befinner sig i ett starkt köpläge"}
-            {stock.entry_signal === "OK" && " och befinner sig i ett bra läge"}
-            {stock.entry_signal === "VÄNTA" && " — systemet rekommenderar att avvakta"}
-            {". "}
-            {stock.trend_signal === "Upptrend" && "Aktien är i upptrend. "}
-            {stock.trend_signal === "Nedtrend" && "Aktien är i nedtrend. "}
-            {stock.piotroski_f != null && `Finansiell styrka (Piotroski F): ${stock.piotroski_f}/9. `}
-            {stock.predicted_return != null &&
-              `AI-prognos 30 dagar: ${stock.predicted_return > 0 ? "+" : ""}${(stock.predicted_return*100).toFixed(1)}%.`}
-          </p>
-        </div>
-      )}
     </div>
   );
 }
