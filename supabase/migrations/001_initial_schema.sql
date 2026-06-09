@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS saved_screens (
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  run_type    TEXT        NOT NULL CHECK (run_type IN ('morning','evening','weekly','manual')),
+  run_type    TEXT        NOT NULL CHECK (run_type IN ('morning','evening','weekly','manual','smallcap','targeted','refresh_missing','retry_rate_limited')),
   status      TEXT        NOT NULL CHECK (status IN ('running','success','failed')),
   tickers_ok  INTEGER,
   tickers_err INTEGER,
