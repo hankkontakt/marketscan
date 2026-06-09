@@ -37,9 +37,20 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
 -- ── Härda de 3 tabellerna UTAN RLS ──────────────────────────────────────────
 -- Dessa har ingen RLS, så GRANT är enda skyddet. Användare får ALDRIG skriva
 -- till dem — det görs av pipelinen via service_role.
-REVOKE INSERT, UPDATE, DELETE ON public.scan_results  FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.ai_cache       FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.pipeline_runs  FROM anon, authenticated;
+-- Tål att en tabell saknas (alla migrationer är inte alltid körda): vi
+-- REVOKE:ar bara på tabeller som faktiskt finns, annars stoppar 42P01 skriptet.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['scan_results', 'ai_cache', 'pipeline_runs'] LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = t
+    ) THEN
+      EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON public.%I FROM anon, authenticated', t);
+    END IF;
+  END LOOP;
+END $$;
 
 -- ── Framtida tabeller ärver vettiga defaults ────────────────────────────────
 -- Så att nästa migration inte återskapar 42501-problemet.
