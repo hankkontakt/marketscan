@@ -1,5 +1,9 @@
 # MarketScan — Komplett systemdokumentation (AI-underhåll)
 
+> 🧭 **NY AI? Läs `docs/AI_GUIDE.md` FÖRST** — den är den operativa manualen (hur
+> du ska tänka, alla verktyg, buggmönster, vanliga uppgifter). Den här filen
+> (`SYSTEM_AI.md`) är referens-uppslagsverket: varje fil, funktion och dataflöde.
+>
 > **Underhållsprotokoll**: Uppdatera denna fil varje gång du ändrar kod, hittar en bugg,
 > eller upptäcker en förbättringsmöjlighet — även om det inte hör ihop med uppgiften du
 > arbetar med just nu. Lägg till under rätt sektion nedan.
