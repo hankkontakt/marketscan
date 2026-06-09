@@ -53,7 +53,7 @@ jobs:
       - name: Build training dataset
         working-directory: stock-scanner
         run: |
-          python -m scripts.build_ml_dataset --universe universe --years 3
+          python -m scripts.build_ml_dataset --universe universe --years 5
           echo "Dataset klar: $(du -sh data/ml/universe_training.parquet 2>/dev/null || echo 'ej hittad')"
 
       # ── Steg 2: Träna LightGBM-rankeraren ────────────────────────────────────
