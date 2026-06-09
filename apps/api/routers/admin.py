@@ -78,6 +78,7 @@ _WORKFLOW_INPUTS: dict[str, set[str]] = {
     "sector_rotation.yml":    set(),
     "options_scan.yml":       {"tickers"},
     "digest.yml":             {"dry_run"},
+    "company_profiles.yml":   {"ticker"},
 }
 
 
@@ -298,6 +299,66 @@ def list_workflows(user: User = Depends(require_admin)):
         {"workflow": wf, "inputs": sorted(inputs)}
         for wf, inputs in _WORKFLOW_INPUTS.items()
     ]
+
+
+@router.post("/setup/company-profiles")
+def setup_company_profiles(user: User = Depends(require_admin)):
+    """Create company_profiles table if it doesn't exist (migration 026).
+
+    Safe to call multiple times — uses CREATE TABLE IF NOT EXISTS.
+    Requires DATABASE_URL to be set (psycopg2 direct connection).
+    """
+    import os
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "DATABASE_URL saknas — kan inte skapa tabell",
+        )
+    try:
+        import psycopg2
+    except ImportError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "psycopg2 inte installerat på servern",
+        )
+
+    try:
+        conn = psycopg2.connect(dsn)
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS company_profiles (
+              ticker          TEXT        PRIMARY KEY,
+              description     TEXT,
+              employees       INTEGER,
+              website         TEXT,
+              industry        TEXT,
+              country         TEXT,
+              beta            NUMERIC(6,4),
+              week_52_high    NUMERIC(12,4),
+              week_52_low     NUMERIC(12,4),
+              updated_at      TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_company_profiles_updated
+              ON company_profiles (updated_at DESC)
+        """)
+        conn.commit()
+
+        # Check how many profiles already exist
+        cur.execute("SELECT COUNT(*) FROM company_profiles")
+        count = cur.fetchone()[0]
+        conn.close()
+
+        return {
+            "ok": True,
+            "message": f"Tabell company_profiles OK — {count} profiler i databasen",
+            "count": count,
+        }
+    except Exception as exc:
+        logger.error("setup_company_profiles failed: %s", exc)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Misslyckades: {exc}")
 
 
 @router.get("/pipeline/queue", response_model=list[PipelineQueueItem])

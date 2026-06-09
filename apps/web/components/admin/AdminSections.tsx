@@ -114,6 +114,8 @@ interface WorkflowDef {
   label: string;
   desc: string;
   inputs?: WorkflowInputDef[];
+  setupEndpoint?: string;  // optional one-click DB setup before triggering
+  setupLabel?: string;     // button label (default: "Konfigurera DB")
 }
 
 const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
@@ -187,6 +189,14 @@ const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
         desc: "Skickar daglig marknadssammanfattning via Resend",
         inputs: [{ key: "dry_run", label: "Testläge (skicka ej)", type: "toggle", defaultVal: "false" }],
       },
+      {
+        file: "company_profiles.yml",
+        label: "Bolagsprofiler",
+        desc: "Hämtar beskrivning, anställda, webb, 52v-intervall från yfinance/Finnhub/FMP",
+        inputs: [{ key: "ticker", label: "Enstaka ticker (tomt = alla)", type: "text", placeholder: "VOLV-B.ST (valfritt)" }],
+        setupEndpoint: "/api/admin/setup/company-profiles",
+        setupLabel: "Skapa tabell",
+      },
     ],
   },
 ];
@@ -202,6 +212,23 @@ export function PipelineSection() {
   const [wfState, setWfState] = useState<
     Record<string, { pending?: boolean; ok?: boolean; link?: string; error?: string }>
   >({});
+
+  // Per-workflow setup state (DB migration buttons)
+  const [setupState, setSetupState] = useState<
+    Record<string, { pending?: boolean; ok?: boolean; msg?: string; error?: string }>
+  >();
+
+  const runSetup = async (wf: WorkflowDef) => {
+    if (!wf.setupEndpoint) return;
+    setSetupState((s) => ({ ...s, [wf.file]: { pending: true } }));
+    try {
+      const res = await api<{ ok: boolean; message: string }>( wf.setupEndpoint, { method: "POST" });
+      setSetupState((s) => ({ ...s, [wf.file]: { ok: true, msg: res.message } }));
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Setup misslyckades";
+      setSetupState((s) => ({ ...s, [wf.file]: { error: msg } }));
+    }
+  };
 
   // Per-workflow input values (initialised with defaults)
   const [inputVals, setInputVals] = useState<Record<string, Record<string, string>>>(() => {
@@ -308,6 +335,45 @@ export function PipelineSection() {
                         {st.error}
                       </span>
                     )}
+
+                    {/* Setup button (only for workflows with setupEndpoint) */}
+                    {wf.setupEndpoint && (() => {
+                      const ss = setupState?.[wf.file] ?? {};
+                      return (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {ss.pending && (
+                            <span className="flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]">
+                              <Loader2 size={10} className="animate-spin" />
+                            </span>
+                          )}
+                          {!ss.pending && ss.ok && (
+                            <span className="flex items-center gap-1 text-[10px] text-[var(--color-up)]" title={ss.msg}>
+                              <CheckCircle2 size={10} />
+                              {ss.msg ?? "OK"}
+                            </span>
+                          )}
+                          {!ss.pending && ss.error && (
+                            <span className="text-[10px] text-[var(--color-down)] max-w-[140px] truncate" title={ss.error}>
+                              <XCircle size={10} className="inline mr-0.5" />
+                              {ss.error}
+                            </span>
+                          )}
+                          {!ss.ok && (
+                            <button
+                              onClick={() => runSetup(wf)}
+                              disabled={!!ss.pending}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                                         bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)]
+                                         border border-[var(--color-border)]
+                                         hover:bg-[var(--color-bg-elevated)]/80 transition-colors disabled:opacity-40"
+                            >
+                              <Database size={10} strokeWidth={1.5} />
+                              {wf.setupLabel ?? "Konfigurera DB"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <button
                       onClick={() => triggerWorkflow(wf)}
