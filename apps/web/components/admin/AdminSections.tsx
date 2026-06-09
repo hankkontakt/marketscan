@@ -192,10 +192,8 @@ const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
       {
         file: "company_profiles.yml",
         label: "Bolagsprofiler",
-        desc: "Hämtar beskrivning, anställda, webb, 52v-intervall från yfinance/Finnhub/FMP",
+        desc: "Skapar tabell + hämtar beskrivning, anställda, webb, 52v-intervall (yfinance/Finnhub/FMP)",
         inputs: [{ key: "ticker", label: "Enstaka ticker (tomt = alla)", type: "text", placeholder: "VOLV-B.ST (valfritt)" }],
-        setupEndpoint: "/api/admin/setup/company-profiles",
-        setupLabel: "Skapa tabell",
       },
     ],
   },

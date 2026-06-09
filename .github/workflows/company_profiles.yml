@@ -3,9 +3,10 @@ name: Company Profiles — refresh yfinance data
 # Fetches company descriptions, employees, website, 52-week range, beta
 # for all tickers in scan_results and upserts into company_profiles table.
 #
-# Runs weekly on Sundays (same day as ML training) or manually.
-# The pipeline entrypoint also calls this automatically after weekly/smallcap runs.
-# This workflow exists for manual refresh or if the pipeline is run in fast mode.
+# Step 1 automatically creates the table if it doesn't exist — no manual
+# SQL migration needed. Just click "Starta" from the admin panel.
+#
+# Runs weekly on Sundays or manually from the admin panel.
 
 on:
   schedule:
@@ -35,7 +36,51 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install yfinance psycopg2-binary
+        run: pip install psycopg2-binary yfinance
+
+      # ── Steg 1: Skapa tabell om den inte finns ───────────────────────────
+      # Körs varje gång (idempotent via IF NOT EXISTS).
+      # Ingen manuell SQL-migration behövs — detta är migrationen.
+
+      - name: Run migration — create company_profiles table
+        run: |
+          python - <<'EOF'
+          import os, psycopg2
+
+          dsn = os.environ["DATABASE_URL"]
+          conn = psycopg2.connect(dsn)
+          cur = conn.cursor()
+
+          cur.execute("""
+            CREATE TABLE IF NOT EXISTS company_profiles (
+              ticker          TEXT        PRIMARY KEY,
+              description     TEXT,
+              employees       INTEGER,
+              website         TEXT,
+              industry        TEXT,
+              country         TEXT,
+              beta            NUMERIC(6,4),
+              week_52_high    NUMERIC(12,4),
+              week_52_low     NUMERIC(12,4),
+              updated_at      TIMESTAMPTZ DEFAULT NOW()
+            )
+          """)
+          cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_company_profiles_updated
+              ON company_profiles (updated_at DESC)
+          """)
+          conn.commit()
+
+          cur.execute("SELECT COUNT(*) FROM company_profiles")
+          count = cur.fetchone()[0]
+          conn.close()
+
+          print(f"Migration OK — company_profiles table ready ({count} existing rows)")
+          EOF
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # ── Steg 2: Hämta bolagsprofiler ─────────────────────────────────────
 
       - name: Refresh company profiles
         run: |
