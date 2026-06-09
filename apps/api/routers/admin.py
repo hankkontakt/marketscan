@@ -79,6 +79,7 @@ _WORKFLOW_INPUTS: dict[str, set[str]] = {
     "options_scan.yml":       {"tickers"},
     "digest.yml":             {"dry_run"},
     "company_profiles.yml":   {"ticker"},
+    "insider_trades.yml":     {"ticker", "days"},
 }
 
 

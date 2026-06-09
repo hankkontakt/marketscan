@@ -167,6 +167,7 @@ export function DagligBriefingView() {
 
   // Data fetching
   const { data: starkStocks = [], isLoading: loadingStark } = useScreener({
+    segments: ["large_cap", "mid_cap", "small_cap", "micro_cap"],
     entry_signal: "STARK",
     limit: 8,
   });

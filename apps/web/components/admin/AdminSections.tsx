@@ -195,6 +195,15 @@ const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
         desc: "Skapar tabell + hämtar beskrivning, anställda, webb, 52v-intervall (yfinance/Finnhub/FMP)",
         inputs: [{ key: "ticker", label: "Enstaka ticker (tomt = alla)", type: "text", placeholder: "VOLV-B.ST (valfritt)" }],
       },
+      {
+        file: "insider_trades.yml",
+        label: "Insiderhandel",
+        desc: "Hämtar insiderköp/-sälj via Finnhub för alla aktier i scan_results",
+        inputs: [
+          { key: "ticker", label: "Enstaka ticker (tomt = alla)", type: "text", placeholder: "ERIC-B.ST (valfritt)" },
+          { key: "days", label: "Dagar bakåt", type: "text", placeholder: "90" },
+        ],
+      },
     ],
   },
 ];

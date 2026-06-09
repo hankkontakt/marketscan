@@ -11,6 +11,7 @@ Endpoints:
   GET    /api/score-history/movers   — top score movers over N days
 """
 import logging
+from datetime import date, timedelta
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
@@ -254,10 +255,14 @@ def get_score_movers(
     curr_map = {r["ticker"]: r for r in (curr_res.data or [])}
 
     # Previous scores from score_history
+    # Compute cutoff date in Python — PostgREST treats the filter value as a
+    # literal string, so SQL expressions like "(NOW() - INTERVAL '7 days')::date"
+    # would never match anything.
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
     prev_res = (
         sb.table("score_history")
         .select("ticker, score_total, scan_date")
-        .lte("scan_date", f"(NOW() - INTERVAL '{days} days')::date")
+        .lte("scan_date", cutoff)
         .order("ticker")
         .order("scan_date", desc=True)
         .limit(5000)

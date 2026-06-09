@@ -1,0 +1,91 @@
+name: Insider Trades — fetch via Finnhub
+
+# Fetches insider buy/sell transactions for all tickers in scan_results
+# and upserts them into the insider_trades table.
+#
+# Runs nightly at 03:30 UTC (after the main pipeline at 03:00) and can be
+# triggered manually from the admin panel or GitHub Actions UI.
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # Every day at 03:30 UTC, after main pipeline
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Single ticker to refresh (blank = all)"
+        type: string
+        default: ""
+      days:
+        description: "Lookback days (default: 90)"
+        type: string
+        default: "90"
+
+env:
+  TZ: "Europe/Stockholm"
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60   # ~1200 tickers × 1.1s ≈ 22 min; 60 min is a safe ceiling
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary
+
+      # ── Step 1: Ensure dedup constraint exists ─────────────────────────────
+      - name: Run migration — ensure unique constraint
+        run: |
+          python - <<'EOF'
+          import os, psycopg2
+
+          dsn = os.environ["DATABASE_URL"]
+          conn = psycopg2.connect(dsn)
+          cur = conn.cursor()
+
+          cur.execute("""
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'insider_trades_dedup_key'
+              ) THEN
+                ALTER TABLE insider_trades
+                  ADD CONSTRAINT insider_trades_dedup_key
+                  UNIQUE (ticker, name, trade_date, type);
+              END IF;
+            END
+            $$;
+          """)
+          conn.commit()
+
+          cur.execute("SELECT COUNT(*) FROM insider_trades")
+          count = cur.fetchone()[0]
+          conn.close()
+
+          print(f"Migration OK — insider_trades table ready ({count} existing rows)")
+          EOF
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # ── Step 2: Fetch insider trades ───────────────────────────────────────
+      - name: Fetch insider trades
+        run: |
+          EXTRA_ARGS=""
+          if [ -n "${{ github.event.inputs.ticker }}" ]; then
+            EXTRA_ARGS="--ticker ${{ github.event.inputs.ticker }}"
+          fi
+          DAYS="${{ github.event.inputs.days }}"
+          DAYS="${DAYS:-90}"
+          python -m backend_worker.insider_fetcher $EXTRA_ARGS --days "$DAYS"
+        env:
+          DATABASE_URL:    ${{ secrets.DATABASE_URL }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          PYTHONPATH: "."
