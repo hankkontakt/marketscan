@@ -1,36 +1,73 @@
 """
-Live price lookup for a set of tickers.
+Live price lookup for a set of tickers — httpx only.
 
-The pipeline currently leaves `scan_results.price` NULL, and even when it is
-populated it is a once-a-day snapshot. A portfolio should show the CURRENT
-market value, so we fetch live prices here via yfinance (already a dependency,
-used for the global indices). Swedish tickers like INVE-B.ST work directly.
+IMPORTANT: the API serverless bundle deliberately EXCLUDES yfinance/pandas
+(see apps/api/requirements.txt: "CRITICAL: NO pandas, xgboost, yfinance …").
+An earlier version imported yfinance and silently returned nothing in
+production (it only worked locally). This version uses Yahoo's public v8 chart
+endpoint over httpx — which IS in the bundle — so it works on Vercel.
+
+The pipeline leaves scan_results.price NULL, and even when populated it is a
+once-a-day snapshot, so the portfolio fetches current prices here.
 
 Design rules:
-  - Best-effort: NEVER raises. On any failure it returns a partial/empty dict,
-    so the portfolio still loads (prices just show "–" instead of breaking).
-  - Cached in-memory for 5 min to avoid hammering Yahoo on every page load.
-  - One batched yf.download call for all tickers (fast for a normal portfolio).
+  - Best-effort: NEVER raises. Returns a partial/empty dict on any failure, so
+    the portfolio still loads (prices just show "–").
+  - 5-min in-memory cache to avoid hammering Yahoo on every page load.
+  - A browser User-Agent is required or Yahoo returns 403/429.
 """
 from __future__ import annotations
 
 import logging
 import time
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL_S = 300
-_cache: dict[str, tuple[float, float]] = {}  # ticker -> (price, fetched_at)
+# ticker -> ({"price": float, "change_pct": float|None}, fetched_at)
+_cache: dict[str, tuple[dict, float]] = {}
+
+_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; MarketScan/1.0; +https://marketscan.app)"}
 
 
-def fetch_live_prices(tickers: list[str]) -> dict[str, float]:
-    """Return {ticker: latest_close} for as many tickers as we can resolve."""
+def _fetch_one(client: httpx.Client, ticker: str) -> dict | None:
+    """Latest price + day change for one ticker via Yahoo v8 chart.
+    Returns {"price", "change_pct"} or None on any failure."""
+    try:
+        r = client.get(
+            _CHART_URL.format(sym=ticker),
+            params={"range": "1d", "interval": "1d"},
+            headers=_HEADERS,
+            timeout=8.0,
+        )
+        if r.status_code != 200:
+            logger.debug("price %s: HTTP %s", ticker, r.status_code)
+            return None
+        meta = r.json()["chart"]["result"][0]["meta"]
+        price = meta.get("regularMarketPrice") or meta.get("previousClose")
+        if price is None:
+            return None
+        prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+        change_pct = None
+        if prev:
+            change_pct = round((float(price) - float(prev)) / float(prev) * 100, 2)
+        return {"price": round(float(price), 2), "change_pct": change_pct}
+    except Exception as e:
+        logger.debug("price %s failed: %s", ticker, e)
+        return None
+
+
+def fetch_live_quotes(tickers: list[str]) -> dict[str, dict]:
+    """Return {ticker: {"price", "change_pct"}} for resolvable tickers."""
     wanted = sorted({t for t in (tickers or []) if t})
     if not wanted:
         return {}
 
     now = time.time()
-    out: dict[str, float] = {}
+    out: dict[str, dict] = {}
     to_fetch: list[str] = []
     for t in wanted:
         hit = _cache.get(t)
@@ -39,31 +76,20 @@ def fetch_live_prices(tickers: list[str]) -> dict[str, float]:
         else:
             to_fetch.append(t)
 
-    if not to_fetch:
-        return out
-
-    try:
-        import yfinance as yf
-
-        df = yf.download(
-            to_fetch, period="2d", progress=False, threads=True, auto_adjust=True
-        )
-        if df is not None and not df.empty and "Close" in df:
-            close = df["Close"]
-            if hasattr(close, "columns"):  # multiple tickers -> DataFrame
+    if to_fetch:
+        try:
+            with httpx.Client() as client:
                 for t in to_fetch:
-                    if t in close.columns:
-                        series = close[t].dropna()
-                        if len(series):
-                            out[t] = round(float(series.iloc[-1]), 2)
-            else:  # single ticker -> Series
-                series = close.dropna()
-                if len(series):
-                    out[to_fetch[0]] = round(float(series.iloc[-1]), 2)
-    except Exception as e:  # network, yahoo change, missing lib — all non-fatal
-        logger.warning("Live price fetch failed for %s: %s", to_fetch, e)
+                    q = _fetch_one(client, t)
+                    if q is not None:
+                        out[t] = q
+                        _cache[t] = (q, now)
+        except Exception as e:  # client construction / unexpected — non-fatal
+            logger.warning("live price fetch failed: %s", e)
 
-    # cache whatever we got
-    for t, p in out.items():
-        _cache[t] = (p, now)
     return out
+
+
+def fetch_live_prices(tickers: list[str]) -> dict[str, float]:
+    """Return {ticker: latest_price} — convenience wrapper over fetch_live_quotes."""
+    return {t: q["price"] for t, q in fetch_live_quotes(tickers).items()}

@@ -51,19 +51,25 @@ def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_user_su
 
 
 def _fill_live_prices(items: list[dict]) -> None:
-    """Fill `price` in-place for items where it is missing/zero, via yfinance."""
+    """Fill `price` (and `change_pct` for the 'Idag' column) in-place for items
+    that are missing them, via the live Yahoo quote (httpx, in the API bundle)."""
     missing = [it["ticker"] for it in items if it.get("ticker") and not it.get("price")]
     if not missing:
         return
     try:
-        from apps.api.core.prices import fetch_live_prices
-        live = fetch_live_prices(missing)
+        from apps.api.core.prices import fetch_live_quotes
+        quotes = fetch_live_quotes(missing)
     except Exception as e:  # pragma: no cover — defensive
         logger.warning("live price enrichment skipped: %s", e)
         return
     for it in items:
-        if not it.get("price") and it.get("ticker") in live:
-            it["price"] = live[it["ticker"]]
+        q = quotes.get(it.get("ticker"))
+        if not q:
+            continue
+        if not it.get("price"):
+            it["price"] = q["price"]
+        if it.get("change_pct") is None and q.get("change_pct") is not None:
+            it["change_pct"] = q["change_pct"]
 
 
 @router.post("/holdings", response_model=HoldingOut, status_code=201)
