@@ -40,8 +40,30 @@ def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_user_su
 
     enrich_with_scan_data(holdings, sb)
 
+    # scan_results.price is currently NULL for every ticker (the pipeline does
+    # not populate it) and would be a stale daily snapshot even if it did. A
+    # portfolio should show the CURRENT market value, so fetch live prices for
+    # any holding still missing one. Best-effort — never breaks the response.
+    _fill_live_prices(holdings)
+
     portfolio["holdings"] = holdings
     return portfolio
+
+
+def _fill_live_prices(items: list[dict]) -> None:
+    """Fill `price` in-place for items where it is missing/zero, via yfinance."""
+    missing = [it["ticker"] for it in items if it.get("ticker") and not it.get("price")]
+    if not missing:
+        return
+    try:
+        from apps.api.core.prices import fetch_live_prices
+        live = fetch_live_prices(missing)
+    except Exception as e:  # pragma: no cover — defensive
+        logger.warning("live price enrichment skipped: %s", e)
+        return
+    for it in items:
+        if not it.get("price") and it.get("ticker") in live:
+            it["price"] = live[it["ticker"]]
 
 
 @router.post("/holdings", response_model=HoldingOut, status_code=201)
@@ -159,12 +181,21 @@ def get_portfolio_risk(
     scan = sb.table("scan_results").select("ticker,price,sector,score_total").in_("ticker", tickers).execute()
     scan_map = {r["ticker"]: r for r in (scan.data or [])}
 
+    # Live prices (scan_results.price is NULL); cached, shared with get_portfolio.
+    try:
+        from apps.api.core.prices import fetch_live_prices
+        live = fetch_live_prices(tickers)
+    except Exception:
+        live = {}
+
     total_value = 0.0
     sector_values: dict[str, float] = Counter()
     scores = []
     for h in items:
         info = scan_map.get(h["ticker"])
-        price = info.get("price") if info else h.get("cost_basis")
+        # Prefer live price → scan snapshot → cost basis, so value is never 0
+        # just because the pipeline didn't fill price.
+        price = live.get(h["ticker"]) or (info.get("price") if info else None) or h.get("cost_basis")
         if price is None:
             continue
         val = float(price) * float(h["shares"])
