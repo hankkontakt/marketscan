@@ -144,6 +144,41 @@ def remove_holding(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Innehavet hittades inte")
 
 
+@router.delete("/reset")
+def reset_portfolio(
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Empty the portfolio: delete ALL holdings, fund holdings and import
+    transactions for the current user. Irreversible. Returns counts removed."""
+    port = (
+        sb.table("portfolios").select("id").eq("user_id", user.id).limit(1).execute()
+    )
+    if not port.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
+    portfolio_id = port.data[0]["id"]
+
+    removed = {"holdings": 0, "funds": 0, "transactions": 0}
+
+    h = sb.table("holdings").delete().eq("portfolio_id", portfolio_id).execute()
+    removed["holdings"] = len(h.data or [])
+
+    # fund_holdings table may not exist if migration 022 wasn't run — tolerate it.
+    try:
+        f = sb.table("fund_holdings").delete().eq("portfolio_id", portfolio_id).execute()
+        removed["funds"] = len(f.data or [])
+    except Exception as e:
+        logger.debug("reset: fund_holdings delete skipped: %s", e)
+
+    try:
+        t = sb.table("transactions").delete().eq("portfolio_id", portfolio_id).execute()
+        removed["transactions"] = len(t.data or [])
+    except Exception as e:
+        logger.debug("reset: transactions delete skipped: %s", e)
+
+    return {"ok": True, "removed": removed}
+
+
 # ─── Portfolio risk ────────────────────────────────────────────────────────────
 
 

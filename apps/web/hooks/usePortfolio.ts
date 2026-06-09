@@ -208,3 +208,21 @@ export function useRemoveFundHolding() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["fund-holdings"] }),
   });
 }
+
+/** Empty the whole portfolio: all holdings, funds and import transactions. */
+export function useResetPortfolio() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<{ ok: boolean; removed: { holdings: number; funds: number; transactions: number } }>(
+        "/api/portfolio/reset",
+        { method: "DELETE" },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portfolio"] });
+      qc.invalidateQueries({ queryKey: ["fund-holdings"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["portfolio-risk"] });
+    },
+  });
+}

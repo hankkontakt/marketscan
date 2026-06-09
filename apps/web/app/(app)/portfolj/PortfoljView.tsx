@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check, TrendingUp, Building2, Target, Receipt, BarChart3, Upload, Download, AlertCircle, Loader2 } from "lucide-react";
-import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk, useTransactions, useTWR, useDeleteTransaction, useFundHoldings, useRemoveFundHolding, type FundHolding } from "@/hooks/usePortfolio";
+import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk, useTransactions, useTWR, useDeleteTransaction, useFundHoldings, useRemoveFundHolding, useResetPortfolio, type FundHolding } from "@/hooks/usePortfolio";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { ImportModal } from "@/components/portfolio/ImportModal";
@@ -22,7 +22,26 @@ export function PortfoljView() {
   const remove = useRemoveHolding();
   const removeFund = useRemoveFundHolding();
   const addHolding = useAddHolding();
+  const resetPortfolio = useResetPortfolio();
   const [tab, setTab] = useState<"aktier" | "fonder" | "total">("aktier");
+
+  function handleResetPortfolio() {
+    toast("Töm hela portföljen? Alla aktier, fonder och transaktioner raderas permanent.", {
+      duration: 8000,
+      action: {
+        label: "Töm allt",
+        onClick: () =>
+          resetPortfolio.mutate(undefined, {
+            onSuccess: (r) =>
+              toast.success(
+                `Portföljen tömd — ${r.removed.holdings} aktier, ${r.removed.funds} fonder borttagna.`,
+              ),
+            onError: (e) =>
+              toast.error(e instanceof Error ? e.message : "Kunde inte tömma portföljen"),
+          }),
+      },
+    });
+  }
   const [showAdd, setShowAdd] = useState(false);
   const [addTicker, setAddTicker] = useState("");
   const [addShares, setAddShares] = useState("");
@@ -131,6 +150,21 @@ export function PortfoljView() {
             <Plus size={14} strokeWidth={1.5} />
             Lägg till
           </button>
+          {(holdings.length > 0 || fundHoldings.length > 0) && (
+            <button
+              onClick={handleResetPortfolio}
+              disabled={resetPortfolio.isPending}
+              title="Ta bort alla aktier, fonder och transaktioner"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors
+                         bg-[var(--color-bg-surface)] text-[var(--color-down)] border-[var(--color-border)]
+                         hover:border-[var(--color-down)] disabled:opacity-50"
+            >
+              {resetPortfolio.isPending
+                ? <Loader2 size={14} strokeWidth={1.5} className="animate-spin" />
+                : <Trash2 size={14} strokeWidth={1.5} />}
+              Töm portfölj
+            </button>
+          )}
         </div>
       </div>
 
