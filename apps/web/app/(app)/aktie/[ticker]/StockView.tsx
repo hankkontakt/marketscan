@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
-import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
-import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski, useSimilarStocks, type SimilarStockItem } from "@/hooks/useStock";
+import { AlertTriangle, CheckCircle2, XCircle, Globe, Users, Building2, ChevronDown, ChevronUp } from "lucide-react";
+import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski, useSimilarStocks, useCompanyProfile, type SimilarStockItem, type CompanyProfile } from "@/hooks/useStock";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
@@ -131,6 +131,7 @@ export function StockView({ ticker }: Props) {
 
 function OverviewTab({ stock }: { stock: ScanRow }) {
   const { data: priceData, isLoading } = usePriceHistory(stock.ticker);
+  const { data: profile } = useCompanyProfile(stock.ticker);
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -232,6 +233,13 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
         </dl>
       </div>
 
+      {/* Company profile card — shown when yfinance data is available */}
+      {profile && (
+        <div className="xl:col-span-3">
+          <CompanyProfileCard profile={profile} currentPrice={stock.price} />
+        </div>
+      )}
+
       {/* Sammanfattning (U-10: döpte om från "AI-sammanfattning" — detta är en mall, inte AI) */}
       {stock.score_total != null && (
         <div className="xl:col-span-3 rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
@@ -253,6 +261,148 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
             {stock.predicted_return != null &&
               `AI-prognos 30 dagar: ${stock.predicted_return > 0 ? "+" : ""}${(stock.predicted_return*100).toFixed(1)}%.`}
           </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Company Profile Card ────────────────────────────────────────────────────
+
+const DESCRIPTION_PREVIEW_LENGTH = 320;
+
+function CompanyProfileCard({
+  profile,
+  currentPrice,
+}: {
+  profile: CompanyProfile;
+  currentPrice: number | null | undefined;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const desc = profile.description ?? "";
+  const isTruncated = desc.length > DESCRIPTION_PREVIEW_LENGTH;
+  const shownDesc = expanded || !isTruncated
+    ? desc
+    : desc.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd() + "…";
+
+  // 52-week range bar
+  const hi = profile.week_52_high;
+  const lo = profile.week_52_low;
+  const pct =
+    hi && lo && hi > lo && currentPrice != null
+      ? Math.max(0, Math.min(100, ((currentPrice - lo) / (hi - lo)) * 100))
+      : null;
+
+  return (
+    <div className="rounded-xl p-5 border bg-[var(--color-bg-surface)] border-[var(--color-border)] space-y-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">
+          Om bolaget
+        </h3>
+        <div className="flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
+          {profile.industry && (
+            <span className="flex items-center gap-1">
+              <Building2 size={11} />
+              {profile.industry}
+            </span>
+          )}
+          {profile.country && (
+            <span className="flex items-center gap-1">
+              <Globe size={11} />
+              {profile.country}
+            </span>
+          )}
+          {profile.employees != null && (
+            <span className="flex items-center gap-1">
+              <Users size={11} />
+              {profile.employees.toLocaleString("sv-SE")} anst.
+            </span>
+          )}
+          {profile.website && (
+            <a
+              href={profile.website.startsWith("http") ? profile.website : `https://${profile.website}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--color-accent)] hover:underline truncate max-w-[140px]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {profile.website.replace(/^https?:\/\/(www\.)?/, "")}
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Description */}
+      {desc && (
+        <div>
+          <p className="text-sm text-[var(--color-text-primary)] leading-relaxed">
+            {shownDesc}
+          </p>
+          {isTruncated && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-2 flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline"
+            >
+              {expanded ? (
+                <>Visa mindre <ChevronUp size={12} /></>
+              ) : (
+                <>Visa mer <ChevronDown size={12} /></>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 52-week range + meta grid */}
+      {(hi != null || lo != null || profile.beta != null) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[var(--color-border)]">
+          {/* 52-week range bar */}
+          {hi != null && lo != null && (
+            <div>
+              <div className="flex justify-between text-[10px] text-[var(--color-text-muted)] mb-1">
+                <span>52v låg: {lo.toFixed(2)}</span>
+                <span>52v hög: {hi.toFixed(2)}</span>
+              </div>
+              <div className="relative h-2 rounded-full bg-[var(--color-bg-elevated)] overflow-visible">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[var(--color-down)] via-[var(--color-warn)] to-[var(--color-up)]"
+                  style={{ width: "100%" }}
+                />
+                {pct != null && (
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 bg-white border-[var(--color-accent)] shadow"
+                    style={{ left: `calc(${pct}% - 6px)` }}
+                  />
+                )}
+              </div>
+              {currentPrice != null && (
+                <div className="text-center text-[10px] text-[var(--color-text-muted)] mt-1">
+                  Nuvarande: {currentPrice.toFixed(2)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Beta + updated_at */}
+          <div className="flex items-start gap-6 text-xs">
+            {profile.beta != null && (
+              <div>
+                <div className="text-[var(--color-text-muted)] mb-0.5 flex items-center gap-1">
+                  Beta
+                  <InfoTooltip text="Mäter aktiens rörlighet mot S&P 500. Beta > 1 rör sig mer än marknaden." side="top" />
+                </div>
+                <div className="font-mono font-semibold text-[var(--color-text-primary)]">
+                  {profile.beta.toFixed(2)}
+                </div>
+              </div>
+            )}
+            {profile.updated_at && (
+              <div className="text-[var(--color-text-muted)] text-[10px] self-end ml-auto">
+                Uppdaterad: {profile.updated_at.slice(0, 10)}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -83,6 +83,31 @@ export function usePiotroski(ticker: string, enabled = true) {
   });
 }
 
+// ── Company profile ───────────────────────────────────────────────────────────
+
+export interface CompanyProfile {
+  ticker: string;
+  description: string | null;
+  employees: number | null;
+  website: string | null;
+  industry: string | null;
+  country: string | null;
+  beta: number | null;
+  week_52_high: number | null;
+  week_52_low: number | null;
+  updated_at: string | null;
+}
+
+export function useCompanyProfile(ticker: string, enabled = true) {
+  return useQuery<CompanyProfile>({
+    queryKey: ["company-profile", ticker],
+    queryFn: () => api<CompanyProfile>(`/api/stocks/${ticker}/profile`),
+    staleTime: 60 * 60_000,   // 1 hour — updated weekly by pipeline
+    enabled: !!ticker && enabled,
+    retry: false,             // don't retry 404 — profile may not exist yet
+  });
+}
+
 // ── Similar stocks ────────────────────────────────────────────────────────────
 
 export interface SimilarStockItem {

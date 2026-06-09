@@ -332,6 +332,16 @@ def run(mode: str) -> None:
         except Exception as exc:
             logger.warning("User-ticker supplement failed (non-fatal): %s", exc)
 
+    # Refresh company profiles (description, employees, website, 52w range)
+    # Only on weekly/smallcap to avoid hammering yfinance on every morning run.
+    if not error_msg and mode in ("weekly", "smallcap"):
+        try:
+            from backend_worker.company_info_fetcher import fetch_and_store as _fetch_profiles
+            n_profiles = _fetch_profiles(dsn)
+            logger.info("Company profiles refreshed: %d updated", n_profiles)
+        except Exception as cp_exc:
+            logger.warning("Company profile refresh failed (non-fatal): %s", cp_exc)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

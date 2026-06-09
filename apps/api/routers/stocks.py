@@ -300,6 +300,30 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
     raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte")
 
 
+@router.get("/{ticker}/profile")
+async def get_company_profile(ticker: str, sb=Depends(get_supabase)):
+    """Company profile from yfinance: description, employees, website, 52-week range.
+
+    Data is fetched by backend_worker/company_info_fetcher.py during weekly
+    pipeline runs and cached in the company_profiles table.
+    Returns 404 if the profile has not been fetched yet.
+    """
+    t = _validate_ticker(ticker)
+    result = (
+        sb.table("company_profiles")
+        .select("*")
+        .eq("ticker", t)
+        .maybe_single()
+        .execute()
+    )
+    if result is None or not result.data:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"Ingen profilinformation tillgänglig för {ticker} ännu",
+        )
+    return result.data
+
+
 @router.get("/{ticker}/price-history", response_model=PriceHistoryOut)
 async def get_price_history(ticker: str, sb=Depends(get_supabase)):
     """OHLCV data from Finnhub API, with fallback to R2/DuckDB then mock data."""

@@ -1,0 +1,49 @@
+name: Company Profiles — refresh yfinance data
+
+# Fetches company descriptions, employees, website, 52-week range, beta
+# for all tickers in scan_results and upserts into company_profiles table.
+#
+# Runs weekly on Sundays (same day as ML training) or manually.
+# The pipeline entrypoint also calls this automatically after weekly/smallcap runs.
+# This workflow exists for manual refresh or if the pipeline is run in fast mode.
+
+on:
+  schedule:
+    - cron: "0 7 * * 0"   # Söndagar 07:00 UTC (after ML training at 06:00)
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Single ticker to refresh (blank = all)"
+        type: string
+        default: ""
+
+env:
+  TZ: "Europe/Stockholm"
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install yfinance psycopg2-binary
+
+      - name: Refresh company profiles
+        run: |
+          TICKER_ARG=""
+          if [ -n "${{ github.event.inputs.ticker }}" ]; then
+            TICKER_ARG="--ticker ${{ github.event.inputs.ticker }}"
+          fi
+          python -m backend_worker.company_info_fetcher $TICKER_ARG
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: "."
