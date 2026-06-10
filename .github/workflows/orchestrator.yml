@@ -11,6 +11,12 @@ name: Orchestrator (kör allt)
 #   - Nytt system = lägg till ETT steg i rätt fas (+ ev. migration som auto-appliceras).
 
 on:
+  schedule:
+    # Nattlig refresh kl 02:00 UTC (~03:00 vinter / 04:00 sommar, Stockholm).
+    # Vald för att inte krocka med pipeline.yml (05:15 / 17:30 / sön 07:00 UTC).
+    # Schemalagda körningar kör ALLTID 'refresh' (config-steget defaultar dit) —
+    # aldrig bootstrap/reset automatiskt.
+    - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
       mode:
