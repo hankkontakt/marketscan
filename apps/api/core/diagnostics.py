@@ -46,6 +46,8 @@ MIGRATION_MARKERS = {
     "030_doc_intelligence": "company_documents",
     "031_ml_uncertainty": "ml_uncertainty",
     "032_risk_profile": "user_risk_profiles",
+    "033_earnings_memos": "earnings_memos",
+    "034_notification_prefs": "notification_prefs",
 }
 
 # Env vars that must be present for core features to work, with the feature

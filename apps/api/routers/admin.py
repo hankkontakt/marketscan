@@ -76,6 +76,7 @@ _WORKFLOW_INPUTS: dict[str, set[str]] = {
     "ml_retrain.yml":         {"force_retrain"},          # NY 2026-06-09
     "fi_insider.yml":         {"days"},                   # NY 2026-06-09
     "doc_intelligence.yml":   {"days", "tickers"},        # NY 2026-06-09
+    "watchlist_alerts.yml":   {"dry_run"},                # NY 2026-06-10 (Spec 09)
     "universe_discovery.yml": set(),
     "smallcap_scan.yml":      set(),
     "sector_rotation.yml":    set(),

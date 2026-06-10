@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as Tabs from "@radix-ui/react-tabs";
-import { User, Palette, KeyRound, ShieldAlert, GraduationCap, TrendingUp } from "lucide-react";
+import { User, Palette, KeyRound, ShieldAlert, GraduationCap, TrendingUp, Bell } from "lucide-react";
 import { ProfileSection } from "@/components/settings/ProfileSection";
 import { ThemeSection } from "@/components/settings/ThemeSection";
 import { PasswordSection } from "@/components/settings/PasswordSection";
 import { AccountSection } from "@/components/settings/AccountSection";
 import { ExperienceSection } from "@/components/settings/ExperienceSection";
 import { RiskProfileSection } from "@/components/settings/RiskProfileSection";
+import { NotificationSection } from "@/components/settings/NotificationSection";
 
 // ─── Sektioner ─────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ const SECTIONS = [
   { id: "profil",    icon: User,          label: "Profil" },
   { id: "erfarenhet", icon: GraduationCap, label: "Erfarenhet" },
   { id: "riskprofil", icon: TrendingUp,   label: "Riskprofil" },
+  { id: "notiser",   icon: Bell,          label: "Notiser" },
   { id: "tema",      icon: Palette,       label: "Tema" },
   { id: "losenord",  icon: KeyRound,      label: "Lösenord" },
   { id: "konto",     icon: ShieldAlert,   label: "Konto" },
@@ -69,6 +71,7 @@ export function InstallningarView() {
         <Tabs.Content value="profil"><ProfileSection /></Tabs.Content>
         <Tabs.Content value="erfarenhet"><ExperienceSection /></Tabs.Content>
         <Tabs.Content value="riskprofil"><RiskProfileSection /></Tabs.Content>
+        <Tabs.Content value="notiser"><NotificationSection /></Tabs.Content>
         <Tabs.Content value="tema"><ThemeSection /></Tabs.Content>
         <Tabs.Content value="losenord"><PasswordSection /></Tabs.Content>
         <Tabs.Content value="konto"><AccountSection /></Tabs.Content>

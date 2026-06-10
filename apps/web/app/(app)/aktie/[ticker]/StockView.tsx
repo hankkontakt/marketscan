@@ -7,6 +7,7 @@ import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarni
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
+import { EarningsMemoCard } from "@/components/stock/EarningsMemoCard";
 import dynamic from "next/dynamic";
 
 const AnalysCommittee = dynamic(async () => {
@@ -756,6 +757,7 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
 function AITab({ stock }: { stock: ScanRow }) {
   return (
     <div className="space-y-4">
+      <EarningsMemoCard ticker={stock.ticker} />
       <div>
         <AnalysCommittee stock={stock} />
       </div>

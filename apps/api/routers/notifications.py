@@ -100,3 +100,36 @@ def _format_notification(n: dict) -> NotificationOut:
         read_at=n.get("read_at"),
         created_at=n.get("created_at", ""),
     )
+
+
+# ─── Notisinställningar (Spec 09) ─────────────────────────────────────────────
+
+class NotificationPrefs(BaseModel):
+    on_new_stark: bool = True
+    on_score_move: bool = True
+    on_insider_cluster: bool = True
+    on_mews_flag: bool = True
+    on_earnings_memo: bool = True
+    score_move_threshold: int = 15
+    email_enabled: bool = False
+
+
+@router.get("/prefs", response_model=NotificationPrefs)
+def get_prefs(user: User = Depends(get_current_user), sb=Depends(get_user_supabase)):
+    """Hämta egna notisinställningar (default om ingen rad finns)."""
+    res = sb.table("notification_prefs").select("*").eq("user_id", user.id).limit(1).execute()
+    if res.data:
+        return NotificationPrefs(**{k: v for k, v in res.data[0].items() if k in NotificationPrefs.model_fields})
+    return NotificationPrefs()
+
+
+@router.put("/prefs", response_model=NotificationPrefs)
+def update_prefs(
+    prefs: NotificationPrefs,
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Spara egna notisinställningar (upsert, RLS-skyddat)."""
+    payload = {"user_id": user.id, **prefs.model_dump()}
+    sb.table("notification_prefs").upsert(payload, on_conflict="user_id").execute()
+    return prefs

@@ -1,0 +1,46 @@
+name: Watchlist Alerts
+
+# Personliga notiser på användarnas watchlist/portfölj (Spec 09 + Insider Flash).
+# Körs nattligt efter pipeline + fi_insider, samt manuellt.
+
+on:
+  schedule:
+    - cron: "30 4 * * *"   # 04:30 UTC dagligen (efter pipeline 03:00 + fi_insider 03:40)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Torrkörning (skriver inga notiser)"
+        required: false
+        default: "false"
+        type: string
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "."
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+  RESEND_FROM: ${{ secrets.RESEND_FROM }}
+  APP_URL: ${{ secrets.APP_URL }}
+
+jobs:
+  watchlist-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend_worker/requirements.txt
+
+      - name: Run watchlist alerts
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python -m backend_worker.watchlist_alerts --dry-run
+          else
+            python -m backend_worker.watchlist_alerts
+          fi

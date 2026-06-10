@@ -401,6 +401,29 @@ async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabas
         return {"ticker": ticker, "history": history, "is_synthetic": True}
 
 
+@router.get("/{ticker}/earnings-memo")
+async def get_earnings_memo(ticker: str, sb=Depends(get_supabase)):
+    """Senaste AI-rapportmemot för en aktie (Spec 08). 404 om inget memo finns."""
+    t = _validate_ticker(ticker)
+    res = (
+        sb.table("earnings_memos")
+        .select("ticker, published_date, memo, created_at")
+        .eq("ticker", t)
+        .order("published_date", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Inget rapportmemo tillgängligt")
+    row = res.data[0]
+    return {
+        "ticker": row["ticker"],
+        "published_date": row.get("published_date"),
+        "created_at": row.get("created_at"),
+        "memo": row["memo"],
+    }
+
+
 @router.get("", response_model=list[StockSearchResult])
 def search_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
     """Quick search by ticker or name — used by ⌘K palette."""
