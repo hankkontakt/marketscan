@@ -1,29 +1,45 @@
 /**
- * Tracking-abstraktion. Just nu Umami self-hosted.
+ * Tracking-abstraktion. Lagrar events i Supabase via API:et.
  * Byta provider = byt implementering, behåll interface.
  *
- * Använd ALLTID EVENT-konstanterna, aldrig hårdkodade strängar.
+ * Fallback: loggar till console.log i dev.
  */
 type EventProps = Record<string, string | number | boolean>;
 
-declare global {
-  interface Window {
-    umami?: { track: (event: string, data?: EventProps) => void };
+const IS_DEV = typeof location !== "undefined" && location.hostname === "localhost";
+
+const QUEUE: Array<{ name: string; props?: EventProps }> = [];
+let flushing = false;
+
+async function flush() {
+  if (flushing || QUEUE.length === 0) return;
+  flushing = true;
+  const batch = QUEUE.splice(0);
+  try {
+    await fetch("/api/tracking/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events: batch }),
+    });
+  } catch {
+    // Silent — tracking får aldrig krascha appen
+  } finally {
+    flushing = false;
   }
 }
 
 export function trackEvent(name: string, props?: EventProps): void {
-  if (typeof window !== "undefined" && window.umami) {
-    window.umami.track(name, props);
+  if (IS_DEV) {
+    console.log("[tracking]", name, props);
   }
+  QUEUE.push({ name, props });
+  if (QUEUE.length >= 5) flush();
+  // Auto-flush efter 2 sekunder om inget händer
+  if (QUEUE.length === 1) setTimeout(flush, 2000);
 }
 
 export function trackPageView(url?: string): void {
-  if (typeof window !== "undefined" && window.umami) {
-    window.umami.track("pageview", {
-      url: url || window.location.pathname,
-    });
-  }
+  trackEvent("pageview", { url: url || (typeof location !== "undefined" ? location.pathname : "") });
 }
 
 export const EVENT = {

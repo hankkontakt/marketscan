@@ -23,6 +23,7 @@ from apps.api.routers import (
 )
 from apps.api.routers import risk, smart_alerts, strategy_lab, ml_performance
 from apps.api.routers import feedback as feedback_router
+from apps.api.routers import tracking as tracking_router
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -126,6 +127,7 @@ app.include_router(strategy_lab.router)    # /api/strategies, /api/signal-analyt
 app.include_router(ml_performance.router, prefix="/api")  # /api/ml-performance/* (admin-only)
 
 app.include_router(feedback_router.router)
+app.include_router(tracking_router.router)
 
 
 @app.get("/api/health")
