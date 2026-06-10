@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { usePortfolio, useRiskAnalytics } from "@/hooks/usePortfolio";
 import { useRiskProfile } from "@/hooks/useRiskProfile";
 import { useMacroRegime } from "@/hooks/useMarkets";
+import { MarkdownLite } from "@/components/ui/MarkdownLite";
 
 interface CoachResponse {
   briefing: string;
@@ -76,9 +77,10 @@ export function PortfolioCoachCard() {
         </div>
       ) : data?.briefing ? (
         <>
-          <p className="text-sm text-[var(--color-text-primary)] leading-relaxed whitespace-pre-line">
-            {data.briefing}
-          </p>
+          <MarkdownLite
+            text={data.briefing}
+            className="text-sm text-[var(--color-text-primary)] leading-relaxed"
+          />
           <p className="text-[11px] text-[var(--color-text-muted)] mt-3 flex items-start gap-1.5">
             <MessageSquare size={11} strokeWidth={1.5} className="mt-0.5 shrink-0" />
             {data.disclaimer}
