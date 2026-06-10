@@ -1,0 +1,323 @@
+name: Orchestrator (kör allt)
+
+# Kör HELA datakedjan i rätt ordning, feltolerant.
+#   mode=bootstrap → starta om från början: (auto-)migrationer, ev. reset av
+#                    derived-tabeller, full scan (weekly), bygg alla signaler.
+#   mode=refresh   → uppdatera på befintlig data (scan i upsert-läge) + alla signaler.
+# Designprinciper:
+#   - Varje steg har continue-on-error → ETT fel stänger aldrig av resten.
+#   - Endast 'scan' är kritiskt; failar det markeras körningen som failed på slutet.
+#   - Reset rör ALDRIG användardata (portföljer/watchlist/notiser/riskprofiler).
+#   - Nytt system = lägg till ETT steg i rätt fas (+ ev. migration som auto-appliceras).
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "bootstrap (från början) eller refresh (uppdatera)"
+        type: choice
+        options: ["refresh", "bootstrap"]
+        default: "refresh"
+      reset_data:
+        description: "Endast bootstrap: töm derived-tabeller först (rör ej användardata)"
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+      scan_mode:
+        description: "Override scan-läge (tomt = auto: bootstrap→weekly, refresh→evening)"
+        required: false
+        default: ""
+
+concurrency:
+  group: orchestrator
+  cancel-in-progress: false
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: ".:stock-scanner"
+  # Secrets — delas av alla steg
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+  RESEND_FROM: ${{ secrets.RESEND_FROM }}
+  APP_URL: ${{ secrets.APP_URL }}
+  R2_KEY_ID: ${{ secrets.R2_KEY_ID }}
+  R2_SECRET: ${{ secrets.R2_SECRET }}
+  R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+  R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
+jobs:
+  run-all:
+    name: "${{ github.event.inputs.mode || 'refresh' }} — kör allt"
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      # ── Setup ────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4   # marketscan i repo-roten
+
+      - uses: actions/checkout@v4   # stock-scanner (core/, scripts/) för scan
+        with:
+          repository: hankkontakt/stock-scanner
+          token: ${{ secrets.GH_CHECKOUT_TOKEN }}
+          path: stock-scanner
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          pip install -r backend_worker/requirements.txt
+          pip install -r stock-scanner/requirements.txt || true
+          pip install pdfplumber pypdf beautifulsoup4 lxml || true
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client || true
+
+      - name: Compute config
+        id: cfg
+        run: |
+          MODE="${{ github.event.inputs.mode || 'refresh' }}"
+          SCAN="${{ github.event.inputs.scan_mode }}"
+          if [ -z "$SCAN" ]; then
+            if [ "$MODE" = "bootstrap" ]; then SCAN="weekly"; else SCAN="evening"; fi
+          fi
+          echo "MODE=$MODE"   >> "$GITHUB_ENV"
+          echo "SCAN_MODE=$SCAN" >> "$GITHUB_ENV"
+          echo "RESET=${{ github.event.inputs.reset_data || 'false' }}" >> "$GITHUB_ENV"
+          echo "Läge=$MODE, scan=$SCAN, reset=${{ github.event.inputs.reset_data || 'false' }}"
+
+      - name: DB heartbeat
+        continue-on-error: true
+        run: |
+          curl -s -o /dev/null -w "%{http_code}\n" \
+            "$SUPABASE_URL/rest/v1/scan_results?select=count&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" || true
+
+      # ── Fas 0: schema (endast bootstrap) ─────────────────────────────────
+      - name: Apply migrations (bootstrap)
+        id: migrations
+        if: env.MODE == 'bootstrap'
+        continue-on-error: true
+        run: |
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo "── $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=0 -q -f "$f" 2>&1 | grep -vi "already exists" || true
+          done
+
+      - name: Reset derived tables (bootstrap + reset_data)
+        id: reset
+        if: env.MODE == 'bootstrap' && env.RESET == 'true'
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import os, psycopg2
+          # Derived/system-tabeller — ALDRIG användardata (portfolios, holdings,
+          # watchlist, transactions, notifications, alert_rules, user_risk_profiles,
+          # notification_prefs, saved_screens, price_alerts, fund_holdings) och
+          # ALDRIG prediction_outcomes (ML:ens lär-historik).
+          SAFE = [
+              "scan_results", "score_history", "signal_transitions",
+              "insider_trades", "insider_cluster_signals",
+              "document_chunks", "company_documents", "qualitative_signals",
+              "earnings_memos", "company_profiles",
+          ]
+          con = psycopg2.connect(os.environ["DATABASE_URL"]); cur = con.cursor()
+          for t in SAFE:
+              cur.execute("SELECT to_regclass(%s)", (t,))
+              if cur.fetchone()[0]:
+                  cur.execute(f"TRUNCATE TABLE {t} CASCADE")
+                  print("truncated", t)
+          con.commit(); con.close()
+          PY
+
+      # ── Fas 1: universum (best-effort) ───────────────────────────────────
+      - name: Universe discovery
+        id: universe
+        continue-on-error: true
+        run: python -m backend_worker.universe_discovery || echo "universe_discovery hoppad/saknar entrypoint"
+
+      # ── Fas 2: KÄRN-SCAN (kritiskt) → scan_results ───────────────────────
+      - name: Scan pipeline (${{ env.SCAN_MODE }})
+        id: scan
+        continue-on-error: true
+        run: python -m backend_worker.pipeline.entrypoint --mode "$SCAN_MODE"
+
+      # ── Fas 3: snapshots/profiler ────────────────────────────────────────
+      - name: Score tracker (score_history + signal_transitions)
+        id: score
+        continue-on-error: true
+        run: python -m backend_worker.score_tracker
+
+      - name: Company profiles (ISIN m.m.)
+        id: profiles
+        continue-on-error: true
+        run: python -m backend_worker.company_info_fetcher
+
+      # ── Fas 4: signaler/anrikning ────────────────────────────────────────
+      - name: FI insider bulk
+        id: fi_insider
+        continue-on-error: true
+        run: python -m backend_worker.fi_insider_bulk --days 7
+
+      - name: Insider cluster
+        id: clusters
+        continue-on-error: true
+        run: python -m backend_worker.insider_cluster
+
+      - name: RAG — fetch documents
+        id: docfetch
+        continue-on-error: true
+        run: python -m backend_worker.rag.document_fetcher --days 7
+
+      - name: RAG — extract signals
+        id: extract
+        continue-on-error: true
+        run: python -m backend_worker.rag.extract_signals
+
+      - name: RAG — earnings memos
+        id: memo
+        continue-on-error: true
+        run: python -m backend_worker.rag.earnings_memo
+
+      - name: Sector rotation
+        id: sector
+        continue-on-error: true
+        run: python -m backend_worker.sector_rotation || echo "sector_rotation hoppad"
+
+      - name: Signal analytics
+        id: signals
+        continue-on-error: true
+        run: python -m backend_worker.signal_analytics
+
+      - name: Risk analyzer
+        id: risk
+        continue-on-error: true
+        run: python -m backend_worker.risk_analyzer
+
+      # ── Fas 5: ML-utfall (modellträning sköts av ml_train/ml_retrain) ────
+      - name: Outcome filler (realiserade 30d-utfall)
+        id: outcomes
+        continue-on-error: true
+        run: python -m backend_worker.outcome_filler
+
+      - name: Portfolio snapshots
+        id: snapshot
+        continue-on-error: true
+        run: python -m backend_worker.portfolio_snapshot || echo "portfolio_snapshot hoppad"
+
+      # ── Fas 6: notiser ───────────────────────────────────────────────────
+      - name: Smart alert engine
+        id: smart
+        continue-on-error: true
+        run: python -m backend_worker.smart_alert_engine
+
+      - name: Watchlist alerts (+ Insider Flash)
+        id: watchlist
+        continue-on-error: true
+        run: python -m backend_worker.watchlist_alerts
+
+      - name: Price alert checker
+        id: pricealerts
+        continue-on-error: true
+        run: python -m backend_worker.price_alert_checker || echo "price_alert_checker hoppad"
+
+      # ── Fas 7: leverans (endast refresh) ─────────────────────────────────
+      - name: Daily digest email
+        id: digest
+        if: env.MODE == 'refresh'
+        continue-on-error: true
+        run: python -m backend_worker.digest_mailer || echo "digest hoppad"
+
+      # ── Summering + e-post (körs ALLTID) ─────────────────────────────────
+      - name: Summary + email
+        if: always()
+        env:
+          O_MIGRATIONS: ${{ steps.migrations.outcome }}
+          O_RESET: ${{ steps.reset.outcome }}
+          O_UNIVERSE: ${{ steps.universe.outcome }}
+          O_SCAN: ${{ steps.scan.outcome }}
+          O_SCORE: ${{ steps.score.outcome }}
+          O_PROFILES: ${{ steps.profiles.outcome }}
+          O_FI_INSIDER: ${{ steps.fi_insider.outcome }}
+          O_CLUSTERS: ${{ steps.clusters.outcome }}
+          O_DOCFETCH: ${{ steps.docfetch.outcome }}
+          O_EXTRACT: ${{ steps.extract.outcome }}
+          O_MEMO: ${{ steps.memo.outcome }}
+          O_SECTOR: ${{ steps.sector.outcome }}
+          O_SIGNALS: ${{ steps.signals.outcome }}
+          O_RISK: ${{ steps.risk.outcome }}
+          O_OUTCOMES: ${{ steps.outcomes.outcome }}
+          O_SNAPSHOT: ${{ steps.snapshot.outcome }}
+          O_SMART: ${{ steps.smart.outcome }}
+          O_WATCHLIST: ${{ steps.watchlist.outcome }}
+          O_PRICEALERTS: ${{ steps.pricealerts.outcome }}
+          O_DIGEST: ${{ steps.digest.outcome }}
+          ALERT_EMAIL: ${{ secrets.EMAIL_TO }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import os, json, urllib.request
+
+          steps = [
+              ("Migrationer", "O_MIGRATIONS"), ("Reset", "O_RESET"),
+              ("Universum", "O_UNIVERSE"), ("Scan (kritisk)", "O_SCAN"),
+              ("Score history", "O_SCORE"), ("Bolagsprofiler", "O_PROFILES"),
+              ("FI insider", "O_FI_INSIDER"), ("Insiderkluster", "O_CLUSTERS"),
+              ("RAG hämta", "O_DOCFETCH"), ("RAG extrahera", "O_EXTRACT"),
+              ("Rapportmemon", "O_MEMO"), ("Sektorrotation", "O_SECTOR"),
+              ("Signalanalys", "O_SIGNALS"), ("Riskanalys", "O_RISK"),
+              ("Utfall (30d)", "O_OUTCOMES"), ("Portföljsnapshots", "O_SNAPSHOT"),
+              ("Smarta varningar", "O_SMART"), ("Watchlist-notiser", "O_WATCHLIST"),
+              ("Prisvarningar", "O_PRICEALERTS"), ("Digest", "O_DIGEST"),
+          ]
+          ICON = {"success": "✅", "failure": "❌", "skipped": "⏭️", "": "—", None: "—"}
+          rows, failed = [], []
+          for label, key in steps:
+              o = os.environ.get(key, "") or ""
+              rows.append((label, o))
+              if o == "failure":
+                  failed.append(label)
+
+          md = "## Orchestrator-körning\n\n| Fas | Status |\n|---|---|\n"
+          for label, o in rows:
+              md += f"| {label} | {ICON.get(o,'—')} {o or '—'} |\n"
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              open(summary, "a", encoding="utf-8").write(md)
+
+          # E-post bara om något failade
+          to = os.environ.get("ALERT_EMAIL") or os.environ.get("RESEND_FROM")
+          key = os.environ.get("RESEND_API_KEY")
+          if failed and to and key:
+              html = ("<h2>Orchestrator: vissa steg failade</h2>"
+                      + "<p>Misslyckade faser: <b>" + ", ".join(failed) + "</b></p>"
+                      + "<p><a href='" + os.environ.get("RUN_URL","") + "'>Öppna körningen</a></p>"
+                      + "<table border='1' cellpadding='6'>"
+                      + "".join(f"<tr><td>{l}</td><td>{o}</td></tr>" for l,o in rows)
+                      + "</table>")
+              body = json.dumps({
+                  "from": os.environ.get("RESEND_FROM", "onboarding@resend.dev"),
+                  "to": [to], "subject": "⚠️ MarketScan orchestrator: steg failade",
+                  "html": html,
+              }).encode()
+              req = urllib.request.Request("https://api.resend.com/emails", data=body,
+                  headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+              try:
+                  urllib.request.urlopen(req, timeout=20)
+                  print("Felrapport skickad till", to)
+              except Exception as e:
+                  print("E-post misslyckades:", e)
+
+          # Markera körningen failed ENDAST om det kritiska scan-steget failade
+          if os.environ.get("O_SCAN") == "failure":
+              print("::error::Kritiskt steg (scan) failade")
+              raise SystemExit(1)
+          print("Klart. Failade faser:", failed or "inga")
+          PY

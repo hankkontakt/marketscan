@@ -123,6 +123,33 @@ const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
     title: "Pipeline",
     workflows: [
       {
+        file: "orchestrator.yml",
+        label: "Kör allt (orchestrator)",
+        desc: "Kör HELA datakedjan i rätt ordning, feltolerant. bootstrap = från början (+ migrationer), refresh = uppdatera allt.",
+        inputs: [
+          {
+            key: "mode",
+            label: "Läge",
+            type: "select",
+            options: ["refresh", "bootstrap"],
+            defaultVal: "refresh",
+          },
+          {
+            key: "reset_data",
+            label: "Töm derived-tabeller (endast bootstrap)",
+            type: "select",
+            options: ["false", "true"],
+            defaultVal: "false",
+          },
+          {
+            key: "scan_mode",
+            label: "Scan-läge (tomt = auto)",
+            type: "text",
+            placeholder: "weekly / evening (valfritt)",
+          },
+        ],
+      },
+      {
         file: "pipeline.yml",
         label: "Daglig pipeline",
         desc: "Hämtar marknadsdata och kör scoring för alla aktier",
