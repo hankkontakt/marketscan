@@ -71,12 +71,12 @@ export function MicroLesson({ topic, label }: Props) {
             "absolute z-50 w-72 p-4 rounded-xl shadow-lg",
             "bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]",
           )}
-          style={{ border: "1px solid var(--color-border-strong)", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)" }}
+          style={{ border: "1px solid var(--color-border-strong)", top: "calc(100% + 4px)", left: "50%", transform: "translateX(-50%)" }}
         >
           {/* Arrow */}
           <div
             className="absolute w-3 h-3 rotate-45 bg-[var(--color-bg-surface)]"
-            style={{ bottom: -6.5, left: "50%", marginLeft: -6, borderRight: "1px solid var(--color-border-strong)", borderBottom: "1px solid var(--color-border-strong)" }}
+            style={{ top: -6.5, left: "50%", marginLeft: -6, borderLeft: "1px solid var(--color-border-strong)", borderTop: "1px solid var(--color-border-strong)" }}
           />
 
           <div className="flex items-start justify-between gap-2 mb-2">

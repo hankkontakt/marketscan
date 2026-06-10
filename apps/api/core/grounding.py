@@ -36,7 +36,7 @@ def require_citations(text: str, sources: list[str]) -> dict:
     if not text:
         return {"ok": True, "ungrounded": [], "n_sentences": 0, "n_ungrounded": 0}
 
-    sentences = re.split(r"(?<=[.!?])\s+", text)
+    sentences = re.split(r"(?<=[.!?])\s+(?=[A-ZÅÄÖa-zåäö])", text)
 
     for sent in sentences:
         sent = sent.strip()

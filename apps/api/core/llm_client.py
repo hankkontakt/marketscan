@@ -269,9 +269,10 @@ async def llm_complete(
             pass
 
     # Anropa providers i ordning (med retry vid valideringsfel)
+    current_prompt = prompt
     for attempt in range(max_retries + 1):
         for i, provider in enumerate(providers):
-            result = provider(prompt, json_schema)
+            result = provider(current_prompt, json_schema)
             if result:
                 # L3: Validera JSON-schema om json_schema gavs
                 if json_schema and json_schema.get("required"):
@@ -284,9 +285,10 @@ async def llm_complete(
                                 missing, model_names[i], attempt + 1, max_retries + 1,
                             )
                             if attempt < max_retries:
-                                # Lägg till instruktion om missade fält
-                                prompt += f"\n\nDu missade fältet/na: {', '.join(missing)} — inkludera dem."
-                                continue  # Retry
+                                # Uppdatera prompt för retry och bryt ur provider-loopen
+                                # så att nästa försök börjar om med första providern
+                                current_prompt = prompt + f"\n\nDu missade fältet/na: {', '.join(missing)} — inkludera dem."
+                                break  # Break provider loop to retry with first provider
                             # Acceptera ändå med flagga
                             result["_validation_warning"] = f"missing_fields: {missing}"
 
@@ -297,16 +299,16 @@ async def llm_complete(
                         database_url = os.environ.get("DATABASE_URL")
                         if database_url:
                             conn = psycopg2.connect(database_url)
-                            cache_key = _make_cache_key(prompt, model_names[i], task)
+                            cache_key = _make_cache_key(current_prompt, model_names[i], task)
                             _write_cache(cache_key, result, conn)
                             conn.close()
                     except Exception:
                         pass
                 return result
-
-        # Om vi kommit hit utan att få resultat från någon provider:
-        # sista försöket misslyckades, gå vidare
-        break
+        else:
+            # Provider-loopen slutfördes utan break (ingen retry behövs)
+            # Sista försöket misslyckades, gå vidare
+            break
 
     # Alla providers misslyckades
     logger.error("Alla LLM-providers misslyckades för task=%s", task)

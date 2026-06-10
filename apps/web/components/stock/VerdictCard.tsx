@@ -1,23 +1,45 @@
 "use client";
 
 import { useState } from "react";
-import { TrendingUp, Shield, AlertTriangle, ChevronDown, ChevronUp, Eye, Star } from "lucide-react";
+import { TrendingUp, Shield, AlertTriangle, ChevronDown, ChevronUp, Star, Loader2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { buildVerdict, type StockVerdict, type VerdictReason } from "@/lib/plainLanguage";
 import type { ScanRow } from "@/types/scan";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { FeedbackWidget } from "@/components/ui/FeedbackWidget";
 import { cn } from "@/lib/utils";
 import { formatPrice, formatPctChange, changeClass } from "@/lib/format";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 import { trackEvent, EVENT } from "@/lib/tracking";
 
-// ── Quality color map ───────────────────────────────────────────────────────
+// ── Quality styling (Tailwind classes for dark mode) ──────────────────────────
 
-const QUALITY_COLORS: Record<StockVerdict["qualityLabel"], { bg: string; border: string; text: string; emoji: string }> = {
-  exceptionell: { bg: "#f0fdf4", border: "#86efac", text: "#166534", emoji: "🌟" },
-  stark:        { bg: "#f0fdf4", border: "#bbf7d0", text: "#166534", emoji: "✅" },
-  bra:          { bg: "#f8fafc", border: "#e2e8f0", text: "#334155", emoji: "👍" },
-  okej:         { bg: "#fffbeb", border: "#fde68a", text: "#92400e", emoji: "🤔" },
-  svag:         { bg: "#fef2f2", border: "#fecaca", text: "#991b1b", emoji: "⚠️" },
+function qualityClasses(qualityLabel: string) {
+  const map: Record<string, string> = {
+    exceptionell: "bg-green-50 border-green-300 dark:bg-green-950/30 dark:border-green-800",
+    stark: "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800/50",
+    bra: "bg-[var(--color-bg-surface)] border-[var(--color-border)]",
+    okej: "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800/50",
+    svag: "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800/50",
+  };
+  return map[qualityLabel] || map.bra;
+}
+
+const QUALITY_EMOJI: Record<string, string> = {
+  exceptionell: "🌟",
+  stark: "✅",
+  bra: "👍",
+  okej: "🤔",
+  svag: "⚠️",
+};
+
+const QUALITY_TEXT_COLOR: Record<string, string> = {
+  exceptionell: "text-green-800 dark:text-green-300",
+  stark: "text-green-800 dark:text-green-300",
+  bra: "text-slate-600 dark:text-slate-400",
+  okej: "text-amber-800 dark:text-amber-300",
+  svag: "text-red-800 dark:text-red-300",
 };
 
 // ── SignalBadge helper ──────────────────────────────────────────────────────
@@ -122,17 +144,48 @@ function NumberCard({ label, value, unit, tooltip }: NumberCardDef) {
   );
 }
 
-// ── WatchlistButton (placeholder) ───────────────────────────────────────────
+// ── WatchlistButton ──────────────────────────────────────────────────────────
 
-function WatchlistButton() {
+function WatchlistButton({ ticker }: { ticker: string }) {
+  const qc = useQueryClient();
+
+  const { data: watchlist = [] } = useQuery<{ ticker: string }[]>({
+    queryKey: ["watchlist"],
+    queryFn: () => api("/api/watchlist"),
+    staleTime: 60_000,
+  });
+  const isWatching = watchlist.some((w) => w.ticker === ticker);
+
+  const addWatch = useMutation({
+    mutationFn: () => api(`/api/watchlist/${ticker}`, { method: "POST" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["watchlist"] }); toast.success("Bevakning tillagd"); },
+    onError: () => toast.error("Logga in för att bevaka aktier"),
+  });
+
+  const removeWatch = useMutation({
+    mutationFn: () => api(`/api/watchlist/${ticker}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["watchlist"] }); toast.success("Bevakning borttagen"); },
+  });
+
+  const pending = addWatch.isPending || removeWatch.isPending;
+
   return (
     <button
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border
-                 border-[var(--color-border)] hover:border-[var(--color-border-strong)]
-                 text-[var(--color-text-secondary)]"
+      onClick={() => isWatching ? removeWatch.mutate() : addWatch.mutate()}
+      disabled={pending}
+      className={cn(
+        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
+        isWatching
+          ? "border-[var(--color-warn)] text-[var(--color-warn)] bg-[var(--color-warn-soft)]"
+          : "border-[var(--color-border)] hover:border-[var(--color-border-strong)] text-[var(--color-text-secondary)]",
+      )}
     >
-      <Star size={13} strokeWidth={1.5} />
-      Bevaka
+      {pending ? (
+        <Loader2 size={13} className="animate-spin" />
+      ) : (
+        <Star size={13} strokeWidth={1.5} fill={isWatching ? "currentColor" : "none"} />
+      )}
+      {isWatching ? "Bevakad" : "Bevaka"}
     </button>
   );
 }
@@ -146,13 +199,12 @@ interface Props {
 export function VerdictCard({ stock }: Props) {
   const [showNumbers, setShowNumbers] = useState(false);
   const verdict = buildVerdict(stock);
-  const colors = QUALITY_COLORS[verdict.qualityLabel];
+  const qc = qualityClasses(verdict.qualityLabel);
+  const emoji = QUALITY_EMOJI[verdict.qualityLabel] ?? "👍";
+  const textColor = QUALITY_TEXT_COLOR[verdict.qualityLabel] ?? "text-slate-600 dark:text-slate-400";
 
   return (
-    <div
-      className="rounded-xl border p-5 space-y-5"
-      style={{ borderColor: colors.border, backgroundColor: colors.bg }}
-    >
+    <div className={cn("rounded-xl border p-5 space-y-5", qc)}>
       {/* Header: name + ticker / price + change */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -183,9 +235,9 @@ export function VerdictCard({ stock }: Props) {
       {/* Emoji + quality sentence */}
       <div className="flex items-start gap-3">
         <span className="text-2xl shrink-0 block" style={{ lineHeight: 1 }}>
-          {colors.emoji}
+          {emoji}
         </span>
-        <p className="text-sm leading-relaxed" style={{ color: colors.text }}>
+        <p className={cn("text-sm leading-relaxed", textColor)}>
           {verdict.qualitySentence}
         </p>
       </div>
@@ -250,7 +302,7 @@ export function VerdictCard({ stock }: Props) {
 
       {/* Bottom row */}
       <div className="flex items-center justify-between pt-1">
-        <WatchlistButton />
+        <WatchlistButton ticker={stock.ticker} />
         <FeedbackWidget component="verdict_card" context={stock.ticker} />
       </div>
     </div>

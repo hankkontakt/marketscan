@@ -33,20 +33,20 @@ export function useExperience() {
  * Use to hide advanced metrics/data from beginner view.
  */
 export function ExpertOnly({ children }: { children: React.ReactNode }) {
-  const { level } = useExperience();
-  if (level !== "expert") return null;
+  const { level, loading } = useExperience();
+  if (loading || level !== "expert") return null;
   return <>{children}</>;
 }
 
 export function BeginnerOnly({ children }: { children: React.ReactNode }) {
-  const { level } = useExperience();
-  if (level !== "beginner") return null;
+  const { level, loading } = useExperience();
+  if (loading || level !== "beginner") return null;
   return <>{children}</>;
 }
 
 export function NonExpertOnly({ children }: { children: React.ReactNode }) {
-  const { level } = useExperience();
-  if (level === "expert") return null;
+  const { level, loading } = useExperience();
+  if (loading || level === "expert") return null;
   return <>{children}</>;
 }
 

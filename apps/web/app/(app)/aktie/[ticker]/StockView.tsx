@@ -36,6 +36,7 @@ interface Props {
 
 export function StockView({ ticker }: Props) {
   const { data: stock, isLoading, error } = useStock(ticker);
+  const { loading: levelLoading } = useExperience();
   const { level } = useExperience();
 
   useEffect(() => {
@@ -43,6 +44,11 @@ export function StockView({ ticker }: Props) {
       trackEvent(EVENT.STOCK_PAGE_VIEW, { ticker: stock.ticker });
     }
   }, [stock?.ticker]);
+
+  // If experience level still loading, show skeleton
+  if (levelLoading) {
+    return <StockSkeleton />;
+  }
 
   if (isLoading) return <StockSkeleton />;
   if (error || !stock) {
@@ -63,7 +69,7 @@ export function StockView({ ticker }: Props) {
         <div className="max-w-2xl mx-auto space-y-6 py-4">
           <VerdictCard stock={stock} />
           <ExplainSection ticker={stock.ticker} stock={stock} />
-          <BeginnerCTA />
+          <BeginnerCTA ticker={stock.ticker} />
         </div>
       </BeginnerOnly>
 

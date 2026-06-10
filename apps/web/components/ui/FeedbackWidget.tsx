@@ -28,13 +28,14 @@ export function FeedbackWidget({
       trackEvent(EVENT.FEEDBACK_SUBMITTED, { component, rating: rating ?? 0 });
       toast.success("Tack!");
     },
-    onError: () => {},
+    onError: () => toast.error("Kunde inte spara feedback"),
   });
+
+  const isPending = mutation.isPending;
 
   function handleRate(r: 1 | -1) {
     setRating(r);
     setShowComment(true);
-    mutation.mutate({ component, context, rating: r, comment: "" });
   }
 
   function submitComment() {
@@ -51,18 +52,22 @@ export function FeedbackWidget({
       </span>
       <button
         onClick={() => handleRate(1)}
+        disabled={isPending}
         className={cn(
           "p-1 rounded-md transition-colors",
           rating === 1 ? "text-[var(--color-up)] bg-[var(--color-up-soft)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-up)]",
+          isPending && "opacity-50 cursor-not-allowed",
         )}
       >
         <ThumbsUp size={14} strokeWidth={1.5} />
       </button>
       <button
         onClick={() => handleRate(-1)}
+        disabled={isPending}
         className={cn(
           "p-1 rounded-md transition-colors",
           rating === -1 ? "text-[var(--color-down)] bg-[var(--color-down-soft)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-down)]",
+          isPending && "opacity-50 cursor-not-allowed",
         )}
       >
         <ThumbsDown size={14} strokeWidth={1.5} />

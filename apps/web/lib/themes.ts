@@ -80,14 +80,19 @@ export const THEMES: ThemeDefinition[] = [
   },
   {
     id: "insider-buying",
-    label: "Där ledningen köper egna aktier",
-    emoji: "\u{1F50D}",
-    description:
-      "Bolag där insiders (VD, styrelse) nyligen köpt aktier — en signal om framtidstro inifrån.",
+    label: "Högst rankade aktier just nu",
+    emoji: "\u{1F525}",
+    description: "Marknadens topprankade aktier baserat på vårt Totalbetyg. " +
+      "Det här är helt enkelt de aktier som får högst betyg just nu — " +
+      "en bra start för att lära dig vad som kännetecknar en stark kandidat.",
     riskLabel: "Varierande risk",
     riskExplanation:
-      'Varierande risk innebär att insidersignaler kan dyka upp i alla typer av bolag — både stabila storbolag och spekulativa småbolag. Insiderköp är en positiv signal men ska vägas samman med bolagets fundamenta. Den här kategorin kräver att du gör din egen analys och inte enbart följer insidermönster.',
-    params: { score_min: 45 },
+      "Detta är en mix av alla sektorer och segment. " +
+      "Kolla alltid omdömeskortet och riskerna för varje enskild aktie.",
+    params: {
+      score_min: 70,
+      sort_by: "score_total",
+    },
     limit: 5,
     sortBy: "score_total",
   },

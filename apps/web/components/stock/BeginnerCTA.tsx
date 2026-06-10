@@ -1,8 +1,21 @@
 "use client";
 
-import { Star } from "lucide-react";
+import { Star, Loader2 } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
-export function BeginnerCTA() {
+export function BeginnerCTA({ ticker }: { ticker: string }) {
+  const qc = useQueryClient();
+
+  const addWatch = useMutation({
+    mutationFn: () => api(`/api/watchlist/${ticker}`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["watchlist"] });
+      toast.success("Bevakning tillagd");
+    },
+    onError: () => toast.error("Logga in för att bevaka aktier"),
+  });
   return (
     <div
       className="rounded-xl border p-6 text-center space-y-4"
@@ -28,10 +41,16 @@ export function BeginnerCTA() {
       </p>
 
       <button
+        onClick={() => addWatch.mutate()}
+        disabled={addWatch.isPending}
         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium
-                   bg-green-600 text-white hover:bg-green-700 transition-colors"
+                   bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
       >
-        <Star size={14} strokeWidth={1.5} />
+        {addWatch.isPending ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <Star size={14} strokeWidth={1.5} />
+        )}
         Lägg i bevakning
       </button>
     </div>

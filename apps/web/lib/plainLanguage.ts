@@ -109,6 +109,20 @@ const SCORE_KEYS: (keyof Pick<
 ];
 
 export function buildVerdict(stock: ScanRow): StockVerdict {
+  // Check if all factor scores are null
+  const allNull = SCORE_KEYS.every(key => stock[key] == null);
+  if (allNull) {
+    return {
+      qualityLabel: "okej",
+      qualitySentence: "Det saknas tillräcklig data för att ge ett omdöme just nu.",
+      reasons: [
+        { icon: "info", title: "Data saknas", detail: "Det finns inte tillräckligt med underlag för att bedöma aktien. Kom tillbaka efter nästa pipeline-körning." },
+      ],
+      risk: { icon: "info", title: "Kan inte bedöma risk", detail: "Utan data kan vi inte identifiera risker. Var extra försiktig." },
+      overallScore: 0,
+    };
+  }
+
   const total = stock.score_total ?? 0;
   const label = categorizeScore(total);
 

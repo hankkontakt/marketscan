@@ -136,7 +136,7 @@ function SkeletonRow() {
 // ── ThemeCard ───────────────────────────────────────────────────────────────
 
 export function ThemeCard({ theme }: { theme: ThemeDefinition }) {
-  const { data, isLoading } = useScreener(theme.params);
+  const { data, isLoading, error } = useScreener(theme.params);
   const rows = (data ?? []).slice(0, theme.limit);
 
   const riskColor = RISK_COLORS[theme.riskLabel] ?? {
@@ -218,6 +218,8 @@ export function ThemeCard({ theme }: { theme: ThemeDefinition }) {
             <SkeletonRow />
             <SkeletonRow />
           </div>
+        ) : error ? (
+          <div className="text-xs text-red-500 py-2 text-center">Kunde inte ladda — försök igen senare.</div>
         ) : rows.length === 0 ? (
           <p className="px-5 py-6 text-sm text-[var(--color-text-muted)] text-center">
             Inga aktier matchar just nu

@@ -24,9 +24,9 @@ CREATE POLICY "feedback_select_own" ON user_feedback
 
 CREATE POLICY "feedback_admin_all" ON user_feedback
   FOR ALL USING (
-    (SELECT COALESCE(raw_app_meta_data->>'role', 'authenticated') FROM auth.users WHERE id = auth.uid()) = 'admin'
+    (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
   );
 
-GRANT SELECT, INSERT ON user_feedback TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON user_feedback TO authenticated;
 
 COMMENT ON TABLE user_feedback IS 'User feedback on UI components. Migration 035. Diagnostic marker: migration_035_user_feedback.';
