@@ -369,6 +369,107 @@ PORTFÖLJDATA:
     return {"response": response}
 
 
+# ─── Daglig proaktiv coach (Spec 10) ──────────────────────────────────────────
+
+DAILY_COACH_SYSTEM = """Du är en kvantitativ portföljrådgivare. Svara på svenska, max 250 ord.
+ANVÄND ENDAST siffrorna du får i JSON — hitta inte på egna tal.
+Peka på övervikter och risker (t.ex. om en enskild position eller sektor är för stor, eller
+om portföljvolatiliteten ligger över målvolatiliteten) och ge tre konkreta, handlingsbara
+förslag. Föreslå ALDRIG att lägga order automatiskt. Avsluta INTE med en disclaimer."""
+
+_COACH_DISCLAIMER = "Detta är inte finansiell rådgivning. Inga affärer läggs automatiskt."
+
+
+class DailyCoachRequest(BaseModel):
+    holdings: list[dict] = Field(default_factory=list)  # [{ticker, shares, price, sector?}]
+    risk_profile: dict | None = None                     # {profile, max_position_pct, target_volatility}
+    volatility_ann: float | None = None
+    regime_label: str | None = None
+
+
+class DailyCoachResponse(BaseModel):
+    briefing: str
+    facts: dict
+    date: str
+    disclaimer: str
+    empty: bool = False
+
+
+@router.post("/daily-coach", response_model=DailyCoachResponse)
+async def daily_coach(
+    body: DailyCoachRequest,
+    user: User = Depends(get_current_user),
+    sb_admin=Depends(get_supabase_admin),
+):
+    """Proaktiv daglig coach-briefing. Servern beräknar ALLA fakta ur innehaven
+    (grounding); LLM:en får bara de beräknade talen. Cachas per användare/dag/portföljläge."""
+    import hashlib
+
+    today = date.today().isoformat()
+    holdings = [h for h in body.holdings
+                if h.get("shares") and h.get("price") and h.get("ticker")]
+    if not holdings:
+        return {"briefing": "", "facts": {}, "date": today,
+                "disclaimer": _COACH_DISCLAIMER, "empty": True}
+
+    # ── Beräkna fakta (i Python, ej LLM) ─────────────────────────────────────
+    values = {h["ticker"]: float(h["shares"]) * float(h["price"]) for h in holdings}
+    total = sum(values.values()) or 1.0
+    weights = {t: v / total for t, v in values.items()}
+    largest_t = max(weights, key=weights.get)
+    largest_pct = weights[largest_t]
+    top3 = sum(sorted(weights.values(), reverse=True)[:3])
+
+    sector_w: dict[str, float] = {}
+    for h in holdings:
+        s = h.get("sector")
+        if s:
+            sector_w[s] = sector_w.get(s, 0.0) + weights[h["ticker"]]
+    largest_sector = max(sector_w, key=sector_w.get) if sector_w else None
+
+    rp = body.risk_profile or {}
+    max_pos = rp.get("max_position_pct")
+    target_vol = rp.get("target_volatility")
+    vol = body.volatility_ann
+
+    facts = {
+        "antal_innehav": len(holdings),
+        "totalt_varde_kr": round(total),
+        "storsta_position": {"ticker": largest_t, "vikt_pct": round(largest_pct * 100, 1)},
+        "topp3_koncentration_pct": round(top3 * 100, 1),
+        "storsta_sektor": ({"sektor": largest_sector, "vikt_pct": round(sector_w[largest_sector] * 100, 1)}
+                           if largest_sector else None),
+        "max_positionsgrans_pct": round(max_pos * 100, 1) if max_pos else None,
+        "over_positionsgrans": bool(max_pos is not None and largest_pct > max_pos),
+        "portfoljvolatilitet_pct": round(vol * 100, 1) if vol is not None else None,
+        "malvolatilitet_pct": round(target_vol * 100, 1) if target_vol is not None else None,
+        "over_malvolatilitet": bool(target_vol is not None and vol is not None and vol > target_vol),
+        "riskprofil": rp.get("profile"),
+        "marknadsregim": body.regime_label,
+    }
+
+    # ── Cache per användare/dag/portföljläge ─────────────────────────────────
+    state_hash = hashlib.md5(
+        json.dumps({k: round(v) for k, v in sorted(values.items())}).encode()
+    ).hexdigest()[:8]
+    cache_key = f"daily_coach:{user.id}:{today}:{state_hash}"
+    cached = get_cached(cache_key, sb_admin)
+    if cached:
+        return cached
+
+    try:
+        briefing = await _call_ai(DAILY_COACH_SYSTEM,
+                                  json.dumps(facts, ensure_ascii=False), max_tokens=500)
+    except Exception as e:
+        logger.warning("daily-coach LLM failed: %s", e)
+        briefing = "Kunde inte generera en coach-briefing just nu. Försök igen senare."
+
+    resp = {"briefing": briefing, "facts": facts, "date": today,
+            "disclaimer": _COACH_DISCLAIMER, "empty": False}
+    set_cache(cache_key, resp, sb_admin)
+    return resp
+
+
 # ─── AI Journal ─────────────────────────────────────────────────────────────
 
 

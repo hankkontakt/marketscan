@@ -18,6 +18,11 @@ import {
 } from "@/lib/format";
 import type { ScanRow } from "@/types/scan";
 import type { ScoreMover } from "@/types/alerts";
+import { RegimeGauge } from "@/components/widgets/RegimeGauge";
+import { RiskGauge } from "@/components/widgets/RiskGauge";
+import { WatchlistStrip } from "@/components/widgets/WatchlistStrip";
+import { MewsStrip } from "@/components/widgets/MewsStrip";
+import { PortfolioCoachCard } from "@/components/widgets/PortfolioCoachCard";
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
@@ -439,6 +444,23 @@ export function DagligBriefingView() {
           <StatCard icon={Activity} label="S&P 500" value="—" />
         )}
       </div>
+
+      {/* ── Personligt: bevakningar + risk/regim ─────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        <div className="lg:col-span-3">
+          <WatchlistStrip />
+        </div>
+        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-5">
+          <RegimeGauge />
+          <RiskGauge />
+        </div>
+      </div>
+
+      {/* ── Portföljcoach ────────────────────────────────────────── */}
+      <PortfolioCoachCard />
+
+      {/* ── Mångdubblar-kandidater ───────────────────────────────── */}
+      <MewsStrip />
 
       {/* ── Main grid ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
