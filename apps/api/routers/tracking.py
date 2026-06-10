@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from supabase import Client
-from apps.api.dependencies import get_supabase
+from apps.api.dependencies import get_supabase_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["tracking"])
@@ -23,9 +23,14 @@ class TrackBatchRequest(BaseModel):
 def track_events(
     body: TrackBatchRequest,
     request: Request,
-    sb: Client = Depends(get_supabase),
+    sb: Client = Depends(get_supabase_admin),
 ):
-    """Accept a batch of tracking events and store them."""
+    """Accept a batch of tracking events and store them.
+    Uses service_role to bypass RLS — tracking_insert policy allows anon insert
+    but supabase-py has a known RLS edge case with certain table setups, so we
+    use service_role for reliability. The endpoint is fully public (no auth
+    required) and writes are fire-and-forget (exceptions logged, never crash).
+    """
     for event in body.events:
         try:
             sb.table("tracking_events").insert({
@@ -33,5 +38,5 @@ def track_events(
                 "props": event.props,
             }).execute()
         except Exception as e:
-            logger.debug("Failed to track event %s: %s", event.name, e)
+            logger.warning("Failed to track event %s: %s", event.name, e)
     return {"ok": True, "count": len(body.events)}

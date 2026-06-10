@@ -27,6 +27,7 @@ USER_TABLES = [
     "price_alerts", "saved_screens", "notifications", "notification_preferences",
     "fund_holdings", "user_ticker_requests", "portfolio_snapshots",
     "user_feedback",
+    "tracking_events",
 ]
 
 # Tables meant to be publicly readable (no RLS by design).
@@ -50,6 +51,7 @@ MIGRATION_MARKERS = {
     "033_earnings_memos": "earnings_memos",
     "034_notification_prefs": "notification_prefs",
     "035_user_feedback": "user_feedback",
+    "036_tracking_events": "tracking_events",
 }
 
 # Env vars that must be present for core features to work, with the feature
