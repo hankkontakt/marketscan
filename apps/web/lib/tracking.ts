@@ -8,6 +8,9 @@ type EventProps = Record<string, string | number | boolean>;
 
 const IS_DEV = typeof location !== "undefined" && location.hostname === "localhost";
 
+// Använd samma API_BASE som resten av appen (lib/api.ts-mönster)
+const API_BASE = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) || "";
+
 const QUEUE: Array<{ name: string; props?: EventProps }> = [];
 let flushing = false;
 
@@ -16,7 +19,7 @@ async function flush() {
   flushing = true;
   const batch = QUEUE.splice(0);
   try {
-    await fetch("/api/tracking/events", {
+    await fetch(`${API_BASE}/api/tracking/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ events: batch }),
