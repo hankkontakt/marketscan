@@ -227,8 +227,9 @@ async def llm_complete(
     json_schema: Optional[dict] = None,
     prefer: str = "cheap",
     cache: bool = True,
+    max_retries: int = 1,
 ) -> dict:
-    """Enhetligt LLM-anrop med routing och cache.
+    """Enhetligt LLM-anrop med routing, cache och retry.
 
     Args:
         prompt: Prompt att skicka.
@@ -236,6 +237,7 @@ async def llm_complete(
         json_schema: JSON-schema för strukturerad output.
         prefer: "cheap" (Gemini först) eller "quality" (DeepSeek först).
         cache: Använd cache?
+        max_retries: Antal retries vid valideringsfel (L3). Default 1.
 
     Returns:
         Dict med svar ('text' eller JSON-fält).
@@ -266,23 +268,45 @@ async def llm_complete(
         except Exception:
             pass
 
-    # Anropa providers i ordning
-    for i, provider in enumerate(providers):
-        result = provider(prompt, json_schema)
-        if result:
-            # Spara i cache
-            if cache:
-                try:
-                    import psycopg2
-                    database_url = os.environ.get("DATABASE_URL")
-                    if database_url:
-                        conn = psycopg2.connect(database_url)
-                        cache_key = _make_cache_key(prompt, model_names[i], task)
-                        _write_cache(cache_key, result, conn)
-                        conn.close()
-                except Exception:
-                    pass
-            return result
+    # Anropa providers i ordning (med retry vid valideringsfel)
+    for attempt in range(max_retries + 1):
+        for i, provider in enumerate(providers):
+            result = provider(prompt, json_schema)
+            if result:
+                # L3: Validera JSON-schema om json_schema gavs
+                if json_schema and json_schema.get("required"):
+                    if isinstance(result, dict) and "error" not in result:
+                        missing = [f for f in json_schema["required"]
+                                   if f not in result]
+                        if missing:
+                            logger.warning(
+                                "Missing required fields %s in %s response (attempt %d/%d)",
+                                missing, model_names[i], attempt + 1, max_retries + 1,
+                            )
+                            if attempt < max_retries:
+                                # Lägg till instruktion om missade fält
+                                prompt += f"\n\nDu missade fältet/na: {', '.join(missing)} — inkludera dem."
+                                continue  # Retry
+                            # Acceptera ändå med flagga
+                            result["_validation_warning"] = f"missing_fields: {missing}"
+
+                # Spara i cache
+                if cache:
+                    try:
+                        import psycopg2
+                        database_url = os.environ.get("DATABASE_URL")
+                        if database_url:
+                            conn = psycopg2.connect(database_url)
+                            cache_key = _make_cache_key(prompt, model_names[i], task)
+                            _write_cache(cache_key, result, conn)
+                            conn.close()
+                    except Exception:
+                        pass
+                return result
+
+        # Om vi kommit hit utan att få resultat från någon provider:
+        # sista försöket misslyckades, gå vidare
+        break
 
     # Alla providers misslyckades
     logger.error("Alla LLM-providers misslyckades för task=%s", task)

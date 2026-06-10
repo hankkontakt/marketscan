@@ -2,6 +2,7 @@
 AI endpoints: NL screener parser, stock analysis, Analyskommittén, portfolio coach.
 All responses are cached per ticker/day to minimize token spend.
 """
+import asyncio
 import json
 import logging
 from datetime import date
@@ -156,6 +157,7 @@ async def get_committee_analysis(
     """
     Analyskommittén: 3 analysts + chair synthesis.
     Cached per ticker per day (stored in Supabase).
+    L4: Kör synthesis 2 ggr för self-consistency.
     """
     import asyncio
 
@@ -197,12 +199,48 @@ FUNDAMENTAL ANALYTIKER:
 SENTIMENTANALYTIKER:
 {sent_analysis}
 """
-    chair_raw = await _call_ai(ANALYST_PROMPTS["ordforande"], chair_input)
-    try:
-        clean = chair_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        synthesis = json.loads(clean)
-    except json.JSONDecodeError:
-        synthesis = {"verdict": "AVVAKTA", "confidence": 50, "summary": chair_raw, "disagreement": False}
+    # L4 — Self-consistency: kör synthesis 2 ggr för att detektera oenighet
+    syn_results = await asyncio.gather(
+        _call_ai(ANALYST_PROMPTS["ordforande"], chair_input, max_tokens=500),
+        _call_ai(ANALYST_PROMPTS["ordforande"], chair_input, max_tokens=500),
+        return_exceptions=True,
+    )
+
+    syntheses = []
+    for sr in syn_results:
+        if isinstance(sr, Exception):
+            continue
+        try:
+            clean = sr.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            syntheses.append(json.loads(clean))
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    if not syntheses:
+        # Fallback om båda misslyckades
+        if isinstance(syn_results[0], str):
+            try:
+                clean = syn_results[0].strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                syntheses = [json.loads(clean)]
+            except (json.JSONDecodeError, AttributeError):
+                pass
+        if not syntheses:
+            syntheses = [{"verdict": "AVVAKTA", "confidence": 50, "summary": syn_results[0] if isinstance(syn_results[0], str) else "Analys ej tillgänglig", "disagreement": False}]
+
+    # Kontrollera oenighet mellan synteserna (L4)
+    disagreement = False
+    disagreement_note = None
+    if len(syntheses) >= 2:
+        verdicts = [s.get("verdict", "") for s in syntheses]
+        if verdicts[0] != verdicts[1]:
+            disagreement = True
+            disagreement_note = f"Oenighet mellan syntesomgångar: '{verdicts[0]}' vs '{verdicts[1]}'"
+
+    # Använd första syntesen som huvudsaklig
+    synthesis = syntheses[0]
+    synthesis["disagreement"] = disagreement or synthesis.get("disagreement", False)
+    if disagreement and not synthesis.get("disagreement_note"):
+        synthesis["disagreement_note"] = disagreement_note
 
     response = {
         "ticker": ticker,

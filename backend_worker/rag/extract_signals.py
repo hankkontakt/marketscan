@@ -4,6 +4,8 @@ extract_signals.py — Strukturerad extraktion av kvalitativa signaler ur rappor
 För varje bolag med ny rapport, kör 5 strukturerade queries mot dess chunkar.
 Aggregera → qualitative_score (0–100) → spara i qualitative_signals.
 
+Använder L1 (rerank) från spec 12 för bättre relevans i chunk-urvalet.
+
 Användning:
     python -m backend_worker.rag.extract_signals
 """
@@ -22,6 +24,13 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Försök importera reranker (L1); fallback om modulen inte finns
+try:
+    from apps.api.core.reranker import rerank as _rerank
+except Exception:
+    def _rerank(query, chunks, top_n=6, text_key="content"):
+        return chunks[:top_n]
+
 # Vikter för qualitative_score
 SCORE_WEIGHTS = {
     "outlook": 0.35,      # Intäktsutsikter (viktigast)
@@ -29,6 +38,14 @@ SCORE_WEIGHTS = {
     "tone": 0.20,         # Ledningens ton/konfidens
     "risk": 0.15,         # Riskförändring
     "capital": 0.10,      # Kapitalallokering
+}
+
+_QUERIES = {
+    "outlook": "utsikter framtidsutsikter intäkter orderingång marknad",
+    "margin": "marginal lönsamhet resultat kostnader prissättning",
+    "tone": "VD kommentar ledning strategi framtid konfidens",
+    "risk": "risk osäkerhet exponering hot möjlighet",
+    "capital": "kapitalallokering investering utdelning återköp skuld",
 }
 
 
@@ -212,6 +229,9 @@ def _extract_capital_allocation(chunks: list[dict]) -> dict:
 def extract_signals_for_ticker(ticker: str, conn) -> Optional[dict]:
     """Extrahera kvalitativa signaler för en ticker.
 
+    Använder rerank (L1) för att välja de mest relevanta chunkarna.
+    Använder require_citations (L2) för grounding.
+
     Returnerar dict med qualitative_score, outlook_direction, etc.
     """
     # Hitta senaste dokumentet för tickern
@@ -248,12 +268,20 @@ def extract_signals_for_ticker(ticker: str, conn) -> Optional[dict]:
     if not chunks:
         return None
 
-    # Kör 5 extraktioner
-    outlook = _extract_outlook(chunks)
-    margin = _extract_margin(chunks)
-    tone = _extract_tone(chunks)
-    risk = _extract_risk(chunks)
-    capital = _extract_capital_allocation(chunks)
+    # L1: Rerank chunks per query för bästa relevans
+    # Använd rerank för respektive frågekategori
+    outlook_chunks = _rerank(_QUERIES["outlook"], chunks, top_n=5)
+    margin_chunks = _rerank(_QUERIES["margin"], chunks, top_n=5)
+    tone_chunks = _rerank(_QUERIES["tone"], chunks, top_n=5)
+    risk_chunks = _rerank(_QUERIES["risk"], chunks, top_n=5)
+    capital_chunks = _rerank(_QUERIES["capital"], chunks, top_n=5)
+
+    # Kör 5 extraktioner med rerankade chunks
+    outlook = _extract_outlook(outlook_chunks)
+    margin = _extract_margin(margin_chunks)
+    tone = _extract_tone(tone_chunks)
+    risk = _extract_risk(risk_chunks)
+    capital = _extract_capital_allocation(capital_chunks)
 
     # Aggregera till qualitative_score (0-100)
     qualitative_score = (
