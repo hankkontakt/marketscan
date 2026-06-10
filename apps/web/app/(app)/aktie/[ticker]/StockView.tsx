@@ -1,13 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AlertTriangle, CheckCircle2, XCircle, Globe, Users, Building2, ChevronDown, ChevronUp } from "lucide-react";
 import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski, useSimilarStocks, useCompanyProfile, type SimilarStockItem, type CompanyProfile } from "@/hooks/useStock";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
+import { VerdictCard } from "@/components/stock/VerdictCard";
+import { ExplainSection } from "@/components/stock/ExplainSection";
+import { MicroLesson } from "@/components/ui/MicroLesson";
+import { BeginnerCTA } from "@/components/stock/BeginnerCTA";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
 import { EarningsMemoCard } from "@/components/stock/EarningsMemoCard";
+import { trackEvent, EVENT } from "@/lib/tracking";
+import { useExperience, BeginnerOnly, NonExpertOnly, ExpertOnly } from "@/components/providers/ExperienceProvider";
 import dynamic from "next/dynamic";
 
 const AnalysCommittee = dynamic(async () => {
@@ -18,7 +24,7 @@ const AnalysCommittee = dynamic(async () => {
 });
 import { cn } from "@/lib/utils";
 import {
-  formatPrice, formatNumber, formatPct, formatMarketCap, scoreColorClass, formatScore,
+  formatPrice, formatNumber, formatPct, formatPctChange, formatMarketCap, scoreColorClass, formatScore, changeClass,
 } from "@/lib/format";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -30,6 +36,13 @@ interface Props {
 
 export function StockView({ ticker }: Props) {
   const { data: stock, isLoading, error } = useStock(ticker);
+  const { level } = useExperience();
+
+  useEffect(() => {
+    if (stock?.ticker) {
+      trackEvent(EVENT.STOCK_PAGE_VIEW, { ticker: stock.ticker });
+    }
+  }, [stock?.ticker]);
 
   if (isLoading) return <StockSkeleton />;
   if (error || !stock) {
@@ -44,87 +57,184 @@ export function StockView({ ticker }: Props) {
   }
 
   return (
-    <div className="-mx-8 -mt-6">
-      {/* Sticky header block: VerdictHeader + tab bar as ONE sticky unit */}
-      <div className="sticky top-0 z-30">
-        <VerdictHeader stock={stock} />
+    <>
+      {/* ── Beginner: VerdictCard + explain + CTA only ─────────────── */}
+      <BeginnerOnly>
+        <div className="max-w-2xl mx-auto space-y-6 py-4">
+          <VerdictCard stock={stock} />
+          <ExplainSection ticker={stock.ticker} stock={stock} />
+          <BeginnerCTA />
+        </div>
+      </BeginnerOnly>
 
-        {/* Tab bar with Radix Tabs */}
-        <Tabs.Root defaultValue="oversikt" className="bg-[var(--color-bg-surface)]">
-          <Tabs.List className="flex border-b px-6 border-[var(--color-border)]" aria-label="Flikar">
-            <Tabs.Trigger
-              value="oversikt"
-              className={cn(
-                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-              )}
-            >
-              Översikt
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="faktorer"
-              className={cn(
-                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-              )}
-            >
-              Faktorer
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="analys"
-              className={cn(
-                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-              )}
-            >
-              Analys
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="rapporter"
-              className={cn(
-                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-              )}
-            >
-              Rapporter
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="ai"
-              className={cn(
-                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-              )}
-            >
-              AI
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="liknande"
-              className={cn(
-                "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-              )}
-            >
-              Liknande
-            </Tabs.Trigger>
-          </Tabs.List>
+      {/* ── Non-expert (beginner + intermediate): simplified view ──── */}
+      <NonExpertOnly>
+        {/* Only render the intermediate+beginner content when actually intermediate */}
+        {level === "intermediate" && (
+          <div className="-mx-8 -mt-6">
+            <div className="sticky top-0 z-30">
+              {/* Simple headline instead of full VerdictHeader */}
+              <div className="border-b px-6 py-4 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-bold text-[var(--color-text-primary)]">
+                        {stock.name}
+                      </span>
+                      <span className="font-mono text-sm text-[var(--color-text-secondary)]">
+                        {stock.ticker}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span className="font-mono tabular text-2xl font-bold text-[var(--color-text-primary)]">
+                      {formatPrice(stock.price)}
+                    </span>
+                    {stock.change_pct != null && (
+                      <div className={cn("font-mono tabular text-sm font-medium", changeClass(stock.change_pct))}>
+                        {formatPctChange(stock.change_pct)} idag
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-          <div className="px-6 py-6">
-            <Tabs.Content value="oversikt"><OverviewTab stock={stock} /></Tabs.Content>
-            <Tabs.Content value="faktorer"><FaktorerTab stock={stock} /></Tabs.Content>
-            <Tabs.Content value="analys"><AnalysTab ticker={ticker} /></Tabs.Content>
-            <Tabs.Content value="rapporter"><RapporterTab ticker={ticker} stock={stock} /></Tabs.Content>
-            <Tabs.Content value="ai"><AITab stock={stock} /></Tabs.Content>
-            <Tabs.Content value="liknande"><LiknandeTab ticker={ticker} /></Tabs.Content>
+              {/* VerdictCard below the header */}
+              <div className="px-6 py-4 bg-[var(--color-bg-surface)]">
+                <VerdictCard stock={stock} />
+              </div>
+
+              {/* Simplified tabs */}
+              <Tabs.Root defaultValue="oversikt" className="bg-[var(--color-bg-surface)]">
+                <Tabs.List className="flex border-b px-6 border-[var(--color-border)]" aria-label="Flikar">
+                  <Tabs.Trigger
+                    value="oversikt"
+                    className={cn(
+                      "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                      "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                      "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                    )}
+                  >
+                    Översikt
+                  </Tabs.Trigger>
+                  <Tabs.Trigger
+                    value="rapporter"
+                    className={cn(
+                      "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                      "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                      "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                    )}
+                  >
+                    Rapporter
+                  </Tabs.Trigger>
+                  <Tabs.Trigger
+                    value="ai"
+                    className={cn(
+                      "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                      "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                      "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                    )}
+                  >
+                    AI-analys
+                  </Tabs.Trigger>
+                </Tabs.List>
+
+                <div className="px-6 py-6">
+                  <Tabs.Content value="oversikt"><OverviewTab stock={stock} /></Tabs.Content>
+                  <Tabs.Content value="rapporter"><RapporterTab ticker={ticker} stock={stock} /></Tabs.Content>
+                  <Tabs.Content value="ai"><AITab stock={stock} /></Tabs.Content>
+                </div>
+              </Tabs.Root>
+            </div>
           </div>
-        </Tabs.Root>
-      </div>
-    </div>
+        )}
+      </NonExpertOnly>
+
+      {/* ── Expert: current StockView EXACTLY as-is ────────────────── */}
+      <ExpertOnly>
+        <div className="-mx-8 -mt-6">
+          {/* Sticky header block: VerdictHeader + tab bar as ONE sticky unit */}
+          <div className="sticky top-0 z-30">
+            <VerdictHeader stock={stock} />
+
+            {/* Tab bar with Radix Tabs */}
+            <Tabs.Root defaultValue="oversikt" className="bg-[var(--color-bg-surface)]">
+              <Tabs.List className="flex border-b px-6 border-[var(--color-border)]" aria-label="Flikar">
+                <Tabs.Trigger
+                  value="oversikt"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  Översikt
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="faktorer"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  Faktorer
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="analys"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  Analys
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="rapporter"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  Rapporter
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="ai"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  AI
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="liknande"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  Liknande
+                </Tabs.Trigger>
+              </Tabs.List>
+
+              <div className="px-6 py-6">
+                <Tabs.Content value="oversikt"><OverviewTab stock={stock} /></Tabs.Content>
+                <Tabs.Content value="faktorer"><FaktorerTab stock={stock} /></Tabs.Content>
+                <Tabs.Content value="analys"><AnalysTab ticker={ticker} /></Tabs.Content>
+                <Tabs.Content value="rapporter"><RapporterTab ticker={ticker} stock={stock} /></Tabs.Content>
+                <Tabs.Content value="ai"><AITab stock={stock} /></Tabs.Content>
+                <Tabs.Content value="liknande"><LiknandeTab ticker={ticker} /></Tabs.Content>
+              </div>
+            </Tabs.Root>
+          </div>
+        </div>
+      </ExpertOnly>
+    </>
   );
 }
 
@@ -171,16 +281,19 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
               label: "P/E (TTM)",
               value: stock.pe_trailing != null ? formatNumber(stock.pe_trailing, 1) : "—",
               tip: "Pris/vinst-kvot (senaste 12 mån). Visar hur många kronor du betalar per krona vinst. Lågt P/E kan tyda på att aktien är billig, men beror också på bransch.",
+              microTopic: "pe_trailing",
             },
             {
               label: "P/E (forward)",
               value: stock.pe_forward != null ? formatNumber(stock.pe_forward, 1) : "—",
               tip: "Pris/vinst-kvot baserad på analytikernas vinstprognos för kommande 12 månader. Ger en bild av vad marknaden förväntar sig.",
+              microTopic: "pe_forward",
             },
             {
               label: "ROE",
               value: stock.roe != null ? formatPct(stock.roe) : "—",
               tip: "Avkastning på eget kapital. Hur effektivt bolaget genererar vinst med ägarnas kapital. Över 15 % anses generellt bra.",
+              microTopic: "roe",
             },
             {
               label: "ROA",
@@ -201,6 +314,7 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
               label: "Finansiell styrka",
               value: stock.piotroski_f != null ? `${stock.piotroski_f}/9` : "—",
               tip: "Piotroski F-score (0–9). Mäter bolagets finansiella hälsa utifrån lönsamhet, skuldsättning och operativ effektivitet. 7–9 = starkt, 0–2 = svagt.",
+              microTopic: "piotroski",
             },
             {
               label: "Skuldsättning (D/E)",
@@ -221,12 +335,14 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
               label: "Börsvärde",
               value: formatMarketCap(stock.market_cap),
               tip: "Aktiekursen multiplicerat med antalet aktier. Visar hur mycket hela bolaget värderas till på börsen.",
+              microTopic: "market_cap",
             },
-          ].map(({ label, value, tip }) => (
+          ].map(({ label, value, tip, microTopic }) => (
             <div key={label} className="flex justify-between items-center">
               <dt className="flex items-center text-xs text-[var(--color-text-muted)]">
                 {label}
                 <InfoTooltip text={tip} side="left" />
+                {microTopic && <MicroLesson topic={microTopic} />}
               </dt>
               <dd className="text-xs font-mono tabular text-[var(--color-text-primary)]">{value}</dd>
             </div>
@@ -757,6 +873,7 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
 function AITab({ stock }: { stock: ScanRow }) {
   return (
     <div className="space-y-4">
+      <ExplainSection ticker={stock.ticker} stock={stock} />
       <EarningsMemoCard ticker={stock.ticker} />
       <div>
         <AnalysCommittee stock={stock} />

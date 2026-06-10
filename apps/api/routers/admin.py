@@ -640,6 +640,51 @@ def reject_candidate(
     return {"ok": True}
 
 
+# ─── Feedback ──────────────────────────────────────────────────────────────────
+
+
+@router.get("/feedback")
+def admin_feedback(
+    component: str | None = None,
+    limit: int = 200,
+    sb_admin=Depends(get_supabase_admin),
+    user: User = Depends(require_admin),
+):
+    query = (
+        sb_admin.table("user_feedback")
+        .select("id, user_id, component, context, rating, comment, created_at")
+        .order("created_at", desc=True)
+        .limit(limit)
+    )
+    if component:
+        query = query.eq("component", component)
+    res = query.execute()
+    data = res.data or []
+    # Aggregate stats
+    positive = sum(1 for r in data if r.get("rating") == 1)
+    negative = sum(1 for r in data if r.get("rating") == -1)
+    neutral = sum(1 for r in data if r.get("rating") == 0)
+    by_component = {}
+    for r in data:
+        c = r.get("component", "unknown")
+        if c not in by_component:
+            by_component[c] = {"total": 0, "positive": 0, "negative": 0, "neutral": 0}
+        by_component[c]["total"] += 1
+        rat = r.get("rating", 0)
+        if rat == 1:
+            by_component[c]["positive"] += 1
+        elif rat == -1:
+            by_component[c]["negative"] += 1
+        else:
+            by_component[c]["neutral"] += 1
+    return {
+        "feedback": data,
+        "count": len(data),
+        "stats": {"positive": positive, "negative": negative, "neutral": neutral},
+        "by_component": by_component,
+    }
+
+
 # ─── GitHub Actions status (read-only) ────────────────────────────────────────
 
 @router.get("/github-status")

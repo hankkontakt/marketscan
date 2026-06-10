@@ -4,13 +4,14 @@ import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { TrendingUp, X } from "lucide-react";
 import { useExperience } from "@/components/providers/ExperienceProvider";
+import { trackEvent, EVENT } from "@/lib/tracking";
 
 /**
  * OnboardingModal — shown once for new users.
  * 2-3 step light onboarding, no separate page.
  */
 export function OnboardingModal() {
-  const { loading, onboardingCompleted, completeOnboarding, setLevel } = useExperience();
+  const { loading, onboardingCompleted, completeOnboarding, setLevel, level } = useExperience();
   const [step, setStep] = useState(0);
   const [open, setOpen] = useState(false);
 
@@ -57,12 +58,14 @@ export function OnboardingModal() {
     if (step < steps.length - 1) {
       setStep(step + 1);
     } else {
+      trackEvent(EVENT.ONBOARDING_COMPLETED, { level });
       completeOnboarding();
       setOpen(false);
     }
   }
 
   function handleSkip() {
+    trackEvent(EVENT.ONBOARDING_COMPLETED, { level, skipped: true });
     // If user skipped before selecting a level, default to beginner
     if (step < 1) {
       setLevel("beginner");

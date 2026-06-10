@@ -7,7 +7,7 @@ import {
   Search, Moon, Sun, User, LogOut, Settings, ChevronDown, TrendingUp,
   Briefcase, SlidersHorizontal, Globe, Star, CalendarDays, BarChart2,
   BookOpen, Shield, FlaskConical, Activity, Brain, Eye, ArrowLeftRight,
-  Menu, X,
+  Menu, X, Compass,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCommandPalette } from "@/hooks/useCommandPalette";
@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { NotificationBell } from "@/components/notifications/NotificationCenter";
 import { useScanMeta } from "@/hooks/useScreener";
+import { useExperience, type ExperienceLevel } from "@/components/providers/ExperienceProvider";
 
 // ── Nav data ───────────────────────────────────────────────────────────────
 
@@ -55,11 +56,50 @@ const DRAWER_VERKTYG = [
   { href: "/strategi-lab",     label: "Strategi Lab",   icon: FlaskConical },
 ] as const;
 
+/** Map each experience level to its primary nav links */
+const NAV_BY_LEVEL: Record<ExperienceLevel, readonly { href: string; label: string }[]> = {
+  beginner: [
+    { href: "/daglig-briefing", label: "Hem" },
+    { href: "/upptack",        label: "Upptäck" },
+    { href: "/bevakningar",     label: "Bevakningar" },
+    { href: "/guide",           label: "Guide" },
+    { href: "/installningar",   label: "Inställningar" },
+  ],
+  intermediate: [
+    { href: "/daglig-briefing", label: "Hem" },
+    { href: "/upptack",        label: "Upptäck" },
+    { href: "/portfolj",        label: "Portfölj" },
+    { href: "/bevakningar",     label: "Bevakningar" },
+    { href: "/kalender",        label: "Kalender" },
+    { href: "/installningar",   label: "Inställningar" },
+  ],
+  expert: PRIMARY_NAV as unknown as readonly { href: string; label: string }[],
+};
+
+/** Map each experience level to its drawer primary items */
+const DRAWER_BY_LEVEL: Record<ExperienceLevel, readonly { href: string; label: string; icon: any }[]> = {
+  beginner: [
+    { href: "/daglig-briefing", label: "Hem",         icon: BarChart2 },
+    { href: "/upptack",        label: "Upptäck",     icon: Compass },
+    { href: "/bevakningar",     label: "Bevakningar", icon: Star },
+    { href: "/guide",           label: "Guide",       icon: BookOpen },
+  ],
+  intermediate: [
+    { href: "/daglig-briefing", label: "Hem",         icon: BarChart2 },
+    { href: "/upptack",        label: "Upptäck",     icon: Compass },
+    { href: "/portfolj",        label: "Portfölj",    icon: Briefcase },
+    { href: "/bevakningar",     label: "Bevakningar", icon: Star },
+    { href: "/kalender",        label: "Kalender",    icon: CalendarDays },
+  ],
+  expert: DRAWER_PRIMARY as unknown as readonly { href: string; label: string; icon: any }[],
+};
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function TopBar() {
   const openPalette   = useCommandPalette((s) => s.open);
   const { resolved, toggle } = useTheme();
+  const { level } = useExperience();
   const [userMenuOpen,  setUserMenuOpen]  = useState(false);
   const [drawerOpen,    setDrawerOpen]    = useState(false);
   const [verktygOpen,   setVerktygOpen]   = useState(false);
@@ -70,6 +110,11 @@ export function TopBar() {
   const router     = useRouter();
   const pathname   = usePathname();
   const { data: scanMeta } = useScanMeta();
+
+  // Resolve nav items for current level
+  const currentNav = NAV_BY_LEVEL[level];
+  const currentDrawer = DRAWER_BY_LEVEL[level];
+  const showVerktyg = level === "expert";
 
   // Fetch user + admin status
   useEffect(() => {
@@ -132,7 +177,7 @@ export function TopBar() {
 
         {/* ── Primary nav links (desktop only) ────────────────────── */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1" aria-label="Huvudnavigation">
-          {PRIMARY_NAV.map(({ href, label }) => {
+          {currentNav.map(({ href, label }) => {
             const active = pathname.startsWith(href);
             return (
               <Link
@@ -151,64 +196,66 @@ export function TopBar() {
             );
           })}
 
-          {/* Verktyg dropdown */}
-          <div className="relative" ref={verktygRef}>
-            <button
-              onClick={() => setVerktygOpen(!verktygOpen)}
-              aria-expanded={verktygOpen}
-              className={cn(
-                "flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                isVerktygActive
-                  ? "text-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)]",
-              )}
-            >
-              Verktyg
-              <ChevronDown
-                size={13}
-                strokeWidth={1.5}
-                className={cn("transition-transform duration-200", verktygOpen && "rotate-180")}
-              />
-            </button>
+          {/* Verktyg dropdown — expert only */}
+          {showVerktyg && (
+            <div className="relative" ref={verktygRef}>
+              <button
+                onClick={() => setVerktygOpen(!verktygOpen)}
+                aria-expanded={verktygOpen}
+                className={cn(
+                  "flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                  isVerktygActive
+                    ? "text-[var(--color-accent)] bg-[var(--color-accent-soft)]"
+                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)]",
+                )}
+              >
+                Verktyg
+                <ChevronDown
+                  size={13}
+                  strokeWidth={1.5}
+                  className={cn("transition-transform duration-200", verktygOpen && "rotate-180")}
+                />
+              </button>
 
-            {verktygOpen && (
-              <div className="absolute top-[calc(100%+6px)] left-0 w-64 rounded-xl border shadow-xl z-50
-                              overflow-hidden bg-[var(--color-bg-surface)] border-[var(--color-border-strong)]">
-                {VERKTYG_ITEMS.map(({ href, label, icon: Icon, desc }) => {
-                  const active = pathname.startsWith(href);
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      onClick={() => setVerktygOpen(false)}
-                      className={cn(
-                        "flex items-start gap-3 px-4 py-3 transition-colors",
-                        active ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-bg-elevated)]",
-                      )}
-                    >
-                      <Icon
-                        size={15}
-                        strokeWidth={1.5}
+              {verktygOpen && (
+                <div className="absolute top-[calc(100%+6px)] left-0 w-64 rounded-xl border shadow-xl z-50
+                                overflow-hidden bg-[var(--color-bg-surface)] border-[var(--color-border-strong)]">
+                  {VERKTYG_ITEMS.map(({ href, label, icon: Icon, desc }) => {
+                    const active = pathname.startsWith(href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        onClick={() => setVerktygOpen(false)}
                         className={cn(
-                          "mt-0.5 shrink-0",
-                          active ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)]",
+                          "flex items-start gap-3 px-4 py-3 transition-colors",
+                          active ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-bg-elevated)]",
                         )}
-                      />
-                      <div>
-                        <p className={cn(
-                          "text-sm font-medium",
-                          active ? "text-[var(--color-accent)]" : "text-[var(--color-text-primary)]",
-                        )}>
-                          {label}
-                        </p>
-                        <p className="text-xs text-[var(--color-text-muted)] mt-0.5 leading-tight">{desc}</p>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                      >
+                        <Icon
+                          size={15}
+                          strokeWidth={1.5}
+                          className={cn(
+                            "mt-0.5 shrink-0",
+                            active ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)]",
+                          )}
+                        />
+                        <div>
+                          <p className={cn(
+                            "text-sm font-medium",
+                            active ? "text-[var(--color-accent)]" : "text-[var(--color-text-primary)]",
+                          )}>
+                            {label}
+                          </p>
+                          <p className="text-xs text-[var(--color-text-muted)] mt-0.5 leading-tight">{desc}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
 
         {/* Spacer on mobile */}
@@ -393,9 +440,9 @@ export function TopBar() {
 
         {/* Drawer nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-3">
-          {/* Primary */}
+          {/* Primary — level-aware */}
           <div className="space-y-0.5">
-            {DRAWER_PRIMARY.map(({ href, label, icon: Icon }) => {
+            {currentDrawer.map(({ href, label, icon: Icon }) => {
               const active = pathname.startsWith(href);
               return (
                 <Link
@@ -416,33 +463,35 @@ export function TopBar() {
             })}
           </div>
 
-          {/* Verktyg section */}
-          <div className="mt-5">
-            <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-              Verktyg
-            </p>
-            <div className="space-y-0.5">
-              {DRAWER_VERKTYG.map(({ href, label, icon: Icon }) => {
-                const active = pathname.startsWith(href);
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
-                      active
-                        ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                        : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)]",
-                    )}
-                    aria-current={active ? "page" : undefined}
-                  >
-                    <Icon size={16} strokeWidth={1.5} className="shrink-0" />
-                    {label}
-                  </Link>
-                );
-              })}
+          {/* Verktyg section — expert only */}
+          {showVerktyg && (
+            <div className="mt-5">
+              <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                Verktyg
+              </p>
+              <div className="space-y-0.5">
+                {DRAWER_VERKTYG.map(({ href, label, icon: Icon }) => {
+                  const active = pathname.startsWith(href);
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
+                        active
+                          ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                          : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)]",
+                      )}
+                      aria-current={active ? "page" : undefined}
+                    >
+                      <Icon size={16} strokeWidth={1.5} className="shrink-0" />
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Admin section */}
           {isAdmin && (

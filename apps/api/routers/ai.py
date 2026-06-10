@@ -527,6 +527,192 @@ def get_ai_journal(ticker: str, sb=Depends(get_supabase)):
     return AIJournalOut(ticker=ticker, entries=entries)
 
 
+# ─── AI Explain (Spec 15) ─────────────────────────────────────────────────────
+
+
+class ExplainRequest(BaseModel):
+    stock_data: dict
+
+
+class ExplainResponse(BaseModel):
+    ticker: str
+    explanation: str
+    level: str
+    cached_date: str
+
+
+class FollowupRequest(BaseModel):
+    stock_data: dict
+    previous_explanation: str
+    question: str
+
+
+class FollowupResponse(BaseModel):
+    ticker: str
+    answer: str
+    cached_date: str
+
+
+class MicroLessonRequest(BaseModel):
+    topic: str
+
+
+class MicroLessonResponse(BaseModel):
+    topic: str
+    question: str
+    explanation: str
+    cached_date: str
+
+
+AI_EXPLAIN_SYSTEM = """Du är en pedagogisk AI-assistent som förklarar aktieanalys på svenska.
+Din målgrupp är nybörjare — använd enkelt språk, undik jargong och förklara alla begrepp du nämner.
+Var konkret och använd siffrorna du får. Hitta inte på egna tal.
+Avsluta ALLTID med: "AI-genererad — inte finansiell rådgivning." """
+
+EXPLAIN_FOLLOWUP_SYSTEM = """Du är en pedagogisk AI-assistent som svarar på följdfrågor om aktieanalys.
+Använd enkelt språk. Utgå från den tidigare förklaringen och datan som ges.
+Var konkret. Hitta inte på egna tal.
+Avsluta ALLTID med: "AI-genererad — inte finansiell rådgivning." """
+
+MICRO_LESSONS: dict[str, dict[str, str]] = {
+    "pe_trailing": {
+        "question": "Vad betyder P/E-tal?",
+        "explanation": "P/E står för Price-to-Earnings (pris/vinst). Det visar hur många kronor du betalar för varje krona i vinst som bolaget tjänar. Ett högt P/E (över 25) betyder ofta att investerare förväntar sig hög tillväxt. Ett lågt P/E (under 10) kan betyda att aktien är billig eller att bolaget går dåligt. Jämför alltid med andra bolag i samma bransch.",
+    },
+    "pe_forward": {
+        "question": "Vad är skillnaden mellan P/E (TTM) och P/E (forward)?",
+        "explanation": "P/E (TTM) använder vinsten från de senaste 12 månaderna — alltså verkliga historiska siffror. P/E (forward) använder analytikernas prognoser för kommande 12 månader. Forward-P/E kan vara missvisande om prognoserna är för optimistiska.",
+    },
+    "roe": {
+        "question": "Vad betyder ROE?",
+        "explanation": "ROE står för Return on Equity (avkastning på eget kapital). Det visar hur effektivt bolaget använder ägarnas pengar för att generera vinst. En tumregel: ROE över 15 % anses bra. Över 20 % är starkt. Var dock försiktig — hög ROE kan bero på hög skuldsättning.",
+    },
+    "piotroski": {
+        "question": "Vad är Piotroski F-Score?",
+        "explanation": "Piotroski F-Score är ett finansiellt hälsotest från 0 till 9. Det kollar 9 olika saker: lönsamhet, skuldsättning, likviditet och operativ effektivitet. 7–9 = stark finansiell hälsa. 0–2 = svag. Det är ett bra första filter för att snabbt se om ett bolag är finansiellt sunt.",
+    },
+    "entry_signal": {
+        "question": "Vad betyder köplägena (STARK, OK, VÄNTA, EJ AKTUELL)?",
+        "explanation": "Köpläget är systemets samlade bild av om aktien är köpvärd just nu baserat på din strategi: STARK = stark köpsignal, OK = godkänd men inget utmärkande, VÄNTA = avvakta med köp, EJ AKTUELL = uppfyller inte kraven för strategin. Det är en vägledning, inte en order.",
+    },
+    "trend_signal": {
+        "question": "Vad betyder trendsignalerna (Upptrend/Sidled/Nedtrend)?",
+        "explanation": "Trendsignalen baseras på aktiens kursutveckling: Upptrend = priset har stigit under en längre period, Sidled = priset rör sig inom ett intervall, Nedtrend = priset har fallit. Upptrend är positivt men kan innebära att aktien är dyr. Nedtrend är negativt men kan vara en köpmöjlighet om bolaget i grunden är starkt.",
+    },
+    "market_cap": {
+        "question": "Vad är börsvärde och varför spelar det roll?",
+        "explanation": "Börsvärdet (market cap) är aktiekursen gånger antalet aktier. Det visar hur mycket hela bolaget värderas till. Stora bolag (large cap över 10 miljarder euro) är ofta stabilare men växer långsammare. Små bolag (small cap under 2 miljarder euro) har högre risk men större potential.",
+    },
+}
+
+
+# ─── AI Explain (Spec 15) ─────────────────────────────────────────────────────
+
+
+@router.post("/explain/{ticker}", response_model=ExplainResponse)
+async def explain_stock(
+    ticker: str,
+    body: ExplainRequest,
+    request: Request,
+    sb=Depends(get_supabase),
+    sb_admin=Depends(get_supabase_admin),
+    user: User = Depends(get_current_user),
+):
+    """Explain a stock's key metrics in plain Swedish for beginners."""
+    if limiter is not None:
+        try:
+            await limiter._check_request_limit(request, "30/minute")
+        except Exception:
+            pass
+
+    today = date.today().isoformat()
+    cache_key = f"explain:{ticker}:beginner:{today}"
+    cached = get_cached(cache_key, sb_admin)
+    if cached:
+        return cached
+
+    context = _build_stock_context(ticker, body.stock_data)
+    prompt = f"Förklara aktien {ticker} för en nybörjare. Använd datan nedan.\n\n{context}"
+    explanation = await _call_ai(AI_EXPLAIN_SYSTEM, prompt, max_tokens=500)
+
+    response = {
+        "ticker": ticker,
+        "explanation": explanation,
+        "level": "beginner",
+        "cached_date": today,
+    }
+    set_cache(cache_key, response, sb_admin)
+    return response
+
+
+@router.post("/explain/{ticker}/followup", response_model=FollowupResponse)
+async def explain_followup(
+    ticker: str,
+    body: FollowupRequest,
+    request: Request,
+    sb=Depends(get_supabase),
+    sb_admin=Depends(get_supabase_admin),
+    user: User = Depends(get_current_user),
+):
+    """Answer follow-up questions about a previously explained stock."""
+    if limiter is not None:
+        try:
+            await limiter._check_request_limit(request, "20/minute")
+        except Exception:
+            pass
+
+    today = date.today().isoformat()
+    context = _build_stock_context(ticker, body.stock_data)
+    prompt = (
+        f"Tidigare förklaring om {ticker}:\n{body.previous_explanation}\n\n"
+        f"Data:\n{context}\n\n"
+        f"Användaren frågar: {body.question}"
+    )
+    answer = await _call_ai(EXPLAIN_FOLLOWUP_SYSTEM, prompt, max_tokens=500)
+
+    return {
+        "ticker": ticker,
+        "answer": answer,
+        "cached_date": today,
+    }
+
+
+@router.post("/micro-lesson", response_model=MicroLessonResponse)
+async def micro_lesson(
+    body: MicroLessonRequest,
+    request: Request,
+    sb=Depends(get_supabase),
+    sb_admin=Depends(get_supabase_admin),
+    user: User = Depends(get_current_user),
+):
+    """Return a short micro-lesson explaining a financial concept."""
+    if limiter is not None:
+        try:
+            await limiter._check_request_limit(request, "60/minute")
+        except Exception:
+            pass
+
+    today = date.today().isoformat()
+    cache_key = f"micro_lesson:{body.topic}:{today}"
+    cached = get_cached(cache_key, sb_admin)
+    if cached:
+        return cached
+
+    lesson = MICRO_LESSONS.get(body.topic, {
+        "question": f"Vad betyder {body.topic}?",
+        "explanation": f"Tyvärr har vi ingen förklaring för {body.topic} ännu. Försök med en annan term.",
+    })
+
+    response = {
+        "topic": body.topic,
+        "question": lesson["question"],
+        "explanation": lesson["explanation"],
+        "cached_date": today,
+    }
+    set_cache(cache_key, response, sb_admin)
+    return response
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _build_stock_context(ticker: str, data: dict) -> str:

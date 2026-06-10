@@ -22,6 +22,7 @@ from apps.api.routers import (
     notifications, transactions, macro_regime, insider,
 )
 from apps.api.routers import risk, smart_alerts, strategy_lab, ml_performance
+from apps.api.routers import feedback as feedback_router
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -123,6 +124,8 @@ app.include_router(risk.router)            # /api/portfolio/analytics, /optimize
 app.include_router(smart_alerts.router)    # /api/alerts, /api/score-history, /api/signal-transitions
 app.include_router(strategy_lab.router)    # /api/strategies, /api/signal-analytics
 app.include_router(ml_performance.router, prefix="/api")  # /api/ml-performance/* (admin-only)
+
+app.include_router(feedback_router.router)
 
 
 @app.get("/api/health")

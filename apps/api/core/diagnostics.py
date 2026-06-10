@@ -26,6 +26,7 @@ USER_TABLES = [
     "profiles", "portfolios", "holdings", "transactions", "watchlist",
     "price_alerts", "saved_screens", "notifications", "notification_preferences",
     "fund_holdings", "user_ticker_requests", "portfolio_snapshots",
+    "user_feedback",
 ]
 
 # Tables meant to be publicly readable (no RLS by design).
@@ -48,6 +49,7 @@ MIGRATION_MARKERS = {
     "032_risk_profile": "user_risk_profiles",
     "033_earnings_memos": "earnings_memos",
     "034_notification_prefs": "notification_prefs",
+    "035_user_feedback": "user_feedback",
 }
 
 # Env vars that must be present for core features to work, with the feature
