@@ -145,13 +145,35 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
     return df[SCAN_COLUMNS]
 
 
-def load_scan(df: pd.DataFrame, dsn: str | None = None) -> int:
+def load_scan(
+    df: pd.DataFrame,
+    dsn: str | None = None,
+    *,
+    replace: bool = True,
+    min_keep_fraction: float = 0.7,
+) -> int:
     """
-    Replace scan_results table with new data. Returns row count.
-    dsn defaults to DATABASE_URL env var.
+    Ladda scored df till scan_results (via staging-tabell + UPSERT).
+
+    replace=True   → FULL ombyggnad: upsertar alla rader OCH raderar tickers som
+                     inte finns i denna scan. Endast för weekly (hela universumet).
+                     EXCLUDED-värden är auktoritativa (skriver även över med NULL).
+    replace=False  → PARTIELL: upsertar bara df:ens tickers och raderar ALDRIG övriga.
+                     Använder COALESCE → en NULL i inkommande data skriver ALDRIG
+                     över ett befintligt icke-NULL-värde (förstör inte priser/betyg).
+                     För morning/evening/manual/smallcap (sub-scans som inte täcker
+                     hela universumet).
+
+    Skyddsnät: även med replace=True degraderas körningen till partiell UPSERT om
+    den skulle krympa universumet till < min_keep_fraction av nuvarande storlek
+    (en trasig/partiell parquet som råkar köras som 'full' får inte radera allt).
+
+    Returnerar antal rader i scan_results efter laddning.
     """
     dsn = dsn or os.environ["DATABASE_URL"]
     prepared = _prepare_df(df)
+    cols = SCAN_COLUMNS
+    col_list = ",".join(cols)
 
     buf = io.StringIO()
     prepared.to_csv(buf, index=False, header=False, na_rep="", encoding="utf-8")
@@ -160,17 +182,61 @@ def load_scan(df: pd.DataFrame, dsn: str | None = None) -> int:
     with psycopg2.connect(dsn, client_encoding="UTF8") as con:
         con.autocommit = False
         with con.cursor() as cur:
-            cur.execute("TRUNCATE scan_results;")
+            cur.execute("SELECT COUNT(*) FROM scan_results;")
+            existing = cur.fetchone()[0]
+            new_n = len(prepared)
+
+            do_replace = replace
+            if replace and existing > 0 and new_n < existing * min_keep_fraction:
+                logger.warning(
+                    "load_scan: full replace skulle krympa universumet %d→%d "
+                    "(<%.0f%%) — degraderar till UPSERT för att skydda data",
+                    existing, new_n, min_keep_fraction * 100,
+                )
+                do_replace = False
+
+            # Auktoritativ (weekly): EXCLUDED vinner. Partiell: behåll icke-NULL.
+            if do_replace:
+                update_set = ", ".join(f"{c}=EXCLUDED.{c}" for c in cols if c != "ticker")
+            else:
+                update_set = ", ".join(
+                    f"{c}=COALESCE(EXCLUDED.{c}, scan_results.{c})"
+                    for c in cols if c != "ticker"
+                )
+
+            # Staging-tabell (COPY kan inte upserta direkt)
+            cur.execute(
+                "CREATE TEMP TABLE _scan_in (LIKE scan_results INCLUDING DEFAULTS) "
+                "ON COMMIT DROP;"
+            )
             cur.copy_expert(
-                f"COPY scan_results ({','.join(SCAN_COLUMNS)}) FROM STDIN WITH (FORMAT csv, NULL '')",
+                f"COPY _scan_in ({col_list}) FROM STDIN WITH (FORMAT csv, NULL '')",
                 buf,
             )
+            # Dedup inom inkommande data (annars 'cannot affect row a second time')
+            cur.execute(
+                "DELETE FROM _scan_in a USING _scan_in b "
+                "WHERE a.ctid < b.ctid AND a.ticker = b.ticker;"
+            )
+            # Upsert
+            cur.execute(
+                f"INSERT INTO scan_results ({col_list}) "
+                f"SELECT {col_list} FROM _scan_in "
+                f"ON CONFLICT (ticker) DO UPDATE SET {update_set};"
+            )
+            # Full replace → städa bort tickers som inte längre finns i scanen
+            if do_replace:
+                cur.execute(
+                    "DELETE FROM scan_results "
+                    "WHERE ticker NOT IN (SELECT ticker FROM _scan_in);"
+                )
         con.commit()
         with con.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM scan_results;")
             n = cur.fetchone()[0]
 
-    logger.info("scan_results loaded: %d rows", n)
+    logger.info("scan_results loaded: %d rows (replace=%s, in=%d, was=%d)",
+                n, do_replace, new_n, existing)
     return n
 
 

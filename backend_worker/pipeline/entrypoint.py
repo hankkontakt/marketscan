@@ -296,7 +296,11 @@ def run(mode: str) -> None:
             result = _full_pipeline_with_timeout(mode, report_dir, timeout_seconds=75 * 60)
 
         if result is not None and not result.empty:
-            tickers_ok = load_scan(result, dsn)
+            # Endast weekly täcker hela universumet → får ersätta/radera.
+            # morning/evening/manual/smallcap är delmängder → UPSERT (raderar aldrig
+            # övriga tickers, skriver aldrig över icke-NULL med NULL). Skyddar mot att
+            # en liten/partiell scan krymper hela scan_results.
+            tickers_ok = load_scan(result, dsn, replace=(mode == "weekly"))
             try:
                 upload_score_snapshot(result)
             except Exception as r2_exc:
