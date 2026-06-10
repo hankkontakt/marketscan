@@ -460,8 +460,15 @@ async def daily_coach(
         return cached
 
     try:
-        briefing = await _call_ai(DAILY_COACH_SYSTEM,
-                                  json.dumps(facts, ensure_ascii=False), max_tokens=500)
+        from apps.api.core.llm_client import llm_complete
+        prompt = (DAILY_COACH_SYSTEM + "\n\nPORTFÖLJDATA (JSON):\n"
+                  + json.dumps(facts, ensure_ascii=False))
+        # prefer="cheap" → Gemini free tier först, DeepSeek bara som fallback.
+        # cache=False här eftersom vi redan cachar svaret via set_cache nedan.
+        result = await llm_complete(prompt, task="daily_coach", prefer="cheap", cache=False)
+        briefing = (result or {}).get("text", "").strip()
+        if not briefing:
+            briefing = "Kunde inte generera en coach-briefing just nu. Försök igen senare."
     except Exception as e:
         logger.warning("daily-coach LLM failed: %s", e)
         briefing = "Kunde inte generera en coach-briefing just nu. Försök igen senare."
