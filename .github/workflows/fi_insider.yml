@@ -1,0 +1,53 @@
+name: FI Insider Bulk
+
+# Daglig bulk-ingestion av FI:s insynsregister + klusterscoring.
+# Ersätter den gamla per-ticker Finnhub-workern som primär källa.
+
+on:
+  schedule:
+    - cron: "40 3 * * 1-5"   # Vardagar 03:40 UTC (ca 05:40 Stockholm)
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Antal dagar bakåt att hämta"
+        required: false
+        default: "7"
+        type: string
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "."
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  fi-insider:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend_worker/requirements.txt
+          pip install beautifulsoup4 lxml
+
+      # ── Steg 1: Bulk-ingestion ──────────────────────────────────────────────
+      - name: Fetch FI insider register
+        run: |
+          DAYS="${{ github.event.inputs.days || '7' }}"
+          python -m backend_worker.fi_insider_bulk --days "$DAYS"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # ── Steg 2: Klusterscoring ──────────────────────────────────────────────
+      - name: Calculate insider clusters
+        run: |
+          python -m backend_worker.insider_cluster
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

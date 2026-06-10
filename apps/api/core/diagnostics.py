@@ -41,6 +41,11 @@ MIGRATION_MARKERS = {
     "021_strategy_lab": "strategies",
     "022_fund_holdings": "fund_holdings",
     "024_prediction_outcomes": "prediction_outcomes",
+    "028_mews": "mews_score",
+    "029_insider_cluster": "insider_cluster_signals",
+    "030_doc_intelligence": "company_documents",
+    "031_ml_uncertainty": "ml_uncertainty",
+    "032_risk_profile": "user_risk_profiles",
 }
 
 # Env vars that must be present for core features to work, with the feature
@@ -54,6 +59,7 @@ REQUIRED_ENV = {
 OPTIONAL_ENV = {
     "FINNHUB_API_KEY": "Aktiekurser/index",
     "DEEPSEEK_API_KEY": "AI-analys",
+    "GEMINI_API_KEY": "LLM-embeddings + Flash-Lite (gratis)",
     "R2_KEY_ID": "Parquet-lagring (R2)",
     "GH_DISPATCH_TOKEN": "Pipeline-trigger från admin",
 }

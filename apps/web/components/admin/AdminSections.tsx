@@ -153,6 +153,12 @@ const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
     workflows: [
       { file: "ml_train.yml", label: "ML-träning", desc: "Tränar om LightGBM LambdaRank-rankeraren (walk-forward)" },
       {
+        file: "ml_retrain.yml",
+        label: "ML-omträning (veckovis)",
+        desc: "Omträning från realiserade utfall med deploy-gate",
+        inputs: [{ key: "force_retrain", label: "Tvinga omträning", type: "toggle", defaultVal: "false" }],
+      },
+      {
         file: "strategy_backtester.yml",
         label: "Strategitest",
         desc: "Backtesting av en specifik strategi mot historisk data",
@@ -182,6 +188,21 @@ const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
         label: "Optionsscan",
         desc: "Söker ovanliga optionsflöden",
         inputs: [{ key: "tickers", label: "Tickers", type: "text", placeholder: "VOLV-B.ST, TSLA (valfritt)" }],
+      },
+      {
+        file: "fi_insider.yml",
+        label: "FI Insider (ny)",
+        desc: "Bulk-ingestion av FI:s insynsregister + klusterscoring",
+        inputs: [{ key: "days", label: "Dagar bakåt", type: "text", placeholder: "7" }],
+      },
+      {
+        file: "doc_intelligence.yml",
+        label: "Dokumentintelligens",
+        desc: "Hämtar rapporter + extraherar kvalitativa signaler",
+        inputs: [
+          { key: "days", label: "Dagar bakåt", type: "text", placeholder: "3" },
+          { key: "tickers", label: "Tickers (kommasep, valfritt)", type: "text", placeholder: "" },
+        ],
       },
       {
         file: "digest.yml",

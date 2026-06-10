@@ -976,3 +976,49 @@ def get_similar_stocks(ticker: str, limit: int = 8, sb=Depends(get_supabase)):
     ]
 
     return SimilarStocksResponse(ticker=ticker, similar=similar)
+
+
+# ─── Qualitative Signals (#7+#12) ─────────────────────────────────────────────
+
+
+class QualitativeSignalsOut(BaseModel):
+    ticker: str
+    qualitative_score: float | None = None
+    outlook_direction: str | None = None
+    hedging_density: float | None = None
+    capital_intent: str | None = None
+    tone_change: float | None = None
+    summary: str | None = None
+
+
+@router.get("/{ticker}/qualitative", response_model=QualitativeSignalsOut)
+def get_qualitative_signals(
+    ticker: str,
+    sb=Depends(get_supabase),
+):
+    """Return qualitative signals from document intelligence for a ticker."""
+    t = _validate_ticker(ticker)
+    try:
+        result = (
+            sb.table("qualitative_signals")
+            .select("*")
+            .eq("ticker", t)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Inga kvalitativa signaler f\xf6r {t}")
+        row = result.data[0]
+        return QualitativeSignalsOut(
+            ticker=row["ticker"],
+            qualitative_score=float(row["qualitative_score"]) if row.get("qualitative_score") is not None else None,
+            outlook_direction=row.get("outlook_direction"),
+            hedging_density=float(row["hedging_density"]) if row.get("hedging_density") is not None else None,
+            capital_intent=row.get("capital_intent"),
+            tone_change=float(row["tone_change"]) if row.get("tone_change") is not None else None,
+            summary=row.get("summary"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Kvalitativa signaler ej tillg\xe4ngliga: {e}")

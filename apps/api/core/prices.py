@@ -96,3 +96,51 @@ def fetch_live_quotes(tickers: list[str]) -> dict[str, dict]:
 def fetch_live_prices(tickers: list[str]) -> dict[str, float]:
     """Return {ticker: latest_price} — convenience wrapper over fetch_live_quotes."""
     return {t: q["price"] for t, q in fetch_live_quotes(tickers).items()}
+
+
+def fetch_price_history_batch(tickers: list[str], days: int = 365) -> "pd.DataFrame":
+    """Hämta daglig prishistorik för en batch tickers.
+
+    Använder Yahoo v8 chart. Returnerar DataFrame med tickers som kolumner.
+    Kräver pandas installerat (finns i backend_worker, EJ i API-bundeln).
+
+    Args:
+        tickers: Lista med tickers.
+        days: Antal dagar historik.
+
+    Returns:
+        DataFrame med datum-index och ticker-kolumner.
+    """
+    import pandas as pd
+
+    all_data = {}
+    with httpx.Client() as client:
+        for ticker in tickers:
+            try:
+                r = client.get(
+                    _CHART_URL.format(sym=ticker),
+                    params={"range": f"{max(days, 30)}d", "interval": "1d"},
+                    headers=_HEADERS,
+                    timeout=10.0,
+                )
+                if r.status_code != 200:
+                    continue
+                result = r.json().get("chart", {}).get("result", [])
+                if not result:
+                    continue
+                timestamps = result[0].get("timestamp", [])
+                quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+                closes = quotes.get("close", [])
+
+                if len(timestamps) == len(closes):
+                    dates = pd.to_datetime(timestamps, unit="s")
+                    prices = pd.Series(closes, index=dates, dtype=float, name=ticker)
+                    all_data[ticker] = prices
+            except Exception as e:
+                logger.debug("history %s failed: %s", ticker, e)
+
+    if not all_data:
+        return pd.DataFrame()
+
+    result = pd.concat(all_data, axis=1)
+    return result.ffill().dropna(how="all")

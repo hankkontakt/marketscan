@@ -22,6 +22,11 @@ SCAN_COLUMNS = [
     "debt_to_equity", "current_ratio", "gross_margin", "operating_margin",
     "dividend_yield", "beta", "vol_20d",
     "low_liquidity", "has_holding", "scan_date",
+    # MEWS (#3)
+    "mews_score", "mews_flag", "mews_fcf_yield", "mews_small_size",
+    "mews_low_ps", "mews_operating_leverage", "mews_revenue_accel", "mews_clean_accruals",
+    # Ensemble / uncertainty (#15)
+    "ml_uncertainty", "ml_flag_uncertain", "regime_at_scan",
 ]
 
 SEGMENT_THRESHOLDS = {

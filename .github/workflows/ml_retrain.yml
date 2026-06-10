@@ -1,0 +1,116 @@
+name: ML Retraining (Weekly)
+
+# Veckovis omträning av ranker-modellen från realiserade utfall.
+# Flöde:
+#   1. Bygg träningsdataset från prediction_outcomes (realized_return_30d)
+#   2. Träna ny ranker (train_ranker)
+#   3. Utvärdera med gate (eval_model --gate)
+#   4. Om ny modell vinner: committa .pkl till stock-scanner
+#   5. Höj model_version i outcome_filler så A/B blir mätbart
+
+on:
+  schedule:
+    - cron: "0 4 * * 0"   # Söndagar 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      force-retrain:
+        description: "Hoppa över gate — tvinga omträning"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "stock-scanner"  # gör 'core.*' och 'scripts.*' importerbara
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────────
+      - name: Checkout marketscan
+        uses: actions/checkout@v4
+        with:
+          path: marketscan
+
+      - name: Checkout stock-scanner
+        uses: actions/checkout@v4
+        with:
+          repository: hankkontakt/stock-scanner
+          token: ${{ secrets.GH_CHECKOUT_TOKEN }}
+          path: stock-scanner
+
+      # ── Python setup ─────────────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r marketscan/backend_worker/requirements.txt
+          pip install lightgbm scipy
+
+      # ── Steg 1: Bygg träningsdataset från realiserade utfall ────────────────
+      - name: Build retraining dataset
+        working-directory: marketscan
+        run: |
+          python -c "
+          from backend_worker.ml_trainer import build_training_dataset
+          df = build_training_dataset(lookback_days=365)
+          if len(df) >= 500:
+              df.to_parquet('training_retrain.parquet')
+              print(f'Dataset: {len(df)} rows, {len(df.columns)} cols')
+          else:
+              print(f'För lite data: {len(df)} rows (need 500)')
+          "
+
+      # ── Steg 2: Bygg även från stock-scanner historik (fallback) ────────────
+      - name: Build historical dataset
+        working-directory: stock-scanner
+        run: |
+          python -m scripts.build_ml_dataset --universe universe --years 5 || true
+          echo "Historical dataset status: $?"
+
+      # ── Steg 3: Träna och utvärdera ny modell ──────────────────────────────
+      - name: Train ranker on retraining data (if available)
+        working-directory: stock-scanner
+        run: |
+          # Använd retraining-dataset om det finns
+          if [ -f ../marketscan/training_retrain.parquet ]; then
+            python -c "
+            import sys; from pathlib import Path
+            sys.path.insert(0, '.')
+            import pandas as pd
+            from core.ml_ranker import train_ranker, save_ranker
+            df = pd.read_parquet('../marketscan/training_retrain.parquet')
+            ranker = train_ranker(None, 'universe', df=df)
+            if ranker:
+              save_ranker(ranker, 'universe_v2')
+              print(f'Retrained v2: IC={ranker.test_metrics.get(\"ic\", 0):.4f}')
+            else:
+              print('Retraining failed')
+            "
+          fi
+
+      # ── Steg 4: Kör deploy-gate ────────────────────────────────────────────
+      - name: Deploy gate — compare new model vs deployed
+        working-directory: stock-scanner
+        run: |
+          python -m scripts.eval_model --gate || echo "Gate failed — keeping existing model"
+
+      # ── Steg 5: Committa ny modell om gate godkänt ─────────────────────────
+      - name: Commit new model if gate passed
+        working-directory: stock-scanner
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/ml_ranker_universe.pkl models/ml_ranker_universe_metrics.json 2>/dev/null || true
+          git add models/ml_ranker_universe_v2_metrics.json 2>/dev/null || true
+          git add models/model_comparison_universe.json 2>/dev/null || true
+          git diff --staged --quiet && echo "Ingen modellförändring" || \
+            git commit -m "chore: uppdaterad ML-ranker (veckovis omträning) [skip ci]"
+          git push || echo "Push misslyckades"

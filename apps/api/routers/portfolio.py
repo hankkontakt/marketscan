@@ -2,6 +2,7 @@
 import json
 import logging
 from collections import Counter
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -14,6 +15,7 @@ from apps.api.core.avanza_import import (
     parse_avanza_csv, build_preview,
     parse_positioner_csv, parse_inkopskurser_csv, get_buy_date,
 )
+from apps.api.core.prices import fetch_live_quotes, fetch_price_history_batch
 
 logger = logging.getLogger(__name__)
 
@@ -686,3 +688,145 @@ def remove_fund_holding(
     )
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Fondinnehavet hittades inte")
+
+
+# ─── Portfolio Construction (#19 Black-Litterman) ─────────────────────────────
+
+class ConstructRequest(BaseModel):
+    tickers: list[str] | None = None
+    use_profile: bool = True
+
+
+class PerPositionOut(BaseModel):
+    ticker: str
+    weight: float
+    name: str | None = None
+
+
+class ConstructResponse(BaseModel):
+    method: str
+    weights: list[PerPositionOut]
+    expected_return: float = 0
+    expected_volatility: float = 0
+    sharpe: float = 0
+    var_95: float = 0
+    disclaimer: str = (
+        "Detta är ett automatiskt förslag baserat på Black-Litterman-modellen. "
+        "Det är inte finansiell rådgivning. Inga affärer läggs automatiskt."
+    )
+
+
+@router.post("/construct", response_model=ConstructResponse)
+def construct_portfolio(
+    body: ConstructRequest,
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Konstruera portföljförslag med Black-Litterman eller Risk Parity."""
+    import numpy as np
+    try:
+        from apps.api.core.portfolio_construction import (
+            black_litterman,
+            equal_risk_contribution,
+            portfolio_stats,
+        )
+    except ImportError as e:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVE, f"portfolio_construction saknas: {e}")
+
+    # 1. Hämta användarens riskprofil (eller defaulta till balanserad)
+    risk_profile = {}
+    if body.use_profile:
+        prof = sb.table("user_risk_profiles").select("*").eq("user_id", user.id).limit(1).execute()
+        if prof.data:
+            risk_profile = prof.data[0]
+
+    max_position_pct = float(risk_profile.get("max_position_pct", 0.18))
+    target_vol = risk_profile.get("target_volatility")
+    risk_aversion = {0: 1.5, 25: 2.0, 45: 2.5, 65: 3.0, 85: 4.0}.get(
+        (risk_profile.get("risk_score", 50) // 20) * 20, 2.5
+    )
+
+    # 2. Välj tickers (från body eller topp-rankade ur scan_results)
+    tickers = body.tickers
+    if not tickers:
+        scan = sb.table("scan_results").select("ticker, score_total, market_cap, predicted_return")\
+            .order("score_total desc").limit(30).execute()
+        tickers = [r["ticker"] for r in scan.data] if scan.data else []
+
+    if not tickers or len(tickers) < 2:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Minst 2 tickers krävs")
+
+    # 3. Hämta prishistorik för kovariansmatris
+    try:
+        prices = fetch_price_history_batch(tickers, days=365)
+        returns = prices.pct_change().dropna()
+        if returns.empty or len(returns.columns) < 2:
+            raise ValueError("För lite prisdata")
+        cov = returns.cov().values
+        mu = returns.mean().values * 252  # årsavkastning
+    except Exception as e:
+        logger.warning("Kovariansberäkning misslyckades: %s — använder equal weights", e)
+        n = len(tickers)
+        weights = np.ones(n) / n
+        stats = portfolio_stats(weights, np.eye(n) * 0.04)
+        return ConstructResponse(
+            method="equal_weight",
+            weights=[PerPositionOut(ticker=t, weight=round(w, 4))
+                     for t, w in zip(tickers, weights)],
+            **stats,
+        )
+
+    # 4. Market cap vikter
+    market_caps = []
+    scan_map = {}
+    if body.use_profile:
+        scan = sb.table("scan_results").select("ticker, market_cap, score_total")\
+            .in_("ticker", tickers).execute()
+        for r in scan.data or []:
+            scan_map[r["ticker"]] = {
+                "market_cap": float(r.get("market_cap", 0) or 0),
+                "score_total": float(r.get("score_total", 50) or 50),
+            }
+    for t in tickers:
+        mc = scan_map.get(t, {}).get("market_cap", 1)
+        market_caps.append(max(mc, 1))
+
+    # 5. AI-views (från qualitative_signals eller score_total)
+    views = []
+    for i, t in enumerate(tickers):
+        score = scan_map.get(t, {}).get("score_total", 50)
+        # Mappa score_total (0-100) → expected excess return
+        expected_excess = (score - 50) / 50 * 0.10  # max ±10% excess
+        confidence = abs(score - 50) / 50  # 0..1
+        if abs(expected_excess) > 0.01:
+            views.append({
+                "ticker_idx": i,
+                "expected_excess_return": expected_excess,
+                "confidence": max(confidence, 0.1),
+            })
+
+    # 6. Black-Litterman
+    try:
+        weights = black_litterman(
+            market_caps=np.array(market_caps),
+            cov=cov,
+            views=views,
+            risk_aversion=risk_aversion,
+            max_position_pct=max_position_pct,
+            target_volatility=target_vol,
+        )
+        method = "black_litterman"
+    except Exception as e:
+        logger.warning("Black-Litterman misslyckades: %s — faller tillbaka till riskparitet", e)
+        weights = equal_risk_contribution(cov)
+        method = "risk_parity"
+
+    # 7. Statistik
+    stats = portfolio_stats(weights, cov, mu)
+
+    return ConstructResponse(
+        method=method,
+        weights=[PerPositionOut(ticker=t, weight=round(w, 4))
+                 for t, w in zip(tickers, weights)],
+        **stats,
+    )

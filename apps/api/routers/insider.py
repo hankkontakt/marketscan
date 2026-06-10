@@ -266,3 +266,75 @@ def get_insider_radar(
     # Sort by cluster_score descending, take top N
     output.sort(key=lambda x: x.cluster_score, reverse=True)
     return output[:limit]
+
+
+@radar_router.get("/insider/clusters", response_model=list[InsiderClusterOut])
+def get_insider_clusters(
+    ticker: str | None = Query(None, description="Filter by single ticker"),
+    limit: int = Query(20, ge=1, le=100),
+    sb=Depends(get_supabase),
+):
+    """Return insider cluster signals from insider_cluster_signals table.
+
+    This reads from the pre-computed cluster signals table (filled by
+    backend_worker/insider_cluster.py), providing faster results than
+    the on-the-fly radar computation.
+
+    Returns cluster_score, unique_buyers_30d, is_cluster, exec_buy_90d
+    joined with scan_results for stock context.
+    """
+    q = (
+        sb.table("insider_cluster_signals")
+        .select("ticker,unique_buyers_30d,total_buy_amount_30d,cluster_score,is_cluster,exec_buy_90d")
+        .order("cluster_score", desc=True)
+        .limit(limit)
+    )
+    if ticker:
+        q = q.eq("ticker", ticker.upper().strip())
+
+    try:
+        result = q.execute()
+        signals = result.data or []
+    except Exception as e:
+        logger.debug("insider_cluster_signals query failed: %s", e)
+        return []
+
+    if not signals:
+        return []
+
+    # Join with scan_results for stock context
+    tickers = [s["ticker"] for s in signals]
+    stock_map = {}
+    try:
+        sr = (
+            sb.table("scan_results")
+            .select("ticker,name,sector,entry_signal,score_total,price,change_pct,ml_rank")
+            .in_("ticker", tickers)
+            .execute()
+        )
+        stock_map = {r["ticker"]: r for r in (sr.data or [])}
+    except Exception as e:
+        logger.debug("scan_results join failed: %s", e)
+
+    output = []
+    for s in signals:
+        stock = stock_map.get(s["ticker"], {})
+        output.append(InsiderClusterOut(
+            ticker=s["ticker"],
+            name=stock.get("name"),
+            sector=stock.get("sector"),
+            entry_signal=stock.get("entry_signal"),
+            score_total=float(stock["score_total"]) if stock.get("score_total") is not None else None,
+            price=float(stock["price"]) if stock.get("price") is not None else None,
+            change_pct=float(stock["change_pct"]) if stock.get("change_pct") is not None else None,
+            ml_rank=stock.get("ml_rank"),
+            trade_count=int(s.get("unique_buyers_30d", 0)),
+            unique_insiders=int(s.get("unique_buyers_30d", 0)),
+            total_amount=float(s.get("total_buy_amount_30d", 0)),
+            total_shares=0,
+            latest_date="",
+            cluster_score=float(s.get("cluster_score", 0)),
+            recent_trades=[],
+        ))
+
+    return output

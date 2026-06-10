@@ -178,6 +178,18 @@ export function FilterRail({ filters, onChange, onReset, inline }: Props) {
             />
             Exkludera låg likviditet
           </label>
+
+          {/* MEWS: Mångdubblar-kandidater (#3) */}
+          <label className="flex items-center gap-2 text-xs col-span-2 cursor-pointer text-[var(--color-text-secondary)]">
+            <input
+              type="checkbox"
+              checked={filters.mews_flag ?? false}
+              onChange={(e) => onChange({ mews_flag: e.target.checked || undefined })}
+              className="accent-[var(--color-accent)]"
+            />
+            Mångdubblar-kandidater (MEWS)
+            <InfoTooltip text="Multi-Bagger Early Warning Score — bolag med potential att mångdubblas enligt Yartseva (2025). Baseras på FCF-yield, storlek, P/S, operativ hävstång, intäktsacceleration och accrualkvalitet." side="bottom" />
+          </label>
         </div>
       )}
     </>

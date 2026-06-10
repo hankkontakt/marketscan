@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, TrendingUp, TrendingDown, Minus, Plus, X, Check } from "lucide-react";
+import { Star, TrendingUp, TrendingDown, Minus, Plus, X, Check, Zap } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
@@ -125,6 +125,18 @@ export function VerdictHeader({ stock }: Props) {
               <TrendIcon size={13} strokeWidth={1.5} />
               <span>{stock.trend_signal ?? "—"}</span>
             </div>
+
+            {/* MEWS badge (#3) */}
+            {stock.mews_flag && (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--color-accent-soft)] text-[var(--color-accent)] border border-[var(--color-accent-soft)]">
+                <Zap size={10} strokeWidth={2} />
+                Mångdubblar-kandidat
+                <InfoTooltip
+                  text="MEWS (Multi-Bagger Early Warning Score) — evidensbaserad signal baserad på FCF-yield, bolagsstorlek, P/S-tal, operativ hävstång, intäktsacceleration och accrual-kvalitet. ≥70 = potentiell mångdubblare."
+                  side="bottom"
+                />
+              </span>
+            )}
 
             {/* AI-prognos */}
             {stock.predicted_return != null && (

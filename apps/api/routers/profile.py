@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
+# Riskprofiler för #19 Black-Litterman
+RISK_PROFILES = {
+    "trygg": {"max_position_pct": 0.08, "target_volatility": 0.08},
+    "balanserad": {"max_position_pct": 0.12, "target_volatility": 0.12},
+    "tillvaxt": {"max_position_pct": 0.18, "target_volatility": 0.16},
+    "aggressiv": {"max_position_pct": 0.25, "target_volatility": 0.22},
+    "maxrisk": {"max_position_pct": 0.35, "target_volatility": 0.30},
+}
+
 
 class ProfileUpdate(BaseModel):
     display_name: str | None = None
@@ -127,3 +136,86 @@ def delete_account(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Kunde inte ta bort kontot. Försök igen eller kontakta support.",
         )
+
+
+# ─── Risk Profile (#19 Black-Litterman) ──────────────────────────────────────
+
+
+class RiskAnswerIn(BaseModel):
+    answers: dict[str, int]
+
+
+class RiskProfileOut(BaseModel):
+    profile: str
+    risk_score: int
+    time_horizon_years: int | None = None
+    max_position_pct: float
+    target_volatility: float | None = None
+    answers: dict | None = None
+
+
+@router.post("/risk", response_model=RiskProfileOut)
+def save_risk_profile(
+    body: RiskAnswerIn,
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Spara riskprofil från frågeformulär."""
+    answers = body.answers
+    total = sum(answers.values())
+    risk_score = min(max(total, 0), 100)
+
+    if risk_score <= 25:
+        profile = "trygg"
+    elif risk_score <= 45:
+        profile = "balanserad"
+    elif risk_score <= 65:
+        profile = "tillvaxt"
+    elif risk_score <= 85:
+        profile = "aggressiv"
+    else:
+        profile = "maxrisk"
+
+    p = RISK_PROFILES[profile]
+    time_horizon = answers.get("q5", 3)
+
+    data = {
+        "user_id": user.id,
+        "profile": profile,
+        "risk_score": risk_score,
+        "time_horizon_years": time_horizon,
+        "max_position_pct": p["max_position_pct"],
+        "target_volatility": p["target_volatility"],
+        "answers": answers,
+    }
+
+    sb.table("user_risk_profiles").upsert(data, on_conflict="user_id").eq("user_id", user.id).execute()
+
+    return RiskProfileOut(
+        profile=profile,
+        risk_score=risk_score,
+        time_horizon_years=time_horizon,
+        max_position_pct=p["max_position_pct"],
+        target_volatility=p["target_volatility"],
+        answers=answers,
+    )
+
+
+@router.get("/risk", response_model=RiskProfileOut | None)
+def get_risk_profile(
+    user: User = Depends(get_current_user),
+    sb=Depends(get_user_supabase),
+):
+    """Hämta användarens riskprofil."""
+    result = sb.table("user_risk_profiles").select("*").eq("user_id", user.id).limit(1).execute()
+    if not result.data:
+        return None
+    row = result.data[0]
+    return RiskProfileOut(
+        profile=row["profile"],
+        risk_score=row["risk_score"],
+        time_horizon_years=row.get("time_horizon_years"),
+        max_position_pct=float(row["max_position_pct"]),
+        target_volatility=float(row["target_volatility"]) if row.get("target_volatility") else None,
+        answers=row.get("answers"),
+    )

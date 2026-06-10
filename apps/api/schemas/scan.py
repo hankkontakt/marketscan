@@ -46,3 +46,13 @@ class ScanRow(BaseModel):
     low_liquidity: bool = False
     has_holding: bool = False
     scan_date: str | None = None
+
+    # MEWS (#3)
+    mews_score: float | None = None
+    mews_flag: bool = False
+    mews_fcf_yield: float | None = None
+    mews_small_size: float | None = None
+    mews_low_ps: float | None = None
+    mews_operating_leverage: float | None = None
+    mews_revenue_accel: float | None = None
+    mews_clean_accruals: float | None = None

@@ -191,6 +191,9 @@ def log_predictions(df, dsn: str) -> int:
     today = date.today().isoformat()
     rows_to_insert = []
 
+    # Dynamisk model_version: om df har attrs, använd det; annars auto
+    model_version = getattr(df, "attrs", {}).get("model_version", "ranker_v1")
+
     for _, row in ml_df.iterrows():
         ticker = str(row.get("ticker", "")).strip()
         if not ticker:
@@ -198,7 +201,7 @@ def log_predictions(df, dsn: str) -> int:
         rows_to_insert.append((
             ticker,
             today,
-            "ranker_v1",
+            model_version,
             _safe_float(row.get("predicted_return")),
             _safe_int(row.get("ml_rank")),
             _safe_float(row.get("score_total")),

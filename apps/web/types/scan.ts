@@ -42,4 +42,14 @@ export interface ScanRow {
   low_liquidity: boolean;
   has_holding: boolean;
   scan_date: string | null;
+
+  // MEWS (#3)
+  mews_score: number | null;
+  mews_flag: boolean;
+  mews_fcf_yield: number | null;
+  mews_small_size: number | null;
+  mews_low_ps: number | null;
+  mews_operating_leverage: number | null;
+  mews_revenue_accel: number | null;
+  mews_clean_accruals: number | null;
 }

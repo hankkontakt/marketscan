@@ -26,6 +26,8 @@ def get_scan(
     dividend_yield_min: float | None = None,
     exclude_low_liquidity: bool = False,
     search: str | None = None,
+    mews_flag: bool | None = None,
+    sort_by: str = Query(default="score_total", pattern="^(score_total|mews_score)$"),
     limit: int = Query(default=200, ge=1, le=500),
     sb=Depends(get_supabase),
 ):
@@ -57,6 +59,8 @@ def get_scan(
         q = q.gte("dividend_yield", dividend_yield_min)
     if exclude_low_liquidity:
         q = q.eq("low_liquidity", False)
+    if mews_flag is not None and mews_flag:
+        q = q.eq("mews_flag", True).gt("mews_score", 0)
     if search:
         # P0-4: sanitize before interpolating into PostgREST filter
         safe_term = safe_search(search)

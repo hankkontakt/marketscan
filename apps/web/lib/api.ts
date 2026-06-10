@@ -108,6 +108,8 @@ export type ScanParams = {
   roe_min?: number;
   dividend_yield_min?: number;
   exclude_low_liquidity?: boolean;
+  mews_flag?: boolean;
+  sort_by?: string;
   search?: string;
   limit?: number;
 };
