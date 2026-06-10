@@ -9,7 +9,10 @@ type EventProps = Record<string, string | number | boolean>;
 const IS_DEV = typeof location !== "undefined" && location.hostname === "localhost";
 
 // Använd samma API_BASE som resten av appen (lib/api.ts-mönster)
-const API_BASE = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) || "";
+// || inte ?? — Vercel injicerar tom sträng, ?? fångar den inte
+const API_BASE =
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) ||
+  "https://marketscan-api.vercel.app";
 
 const QUEUE: Array<{ name: string; props?: EventProps }> = [];
 let flushing = false;
