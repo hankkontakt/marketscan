@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { QueryProvider } from "@/components/providers/QueryProvider";
+import { TrackingProvider } from "@/components/providers/TrackingProvider";
 import "./globals.css";
 
 // Inter för allt — samma font för text och siffror, som Lysa gör.
@@ -58,7 +59,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={`${inter.variable} ${geistMono.variable}`}>
         <QueryProvider>
-          {children}
+          <TrackingProvider>
+            {children}
+          </TrackingProvider>
           <Toaster
             theme="light"
             position="bottom-right"
