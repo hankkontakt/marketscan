@@ -198,11 +198,17 @@ const WORKFLOW_CATEGORIES: { title: string; workflows: WorkflowDef[] }[] = [
       {
         file: "doc_intelligence.yml",
         label: "Dokumentintelligens",
-        desc: "Hämtar rapporter + extraherar kvalitativa signaler",
+        desc: "Hämtar rapporter + extraherar kvalitativa signaler + AI-rapportmemo",
         inputs: [
           { key: "days", label: "Dagar bakåt", type: "text", placeholder: "3" },
           { key: "tickers", label: "Tickers (kommasep, valfritt)", type: "text", placeholder: "" },
         ],
+      },
+      {
+        file: "watchlist_alerts.yml",
+        label: "Watchlist-notiser",
+        desc: "Skapar personliga notiser (STARK, insiderkluster, MEWS, rapportmemo) för bevakade aktier",
+        inputs: [{ key: "dry_run", label: "Testläge (skapa ej)", type: "toggle", defaultVal: "false" }],
       },
       {
         file: "digest.yml",
