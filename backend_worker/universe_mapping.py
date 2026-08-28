@@ -51,7 +51,25 @@ MAX_PAGES = 80            # 90 d fönster gav ~39 sidor; 180 d kan ge fler
 PAGE_DELAY = 1.5          # sekunder — marknadssök är aggressivt rate-limitad
 
 # Manuell seed för kända gap i ISIN→ticker-mappningen (utökas vid behov).
-SEED_TICKERS: dict[str, str] = {}
+# Verifierat 2026-08-28 med yfinance: "TAGM-B.ST" resolvar (TagMaster AB ser. B),
+# "TAGM B.ST" gör det INTE ("possibly delisted"); "NCAB.ST" resolvar (NCAB Group AB).
+SEED_TICKERS: dict[str, str] = {
+    "SE0015671995": "NCAB.ST",
+    "SE0015950399": "TAGM-B.ST",
+}
+
+SEED_NAMES: dict[str, str] = {
+    "SE0015671995": "NCAB Group AB",
+    "SE0015950399": "TagMaster AB",
+}
+
+
+def seed_ticker_for_isin(isin: Optional[str]) -> Optional[str]:
+    """Pure seed-uppslag: ISIN (normaliserad till versaler) → ticker, eller None."""
+    if not isin:
+        return None
+    return SEED_TICKERS.get(isin.upper())
+
 
 _PAGE_RE = None  # lazy
 
@@ -341,8 +359,9 @@ def _connect():
 def _map_isin_to_ticker(cur, isin: str) -> Optional[str]:
     if not isin:
         return None
-    if isin.upper() in SEED_TICKERS:
-        return SEED_TICKERS[isin.upper()]
+    seeded = seed_ticker_for_isin(isin)
+    if seeded:
+        return seeded
     try:
         cur.execute("SELECT ticker FROM company_profiles WHERE isin = %s", (isin,))
         row = cur.fetchone()
@@ -395,6 +414,12 @@ def seed_from_existing(cur) -> list[dict]:
                              "name": ticker, "source": "ticker_only"})
     except Exception:
         pass
+
+    # Seed-registerrader från SEED_TICKERS (användarens garanterade bolag, t.ex.
+    # innehav som FI-poll-fönstret missat). Namn hämtas ur SEED_NAMES.
+    for isin, ticker in SEED_TICKERS.items():
+        rows.append({"isin": isin, "ticker": ticker,
+                     "name": SEED_NAMES.get(isin, ticker), "source": "seed"})
     return rows
 
 

@@ -61,3 +61,13 @@ class ScanRow(BaseModel):
     mews_operating_leverage: float | None = None
     mews_revenue_accel: float | None = None
     mews_clean_accruals: float | None = None
+
+    # Fallback-basdata (när varken scan_results eller Finnhub har data):
+    # universe_registry (market) + qmj_scores (senaste scan_date-raden).
+    # Additiva fält — score_*-fälten ovan förblir None (ärligt).
+    market: str | None = None
+    alpha_rank: float | None = None
+    quality_z: float | None = None
+    momentum_z: float | None = None
+    value_z: float | None = None
+    stratum: str | None = None

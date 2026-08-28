@@ -24,6 +24,15 @@ class HoldingOut(BaseModel):
     score_total: float | None = None
     entry_signal: str | None = None
 
+    # Fallback-berikning (när scan_results saknar rad): universe_registry +
+    # qmj_scores. Additiva fält — score_total/entry_signal förblir None.
+    market: str | None = None
+    alpha_rank: float | None = None
+    quality_z: float | None = None
+    momentum_z: float | None = None
+    value_z: float | None = None
+    stratum: str | None = None
+
 
 class PortfolioOut(BaseModel):
     id: str

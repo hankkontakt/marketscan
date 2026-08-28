@@ -1,9 +1,26 @@
 """Shared enrichment logic — merges scan_results fields into items."""
+import logging
+
+logger = logging.getLogger(__name__)
+
 ENRICH_COLUMNS = "ticker, name, price, change_pct, score_total, entry_signal, trend_signal"
+
+# Fallback-källor när scan_results saknar rad för tickern (t.ex. ny listning
+# som ännu inte hunnit in i scan-pipelinen). universe_registry ger basdata,
+# qmj_scores ger QMJ-fälten (senaste scan_date-raden per ticker).
+REGISTRY_FALLBACK_COLUMNS = "ticker, name, market"
+QMJ_FALLBACK_COLUMNS = "ticker, alpha_rank, quality_z, momentum_z, value_z, stratum"
+QMJ_FALLBACK_FIELDS = ("alpha_rank", "quality_z", "momentum_z", "value_z", "stratum")
 
 
 def enrich_with_scan_data(items: list[dict], sb, ticker_key: str = "ticker") -> list[dict]:
-    """Merge scan_results fields into a list of items (in place, returns items)."""
+    """Merge scan_results fields into a list of items (in place, returns items).
+
+    Tickers utan scan_results-rad fallbackar till universe_registry (name,
+    market) + qmj_scores (alpha_rank, quality_z, momentum_z, value_z, stratum).
+    score_total/entry_signal förblir None när scan saknas (ärligt) — fallbacken
+    lägger ALDRIG till påhittade scores.
+    """
     tickers = [item[ticker_key] for item in items if item.get(ticker_key)]
     if not tickers:
         return items
@@ -20,4 +37,58 @@ def enrich_with_scan_data(items: list[dict], sb, ticker_key: str = "ticker") -> 
         for field in enrich_fields:
             if field not in item and field in meta:
                 item[field] = meta[field]
+
+    missing = [t for t in tickers if t not in scan_map]
+    if missing:
+        _enrich_registry_fallback(items, sb, missing, ticker_key)
     return items
+
+
+def _enrich_registry_fallback(items: list[dict], sb, missing: list[str],
+                              ticker_key: str = "ticker") -> None:
+    """Best-effort fallback: universe_registry (name/market) + qmj_scores.
+
+    Aldrig kraschande — om en tabell saknas/är tom hoppar vi bara över den.
+    """
+    registry: dict[str, dict] = {}
+    try:
+        reg_res = (
+            sb.table("universe_registry")
+            .select(REGISTRY_FALLBACK_COLUMNS)
+            .in_("ticker", missing)
+            .execute()
+        )
+        registry = {r["ticker"]: r for r in (reg_res.data or [])}
+    except Exception as e:
+        logger.debug("universe_registry fallback failed: %s", e)
+
+    qmj: dict[str, dict] = {}
+    try:
+        qmj_res = (
+            sb.table("qmj_scores")
+            .select(QMJ_FALLBACK_COLUMNS)
+            .in_("ticker", missing)
+            .order("scan_date", desc=True)
+            .execute()
+        )
+        for r in (qmj_res.data or []):
+            t = r.get("ticker")
+            if t and t not in qmj:  # senaste scan_date-raden vinner
+                qmj[t] = r
+    except Exception as e:
+        logger.debug("qmj_scores fallback failed: %s", e)
+
+    missing_set = set(missing)
+    for item in items:
+        t = item.get(ticker_key)
+        if not t or t not in missing_set:
+            continue
+        reg = registry.get(t, {})
+        if "name" not in item and reg.get("name"):
+            item["name"] = reg["name"]
+        if "market" not in item and reg.get("market"):
+            item["market"] = reg["market"]
+        q = qmj.get(t, {})
+        for field in QMJ_FALLBACK_FIELDS:
+            if field not in item and q.get(field) is not None:
+                item[field] = q[field]

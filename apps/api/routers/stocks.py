@@ -238,6 +238,21 @@ def _segment_from_market_cap(market_cap_millions: float | None) -> str:
     return "micro_cap"
 
 
+def _segment_from_market(market: str | None) -> str:
+    """Derive ScanRow.segment from universe_registry.market (t.ex. 'First North').
+
+    ScanRow.segment är en obligatorisk Literal — fallbacken måste alltid kunna
+    producera ett giltigt värde. Okänd marknad → small_cap (nordiska småbolag
+    är standarduniversumet).
+    """
+    m = (market or "").lower()
+    if "large" in m:
+        return "large_cap"
+    if "mid" in m:
+        return "mid_cap"
+    return "small_cap"
+
+
 @router.get("/{ticker}", response_model=ScanRow)
 async def get_stock(ticker: str, sb=Depends(get_supabase)):
     """Current scan data for a single ticker.
@@ -294,6 +309,51 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
                 }
         except Exception as e:
             logger.debug("Finnhub fallback for get_stock(%s) failed: %s", t, e)
+
+    # 3. Ticker känd i universe_registry men ännu inte i scan_results (t.ex. ny
+    #    listning som väntar på nästa pipeline-run) — returnera basdata
+    #    (name/market/sector) + QMJ-rad om den finns. 404 endast när tickern
+    #    inte alls är känd.
+    try:
+        reg_res = (
+            sb.table("universe_registry")
+            .select("ticker, name, market, sector")
+            .eq("ticker", t)
+            .maybe_single()
+            .execute()
+        )
+    except Exception as e:
+        logger.debug("universe_registry fallback for get_stock(%s) failed: %s", t, e)
+        reg_res = None
+    if reg_res is not None and reg_res.data:
+        row = reg_res.data
+        qmj: dict = {}
+        try:
+            qmj_res = (
+                sb.table("qmj_scores")
+                .select("ticker, alpha_rank, quality_z, momentum_z, value_z, stratum")
+                .eq("ticker", t)
+                .order("scan_date", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if qmj_res.data:
+                qmj = qmj_res.data[0]
+        except Exception as e:
+            logger.debug("qmj_scores fallback for get_stock(%s) failed: %s", t, e)
+        return {
+            "ticker": t,
+            "name": row.get("name") or t,
+            "segment": _segment_from_market(row.get("market")),
+            "sector": row.get("sector"),
+            "market": row.get("market"),
+            "alpha_rank": qmj.get("alpha_rank"),
+            "quality_z": qmj.get("quality_z"),
+            "momentum_z": qmj.get("momentum_z"),
+            "value_z": qmj.get("value_z"),
+            "stratum": qmj.get("stratum"),
+            # All score fields left as None — stock not yet scored
+        }
 
     raise HTTPException(status.HTTP_404_NOT_FOUND, f"Aktie {ticker} hittades inte")
 
