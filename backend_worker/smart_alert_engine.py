@@ -18,7 +18,6 @@ Usage:
     python -m marketscan.backend_worker.smart_alert_engine
 """
 import os
-import json
 import logging
 from datetime import date, timedelta
 

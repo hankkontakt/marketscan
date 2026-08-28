@@ -16,7 +16,7 @@ DB-beroenden. Följer unittest-stilen i backend_worker/tests/.
 import unittest
 from types import SimpleNamespace
 
-from apps.api.routers.market_intel import (FactorMetricOut, QmjRegimeOut,
+from apps.api.routers.market_intel import (QmjRegimeOut,
                                            RadarItemOut, RadarResponse,
                                            get_qmj_regime, get_radar)
 

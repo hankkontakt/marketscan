@@ -3,27 +3,27 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ShieldCheck, TrendingDown, TrendingUp, BarChart3, Activity,
-  ArrowLeft, RefreshCw, Target, Info, ChevronRight, Loader2,
+  ShieldCheck, BarChart3, Activity,
+  ArrowLeft, RefreshCw, Target, ChevronRight,
 } from "lucide-react";
 import {
   useRiskAnalytics, useFactorExposure, useCorrelationMatrix,
-  useOptimizedWeights, useRebalanceSuggestions, useRebalancingTargets,
+  useOptimizedWeights, useRebalanceSuggestions,
+  type FactorExposure,
 } from "@/hooks/usePortfolio";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip, Cell, LineChart, Line,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
 function MetricTile({
-  label, value, sub, good, bad, neutral
+  label, value, sub, good, bad
 }: {
   label: string; value: string | null; sub?: string;
-  good?: boolean; bad?: boolean; neutral?: boolean;
+  good?: boolean; bad?: boolean;
 }) {
   const color = good ? "text-emerald-500" : bad ? "text-red-400" : "text-[var(--color-text-primary)]";
   return (
@@ -37,7 +37,7 @@ function MetricTile({
   );
 }
 
-function SectionHeader({ icon: Icon, title, sub }: { icon: any; title: string; sub?: string }) {
+function SectionHeader({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub?: string }) {
   return (
     <div className="flex items-center gap-3 mb-4">
       <div className="p-2 rounded-lg bg-[var(--color-accent-soft)]">
@@ -59,7 +59,6 @@ function CorrelationHeatmap() {
   if (!data || data.tickers.length < 2) return <p className="text-sm text-[var(--color-text-muted)]">Minst 2 innehav krävs för korrelationsmatris.</p>;
 
   const { tickers, matrix } = data;
-  const n = tickers.length;
 
   function corrColor(v: number) {
     // Green = negative (diversifying), Red = positive (correlated)
@@ -123,8 +122,8 @@ function FactorRadar() {
 
   const radarData = Object.entries(factorLabels).map(([key, label]) => ({
     subject: label,
-    portfölj: (data as any)[key] ?? 0,
-    benchmark: (data as any)[key.replace("factor_", "bench_")] ?? 0,
+    portfölj: data[key as keyof FactorExposure] ?? 0,
+    benchmark: data[key.replace("factor_", "bench_") as keyof FactorExposure] ?? 0,
   }));
 
   return (

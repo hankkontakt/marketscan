@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import type { ElementType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -81,7 +82,7 @@ const NAV_BY_LEVEL: Record<ExperienceLevel, readonly { href: string; label: stri
 };
 
 /** Map each experience level to its drawer primary items */
-const DRAWER_BY_LEVEL: Record<ExperienceLevel, readonly { href: string; label: string; icon: any }[]> = {
+const DRAWER_BY_LEVEL: Record<ExperienceLevel, readonly { href: string; label: string; icon: ElementType }[]> = {
   beginner: [
     { href: "/daglig-briefing", label: "Hem",         icon: BarChart2 },
     { href: "/upptack",        label: "Upptäck",     icon: Compass },
@@ -95,7 +96,7 @@ const DRAWER_BY_LEVEL: Record<ExperienceLevel, readonly { href: string; label: s
     { href: "/bevakningar",     label: "Bevakningar", icon: Star },
     { href: "/kalender",        label: "Kalender",    icon: CalendarDays },
   ],
-  expert: DRAWER_PRIMARY as unknown as readonly { href: string; label: string; icon: any }[],
+  expert: DRAWER_PRIMARY as unknown as readonly { href: string; label: string; icon: ElementType }[],
 };
 
 // ── Component ──────────────────────────────────────────────────────────────

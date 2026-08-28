@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Compass } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useExperience } from "@/components/providers/ExperienceProvider";
 import { THEMES } from "@/lib/themes";
 import { ThemeCard } from "@/components/screener/ThemeCard";

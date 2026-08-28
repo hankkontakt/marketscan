@@ -17,13 +17,13 @@ const pct2 = new Intl.NumberFormat("sv-SE", {
 
 export function formatPct(value: number | null | undefined, decimals: 1 | 2 = 1): string {
   if (value == null) return "—";
-  return (decimals === 2 ? pct2 : pct).format(value);
+  return (decimals === 2 ? pct2 : pct).format(value).replace(/\u2212/g, "-");
 }
 
 export function formatPctChange(value: number | null | undefined): string {
   if (value == null) return "—";
   const sign = value > 0 ? "+" : "";
-  return `${sign}${pct.format(value)}`;
+  return `${sign}${pct.format(value).replace(/\u2212/g, "-")}`;
 }
 
 export function formatPrice(value: number | null | undefined, currency = "SEK"): string {

@@ -3,18 +3,15 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
-import { ScoreSparkline } from "@/components/charts/ScoreSparkline";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { cn } from "@/lib/utils";
 import {
   formatPctChange,
   formatPrice,
   formatMarketCap,
-  formatScore,
   formatNumber,
   signalLabel,
   signalClass,
-  scoreColorClass,
   segmentLabel,
   changeClass,
   trendLabel,

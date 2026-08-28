@@ -1,6 +1,5 @@
 """Tester för qmj_scores.py — rena funktioner (ingen nätverk/DB)."""
 import unittest
-import math
 from datetime import date
 import pandas as pd
 

@@ -21,7 +21,7 @@ from datetime import date, timedelta
 import psycopg2
 import psycopg2.extras
 
-from backend_worker.email import sender, layout, components
+from backend_worker.email import sender, layout
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -47,7 +47,7 @@ def _build_digest_html(
 
     # Portfolio summary
     if portfolio_summary and portfolio_summary.get("count", 0) > 0:
-        parts.append(f"""
+        parts.append("""
         <h2 style="font-size:13px; font-weight:600; color:#14181F; margin:16px 0 8px 0;">
           Din portfölj
         </h2>""")
@@ -70,7 +70,7 @@ def _build_digest_html(
 
     # STARK signals this week
     if stark_stocks:
-        parts.append(f"""
+        parts.append("""
         <h2 style="font-size:13px; font-weight:600; color:#14181F; margin:16px 0 8px 0;">
           Toppbetyg denna vecka
         </h2>""")
@@ -83,7 +83,7 @@ def _build_digest_html(
 
     # Signal changes — new STARK
     if signal_changes:
-        parts.append(f"""
+        parts.append("""
         <h2 style="font-size:13px; font-weight:600; color:#14181F; margin:16px 0 8px 0;">
           Nya STARK-signaler denna vecka
         </h2>""")
@@ -95,7 +95,7 @@ def _build_digest_html(
 
     # Score movers up
     if score_movers_up:
-        parts.append(f"""
+        parts.append("""
         <h2 style="font-size:13px; font-weight:600; color:#14181F; margin:16px 0 8px 0;">
           Störst uppgång i betyg (7 dagar)
         </h2>""")
@@ -109,7 +109,7 @@ def _build_digest_html(
 
     # Score movers down
     if score_movers_down:
-        parts.append(f"""
+        parts.append("""
         <h2 style="font-size:13px; font-weight:600; color:#14181F; margin:16px 0 8px 0;">
           Störst nedgång i betyg (7 dagar)
         </h2>""")

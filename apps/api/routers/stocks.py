@@ -6,15 +6,16 @@ Falls back to generated mock data when R2 is not configured.
 import asyncio
 import re
 import random
-import math
 import logging
 import httpx
 from datetime import date, timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from apps.api.dependencies import get_supabase
 from apps.api.core.duckdb_r2 import query_score_history, query_price_history
 from apps.api.core.config import settings
 from apps.api.core.search_utils import safe_search
+from apps.api.schemas.scan import ScanRow
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +97,6 @@ def _generate_mock_score_history(ticker: str, current_score: float, weeks: int =
             "signal": "STARK" if score >= 75 else "OK" if score >= 55 else "VÄNTA",
         })
     return history
-
-from apps.api.schemas.scan import ScanRow
-from pydantic import BaseModel, Field
 
 
 class PriceHistoryOut(BaseModel):

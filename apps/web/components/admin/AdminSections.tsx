@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   RefreshCw, Play, Database, ExternalLink, CheckCircle2,
   XCircle, AlertTriangle, Copy, Key, Cloud, GitBranch, Table2,

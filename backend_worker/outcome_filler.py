@@ -175,7 +175,6 @@ def log_predictions(df, dsn: str) -> int:
     Returns:
         Antal loggade rader.
     """
-    import pandas as pd
 
     required_cols = {"ticker", "predicted_return", "ml_rank"}
     if not required_cols.issubset(df.columns):

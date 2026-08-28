@@ -1,7 +1,6 @@
 "use client";
 
-import { TrendingUp, Globe, ChevronUp, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { TrendingUp, Globe, ChevronUp } from "lucide-react";
 import { scoreColorClass } from "@/lib/format";
 import { SectorHeatmap, GlobalIndexPanel, useSectorOverview, useGlobalIndices } from "@/hooks/useMarkets";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Activity, TrendingUp, Clock, Target, BarChart3, ChevronDown } from "lucide-react";
+import { Activity, ChevronDown } from "lucide-react";
 import { useSignalAnalytics, useSignalAnalyticsDetail } from "@/hooks/useStrategies";
 import type { SignalAnalytics } from "@/types/strategy";
 import {
@@ -224,7 +224,7 @@ export function SignalAnalyticsView() {
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 text-xs text-[var(--color-text-muted)] space-y-2">
         <p className="font-medium text-[var(--color-text-secondary)]">Hur fungerar det?</p>
         <p>
-          Varje gång en aktie byter köpläge — till exempel från "Vänta" till "Stark" — registreras
+          Varje gång en aktie byter köpläge — till exempel från &quot;Vänta&quot; till &quot;Stark&quot; — registreras
           det automatiskt. Den här sidan visar hur aktiekursen i genomsnitt rört sig <strong>5, 10, 20 och 60 dagar</strong> efter
           att en sådan förändring skett, samt hur ofta det gick plus (vinstprocent).
         </p>

@@ -32,19 +32,7 @@ def get_market_regime(sb=Depends(get_supabase)):
     """Get current market regime (bull/bear/uncertain/neutral).
     Based on the most recent pipeline run's macro analysis."""
     try:
-        # Try to read from a pipeline_runs metadata
-        # or calculate from aggregate scan data
-        result = (
-            sb.table("pipeline_runs")
-            .select("started_at")
-            .eq("run_type", "weekly")
-            .eq("status", "success")
-            .order("started_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-
-        # Fallback: derive regime from aggregate market data
+        # Derive regime from aggregate market data
         # Use aggregate queries instead of fetching all rows
         uptrend_res = sb.table("scan_results").select("ticker", count="exact").eq("trend_signal", "Upptrend").execute()
         downtrend_res = sb.table("scan_results").select("ticker", count="exact").eq("trend_signal", "Nedtrend").execute()

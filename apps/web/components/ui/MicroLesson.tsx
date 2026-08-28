@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { HelpCircle, X } from "lucide-react";
+import { X } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 

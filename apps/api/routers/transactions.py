@@ -3,7 +3,7 @@ Transactions API — transaction log for TWR calculation.
 RLS-protected: users can only access their own transactions.
 """
 import logging
-from datetime import datetime, timezone
+from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from apps.api.dependencies import get_user_supabase
@@ -132,7 +132,6 @@ def get_twr(
     TWR avoids distortion from deposits/withdrawals by geometrically
     linking sub-period returns between cash flows.
     """
-    from collections import defaultdict
     from datetime import date, timedelta
 
     # Get all holdings with current prices
@@ -168,6 +167,9 @@ def get_twr(
     # Calculate TWR using sub-periods between cash flows
     twr = _calculate_twr(transactions, snapshots, current_value)
 
+    # Snapshots sorted oldest-first (used for total return + period returns)
+    sorted_snapshots = sorted(snapshots, key=lambda s: s["date"] if isinstance(s["date"], str) else s["date"])
+
     # Calculate total return (simple) using oldest snapshot
     first_snap = sorted_snapshots[0] if len(sorted_snapshots) > 0 else None
     total_cost = first_snap.get("total_cost")
@@ -179,7 +181,6 @@ def get_twr(
     # Period returns from snapshots (sliced from sorted oldest-first)
     periods: dict[str, float | None] = {}
     today = date.today()
-    sorted_snapshots = sorted(snapshots, key=lambda s: s["date"] if isinstance(s["date"], str) else s["date"])
     for label, days in [("1M", 30), ("3M", 90), ("6M", 180), ("12M", 365)]:
         target = (today - timedelta(days=days)).isoformat()
         past_val = None

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Briefcase, RefreshCw, AlertTriangle, Info } from "lucide-react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Briefcase, RefreshCw, AlertTriangle } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useRiskProfile } from "@/hooks/useRiskProfile";
 import { toast } from "sonner";
@@ -78,7 +78,6 @@ function DonutChart({ weights }: { weights: PerPosition[] }) {
 }
 
 export function PortfolioBuilderView() {
-  const qc = useQueryClient();
   const [useProfile, setUseProfile] = useState(true);
 
   const { data: profile } = useRiskProfile();
@@ -148,7 +147,7 @@ export function PortfolioBuilderView() {
         {!profile && useProfile && (
           <div className="flex items-center gap-2 text-xs text-[var(--color-warn)]">
             <AlertTriangle size={12} />
-            Ingen riskprofil sparad — använder "Balanserad". Gå till Inställningar → Riskprofil.
+            Ingen riskprofil sparad — använder &quot;Balanserad&quot;. Gå till Inställningar → Riskprofil.
           </div>
         )}
       </div>

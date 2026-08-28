@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Query
 from httpx import AsyncClient
 from apps.api.core.config import settings
-from apps.api.dependencies import get_supabase, get_user_supabase
+from apps.api.dependencies import get_user_supabase
 from apps.api.core.security import get_optional_user, User
 
 logger = logging.getLogger(__name__)

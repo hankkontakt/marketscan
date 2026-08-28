@@ -357,7 +357,6 @@ def get_correlation(
             h = sb.table("holdings").select("ticker").eq("portfolio_id", portfolio_id).execute()
             tickers = [r["ticker"] for r in (h.data or [])]
         n = max(len(tickers), 1)
-        import numpy as np
         matrix = [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
         return CorrelationOut(tickers=tickers, matrix=matrix)
 
@@ -532,7 +531,6 @@ def save_rebalance_targets(
     sb=Depends(get_user_supabase),
 ):
     """Save target allocations for rebalancing calculations."""
-    import json as _json
     res = sb.table("rebalancing_targets").upsert({
         "user_id": user.id,
         "name":    body.name,

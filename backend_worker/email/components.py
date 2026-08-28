@@ -72,7 +72,7 @@ def daily_digest_email(
     """
     d = date_str or date.today().isoformat()
     subject = f"MarketScan — daglig sammanfattning {d}"
-    sections = [f"<h2 style='font-size: 14px; margin: 16px 0 8px 0; color: #14181F;'>Dagens marknad</h2>"]
+    sections = ["<h2 style='font-size: 14px; margin: 16px 0 8px 0; color: #14181F;'>Dagens marknad</h2>"]
 
     if top_movers:
         sections.append(stock_table(top_movers))

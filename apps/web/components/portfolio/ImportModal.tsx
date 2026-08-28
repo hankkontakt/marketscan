@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import {
-  Upload, X, Check, Loader2, AlertCircle, FileUp,
+  Upload, X, Check, Loader2, FileUp,
   ChevronRight, Info, AlertTriangle, FileText,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -425,8 +425,8 @@ export function ImportModal({ onClose }: Props) {
       setPreview(data.rows);
       setOverrides({});
       setStep(1);
-    } catch (err: any) {
-      toast.error(err.message || "Kunde inte läsa CSV-filerna");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte läsa CSV-filerna");
     } finally {
       setLoading(false);
     }
@@ -447,8 +447,8 @@ export function ImportModal({ onClose }: Props) {
       toast.success(`${res.created} innehav importerade`);
       onClose();
       window.location.reload();
-    } catch (err: any) {
-      toast.error(err.message || "Kunde inte bekräfta import");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte bekräfta import");
     } finally {
       setConfirming(false);
     }

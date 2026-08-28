@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Loader2, AlertCircle, TrendingUp, TrendingDown } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { useBacktestResults } from "@/hooks/useStrategies";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -41,7 +41,7 @@ export function StrategyResultView({ strategyId }: { strategyId: string }) {
     );
   }
 
-  if ((data as any).status === "no_runs") {
+  if ("status" in data) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
         <p className="text-sm text-[var(--color-text-muted)]">Inga backtester körda ännu</p>

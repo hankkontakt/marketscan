@@ -11,7 +11,6 @@ update today's prices, run ML predictions, and load into Supabase.
 For weekly/smallcap we still call the full run_pipeline() (it does a
 real fundamentals refresh) but with a 75-minute SIGALRM hard timeout.
 """
-import sys
 import time
 import logging
 import argparse

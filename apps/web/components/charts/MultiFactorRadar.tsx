@@ -193,18 +193,23 @@ function BarView({ series, activeFactors }: {
 // ─── Radar polygon view ──────────────────────────────────────────────────────
 
 // Custom axis label that shows factor name + all ticker values
-function RadarAxisTick({ x, y, payload, series, activeFactors }: any) {
-  const factor = activeFactors.find((f: any) => f.label === payload.value);
+function RadarAxisTick({ x, y, payload, series, activeFactors }: {
+  x: number;
+  y: number;
+  payload: { value: string };
+  series: Series[];
+  activeFactors: typeof FACTORS[number][];
+}) {
+  const factor = activeFactors.find((f) => f.label === payload.value);
   if (!factor) return null;
 
-  const values = series.map((s: Series) => {
+  const values: { ticker: string; value: number | null; color: string }[] = series.map((s: Series) => {
     const v = s.values[factor.key];
     return { ticker: s.ticker, value: v != null && v > 0 ? Math.round(v) : null, color: s.color };
   });
 
   // Position label relative to chart centre (cx/cy are passed via payload but we compute offset)
   const cx = 0;
-  const cy = 0;
 
   const textAnchor =
     Math.abs(x - cx) < 10 ? "middle" : x > cx ? "start" : "end";
@@ -222,7 +227,7 @@ function RadarAxisTick({ x, y, payload, series, activeFactors }: any) {
         {payload.value}
       </text>
       {/* Per-ticker score badges below the label */}
-      {values.map((v: any, i: number) => (
+      {values.map((v, i: number) => (
         <text
           key={v.ticker}
           x={x}
@@ -257,7 +262,11 @@ function RadarView({ series, activeFactors }: {
   const fillOp = series.length === 1 ? 0.25 : series.length === 2 ? 0.15 : 0.10;
 
   // Custom tooltip
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload, label }: {
+    active?: boolean;
+    payload?: Array<{ dataKey: string; color: string; value: number }>;
+    label?: string;
+  }) => {
     if (!active || !payload?.length) return null;
     return (
       <div
@@ -269,7 +278,7 @@ function RadarView({ series, activeFactors }: {
         }}
       >
         <div className="font-semibold text-[var(--color-text-primary)] mb-1.5">{label}</div>
-        {payload.map((p: any) => {
+        {payload.map((p) => {
           // find raw value
           const raw = data.find((d) => d.subject === label)?.[`${p.dataKey}_raw`];
           const display = (raw as number) >= 0 ? Math.round(raw as number) : "—";

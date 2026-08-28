@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   FlaskConical, Play, Plus, Trash2, BarChart2, ChevronRight,
-  Lock, Globe, Loader2, Check, X, Clock, RefreshCw,
+  Lock, Globe, Loader2, X,
   Filter, History, TrendingUp, ChevronDown,
 } from "lucide-react";
 import {
@@ -148,7 +148,7 @@ function CreateStrategyForm({ onClose }: { onClose: () => void }) {
 
         <div>
           <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Viktning</label>
-          <select className={inputCls} value={form.position_sizing} onChange={f("position_sizing") as any}>
+          <select className={inputCls} value={form.position_sizing} onChange={f("position_sizing")}>
             <option value="equal">Lika viktning</option>
             <option value="score_weighted">Betyg-viktad</option>
             <option value="kelly">Kelly-kriteriet (½)</option>
@@ -157,7 +157,7 @@ function CreateStrategyForm({ onClose }: { onClose: () => void }) {
 
         <div>
           <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Rebalansering</label>
-          <select className={inputCls} value={form.rebalance_freq} onChange={f("rebalance_freq") as any}>
+          <select className={inputCls} value={form.rebalance_freq} onChange={f("rebalance_freq")}>
             <option value="daily">Dagligen</option>
             <option value="weekly">Veckovis</option>
             <option value="monthly">Månadsvis</option>
@@ -392,7 +392,7 @@ function HowItWorksBox() {
               border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)",
             }}
           >
-            <p className="font-semibold text-[var(--color-text-secondary)]">Exempel: "Kvalitets-momentum"</p>
+            <p className="font-semibold text-[var(--color-text-secondary)]">Exempel: &quot;Kvalitets-momentum&quot;</p>
             <p className="text-[var(--color-text-muted)]">
               Betyg ≥ 65 · Signal STARK · Max 15 aktier · Lika viktning · Rebalansera månadsvis · Startkapital 100 000 kr
             </p>

@@ -1,8 +1,6 @@
 """Portfolio & holdings CRUD — fully RLS-protected via Supabase."""
-import json
 import logging
 from collections import Counter
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -12,10 +10,10 @@ from apps.api.core.security import get_current_user, User
 from apps.api.schemas.portfolio import HoldingIn, HoldingOut, PortfolioOut
 from apps.api.core.enrichment import enrich_with_scan_data
 from apps.api.core.avanza_import import (
-    parse_avanza_csv, build_preview,
+    build_preview,
     parse_positioner_csv, parse_inkopskurser_csv, get_buy_date,
 )
-from apps.api.core.prices import fetch_live_quotes, fetch_price_history_batch
+from apps.api.core.prices import fetch_price_history_batch
 
 logger = logging.getLogger(__name__)
 

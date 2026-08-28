@@ -1,6 +1,5 @@
 "use client";
 
-import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import {
   TrendingUp,
   SlidersHorizontal,
@@ -10,8 +9,6 @@ import {
   ShieldCheck,
   Gauge,
   ArrowUpRight,
-  Clock,
-  Search,
 } from "lucide-react";
 
 type SectionProps = {

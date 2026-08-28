@@ -3,7 +3,7 @@ import os
 import sys
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "stock-scanner"))
 
@@ -28,7 +28,6 @@ def run_backtest(strategy="momentum", tickers=None):
     """
     try:
         from backtesting.backtest import BacktestEngine
-        from backtesting.walk_forward import WalkForwardAnalyzer
     except ImportError as e:
         logger.error("Failed to import backtesting modules: %s", e)
         logger.error("Ensure stock-scanner repo is available at: %s",

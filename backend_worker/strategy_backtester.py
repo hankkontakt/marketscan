@@ -17,7 +17,6 @@ Usage:
     python -m marketscan.backend_worker.strategy_backtester --run-all
 """
 import os
-import json
 import math
 import logging
 import argparse
@@ -413,7 +412,6 @@ def run_backtest(strategy_id: str, dsn: str, existing_run_id: str | None = None)
             # ── Update position values using price returns ─────────────────────
             new_positions = {}
             total_change = 0.0
-            total_prev_value = sum(positions.values())
 
             for ticker, prev_val in positions.items():
                 prev_row = history_by_date.get(prev_date, [])

@@ -4,7 +4,6 @@ No pandas dependency, pure Python + csv module (API-compatible).
 """
 import csv
 import io
-import json
 import logging
 
 logger = logging.getLogger(__name__)

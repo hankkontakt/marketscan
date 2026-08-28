@@ -51,7 +51,7 @@ export function RunsTable({ runs }: { runs: PipelineRun[] }) {
           </tr>
         </thead>
         <tbody>
-          {runs.map((run, i) => (
+          {runs.map((run) => (
             <tr key={run.id} className="bg-[var(--color-bg-surface)]" style={{
               borderBottom: "1px solid var(--color-border)",
             }}>

@@ -22,7 +22,6 @@ import os
 import json
 import logging
 import math
-from datetime import datetime, date, timedelta
 
 import psycopg2
 import numpy as np
@@ -178,7 +177,6 @@ def _hrp_weights(returns_matrix: np.ndarray, tickers: list[str]) -> dict[str, fl
 
         # Recursive bisection
         n = len(tickers)
-        weights = np.ones(n) / n  # start equal
 
         def _get_cluster_var(idxs: list[int]) -> float:
             sub = returns_matrix[idxs]
@@ -403,7 +401,6 @@ def compute_and_cache(dsn: str) -> int:
             top_holding_pct = round(max(valid_weights_norm) * 100, 2)
 
             # HHI for sector concentration — compute from holdings
-            sector_values: dict[str, float] = {}
             with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
                 cur.execute("""
                     SELECT s.sector, SUM(h.shares * COALESCE(s.price, h.cost_basis, 0))

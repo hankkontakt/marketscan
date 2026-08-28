@@ -11,7 +11,6 @@ import os
 import sys
 import json
 import logging
-from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "stock-scanner"))
 
@@ -84,7 +83,6 @@ def optimize_portfolio(tickers, weights_in=None):
         return None
 
     # Calculate portfolio metrics
-    import numpy as np
     mean_returns = returns.mean() * 252
     cov_matrix = returns.cov() * 252
 

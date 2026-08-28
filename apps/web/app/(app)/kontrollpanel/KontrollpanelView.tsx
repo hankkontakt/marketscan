@@ -3,8 +3,6 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import { Activity, RefreshCw, Globe, BarChart2, Settings, HeartPulse, Stethoscope } from "lucide-react";
 import { StatusSection, PipelineSection, UniversumSection, MattSection, SettingsSection, HealthSection, DiagnosticsSection } from "@/components/admin/AdminSections";
-import { KpiCard, StatusPill, RunsTable, DistTable } from "@/components/admin/StatusHelpers";
-import { useQuery } from "@tanstack/react-query";
 
 export function KontrollpanelView() {
   return (

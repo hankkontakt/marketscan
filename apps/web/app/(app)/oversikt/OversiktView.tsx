@@ -2,20 +2,19 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { ArrowRight, TrendingUp, TrendingDown, Minus, Star, Globe, BarChart3, Search, LayoutDashboard, Sun, Moon } from "lucide-react";
-import {
-  AreaChart, Area, ResponsiveContainer, Tooltip as ReTooltip,
-} from "recharts";
+import { ArrowRight, TrendingUp, TrendingDown, Star, Globe, BarChart3, Search, LayoutDashboard } from "lucide-react";
 import { useScreener } from "@/hooks/useScreener";
-import { usePortfolio, useWatchlist, usePortfolioHistory } from "@/hooks/usePortfolio";
+import { usePortfolio, usePortfolioHistory } from "@/hooks/usePortfolio";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
-import { useExperience, ExpertOnly } from "@/components/providers/ExperienceProvider";
+import { useExperience } from "@/components/providers/ExperienceProvider";
 import {
-  formatPrice, formatPctChange, signalLabel, signalClass, signalBadgeClass,
-  scoreColorClass, formatScore, changeClass, formatNumber,
+  formatPrice, formatPctChange,
+  scoreColorClass, formatScore, changeClass,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useGlobalIndices, GlobalIndexPanel, useTopMovers, type TopMover, useSectorOverview } from "@/hooks/useMarkets";
+import { useGlobalIndices, GlobalIndexPanel, useTopMovers, type TopMover } from "@/hooks/useMarkets";
+import type { Holding } from "@/types/portfolio";
+import type { ScanRow } from "@/types/scan";
 
 // ─── Tab definition ──────────────────────────────────────────────────────────
 
@@ -41,7 +40,6 @@ export function OversiktView() {
   const { level } = useExperience();
 
   const { data: portfolio } = usePortfolio();
-  const { data: watchlist = [] } = useWatchlist();
   const holdings = portfolio?.holdings ?? [];
   const hasPortfolio = holdings.length > 0;
 
@@ -86,7 +84,7 @@ export function OversiktView() {
 
       {/* ── Tab: Portfolio ───────────────────────────────── */}
       {activeTab === "portfolio" && (
-        <TabPortfolio hasPortfolio={hasPortfolio} holdings={holdings} portfolio={portfolio} />
+        <TabPortfolio hasPortfolio={hasPortfolio} holdings={holdings} />
       )}
 
       {/* ── Tab: Market ──────────────────────────────────── */}
@@ -100,25 +98,24 @@ export function OversiktView() {
 
 // ─── Tab: Portfolio ────────────────────────────────────────────────────────────
 
-function TabPortfolio({ hasPortfolio, holdings, portfolio }: {
+function TabPortfolio({ hasPortfolio, holdings }: {
   hasPortfolio: boolean;
-  holdings: any[];
-  portfolio: any;
+  holdings: Holding[];
 }) {
   const PERIOD_LABELS = ["1M", "3M", "6M", "12M"];
   const { data: history } = usePortfolioHistory();
   const [selectedPeriod, setSelectedPeriod] = useState("6M");
 
   const totalValue = useMemo(
-    () => holdings.reduce((s: number, h: any) => s + (h.price ?? 0) * h.shares, 0),
+    () => holdings.reduce((s: number, h: Holding) => s + (h.price ?? 0) * h.shares, 0),
     [holdings]
   );
   const totalCost = useMemo(
-    () => holdings.reduce((s: number, h: any) => s + (h.cost_basis ?? 0) * h.shares, 0),
+    () => holdings.reduce((s: number, h: Holding) => s + (h.cost_basis ?? 0) * h.shares, 0),
     [holdings]
   );
   const todayChange = useMemo(
-    () => holdings.reduce((s: number, h: any) => s + (h.change_pct ?? 0) * (h.price ?? 0) * h.shares, 0),
+    () => holdings.reduce((s: number, h: Holding) => s + (h.change_pct ?? 0) * (h.price ?? 0) * h.shares, 0),
     [holdings]
   );
   const totalReturn = totalCost > 0 ? (totalValue - totalCost) / totalCost : null;
@@ -214,7 +211,7 @@ function TabPortfolio({ hasPortfolio, holdings, portfolio }: {
 
       {/* Holdings summary */}
       <div className="space-y-1">
-        {holdings.slice(0, 5).map((h: any) => (
+        {holdings.slice(0, 5).map((h: Holding) => (
           <Link
             key={h.id}
             href={`/aktie/${h.ticker}`}
@@ -378,7 +375,7 @@ function TabDiscover() {
               ))
             : topPicks.length === 0
             ? <div className="px-4 py-6 text-center text-xs text-[var(--color-text-muted)]">Inga starka köplägen just nu</div>
-            : topPicks.map((stock: any) => (
+            : topPicks.map((stock: ScanRow) => (
                 <Link
                   key={stock.ticker}
                   href={`/aktie/${stock.ticker}`}

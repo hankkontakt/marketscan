@@ -10,10 +10,9 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 # Add stock-scanner to path for importing core modules
@@ -112,7 +111,7 @@ def train_and_predict():
     """Train or retrain model and predict 30-day returns."""
     try:
         from core.daily_pipeline import load_scored_universe
-        from core.ml_ranker import train_ranker, save_ranker, load_ranker, predict_ranker
+        from core.ml_ranker import train_ranker, save_ranker, predict_ranker
     except ImportError as e:
         logger.error("Failed to import stock-scanner modules: %s", e)
         sys.exit(1)

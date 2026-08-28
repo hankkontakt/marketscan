@@ -18,7 +18,7 @@ import math
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from apps.api.core.security import require_admin, User
@@ -87,7 +87,8 @@ class TopPickRow(BaseModel):
 
 def _load_model_metrics(universe: str = "universe") -> dict:
     """Laddar metrics från ranker eller XGBoost (JSON-fil, inga pickle-imports)."""
-    import os, json
+    import os
+    import json
     from pathlib import Path
 
     # Finn stock-scanner-fix-rooten via SCANNER_PATH env eller relativ sökväg
@@ -118,10 +119,14 @@ def _spearman_ic(preds, actuals) -> float:
         n = len(preds)
         rank_p = sorted(range(n), key=lambda i: preds[i])
         rank_a = sorted(range(n), key=lambda i: actuals[i])
-        rp = [0.0] * n; ra = [0.0] * n
-        for rank, idx in enumerate(rank_p): rp[idx] = rank
-        for rank, idx in enumerate(rank_a): ra[idx] = rank
-        mp = sum(rp) / n; ma = sum(ra) / n
+        rp = [0.0] * n
+        ra = [0.0] * n
+        for rank, idx in enumerate(rank_p):
+            rp[idx] = rank
+        for rank, idx in enumerate(rank_a):
+            ra[idx] = rank
+        mp = sum(rp) / n
+        ma = sum(ra) / n
         num = sum((rp[i]-mp)*(ra[i]-ma) for i in range(n))
         den = (sum((rp[i]-mp)**2 for i in range(n)) * sum((ra[i]-ma)**2 for i in range(n))) ** 0.5
         return num / den if den else 0.0

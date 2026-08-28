@@ -4,10 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
 import {
   CalendarDays,
-  TrendingUp,
-  Globe,
-  Banknote,
-  Building2,
   ChevronLeft,
   ChevronRight,
   RotateCw,
@@ -112,7 +108,11 @@ export function KalenderView() {
   const toggleType = (type: EventType) =>
     setHiddenTypes((prev) => {
       const next = new Set(prev);
-      next.has(type) ? next.delete(type) : next.add(type);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
       return next;
     });
 

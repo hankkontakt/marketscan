@@ -9,12 +9,9 @@ import {
   Briefcase,
   Star,
   Settings,
-  TrendingUp,
   Search,
   ArrowRight,
   Sun,
-  Moon,
-  GraduationCap,
   LogOut,
 } from "lucide-react";
 import { useCommandPalette } from "@/hooks/useCommandPalette";

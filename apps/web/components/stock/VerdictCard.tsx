@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { TrendingUp, Shield, AlertTriangle, ChevronDown, ChevronUp, Star, Loader2, HelpCircle, CheckCircle2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { buildVerdict, type StockVerdict, type VerdictReason } from "@/lib/plainLanguage";
+import { buildVerdict, type VerdictReason } from "@/lib/plainLanguage";
 import type { ScanRow } from "@/types/scan";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { FeedbackWidget } from "@/components/ui/FeedbackWidget";

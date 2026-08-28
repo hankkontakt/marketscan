@@ -28,7 +28,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
+  componentDidCatch(error: Error) {
     // Report to backend (fire-and-forget)
     api("/api/debug/client-error", {
       method: "POST",

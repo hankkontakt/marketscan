@@ -1,9 +1,9 @@
 "use client";
 
-import { TrendingUp, Zap, Info, ArrowUp, ArrowDown } from "lucide-react";
+import { Zap, ArrowUp, ArrowDown } from "lucide-react";
 import { useMangdubblare } from "@/hooks/useMangdubblare";
 import { cn } from "@/lib/utils";
-import { formatPrice, formatPctChange, signalLabel, signalClass, formatMarketCap } from "@/lib/format";
+import { formatPrice, formatPctChange, signalLabel, signalClass } from "@/lib/format";
 import { useRouter } from "next/navigation";
 
 const FACTOR_LABELS: Record<string, string> = {
@@ -15,20 +15,10 @@ const FACTOR_LABELS: Record<string, string> = {
   mews_clean_accruals: "Rena accruals",
 };
 
-const FACTOR_DESCS: Record<string, string> = {
-  mews_fcf_yield: "Kassaflöde ÷ börsvärde — starkaste prediktorn för 10x-avkastning",
-  mews_small_size: "Mindre bolag har större potential att mångdubblas",
-  mews_low_ps: "Lågt pris/sales ger större uppsida vid förbättring",
-  mews_operating_leverage: "Rörelsevinst växer snabbare än intäkter — expanderande marginal",
-  mews_revenue_accel: "Intäkterna accelererar jämfört med föregående period",
-  mews_clean_accruals: "Vinsten är av hög kvalitet (låg Sloan-accrual)",
-};
-
 function FactorBar({ value, factor }: { value: number | null; factor: string }) {
   const pct = Math.min((value ?? 50) / 100 * 100, 100);
   const color = pct >= 70 ? "var(--color-up)" : pct >= 40 ? "var(--color-accent)" : "var(--color-text-muted)";
   const label = FACTOR_LABELS[factor] ?? factor;
-  const desc = FACTOR_DESCS[factor] ?? "";
 
   return (
     <div className="space-y-0.5">

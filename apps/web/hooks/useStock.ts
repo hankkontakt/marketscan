@@ -53,8 +53,18 @@ export function useStockNews(ticker: string, enabled = true) {
   });
 }
 
+export interface EarningsItem {
+  quarter: string | number | null;
+  year: number | null;
+  actual: number | null;
+  estimate: number | null;
+  surprise: number | null;
+  surprise_pct: number | null;
+  revenue: number | null;
+}
+
 export function useStockEarnings(ticker: string, enabled = true) {
-  return useQuery<{ ticker: string; earnings: unknown[] }>({
+  return useQuery<{ ticker: string; earnings: EarningsItem[] }>({
     queryKey: ["stock-earnings", ticker],
     queryFn: () => api(`/api/stocks/${ticker}/earnings`),
     staleTime: 60 * 60_000,

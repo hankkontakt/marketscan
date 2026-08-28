@@ -1,6 +1,4 @@
 """Paper trading engine — simulates portfolio performance."""
-import os
-import sys
 import json
 import logging
 from datetime import datetime

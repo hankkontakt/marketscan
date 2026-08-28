@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KeyRound, Eye, EyeOff, Check, Loader2 } from "lucide-react";
+import { KeyRound, Eye, EyeOff, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { SectionCard, SectionTitle } from "./SectionCard";

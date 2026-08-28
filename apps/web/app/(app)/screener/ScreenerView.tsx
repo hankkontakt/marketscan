@@ -63,11 +63,6 @@ export function ScreenerView() {
     },
   });
 
-  const deleteScreen = useMutation({
-    mutationFn: (id: string) => api(`/api/screens/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["screens"] }),
-  });
-
   const updateFilters = useCallback((partial: Partial<ScanParams>) => {
     setFilters((f) => ({ ...f, ...partial }));
     setNlInterpreted("");

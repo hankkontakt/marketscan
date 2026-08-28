@@ -6,8 +6,6 @@ import { trackEvent, EVENT } from "@/lib/tracking";
 
 export type ExperienceLevel = "beginner" | "intermediate" | "expert";
 
-const LEVEL_ORDER: Record<ExperienceLevel, number> = { beginner: 0, intermediate: 1, expert: 2 };
-
 interface ExperienceContextValue {
   level: ExperienceLevel;
   setLevel: (level: ExperienceLevel) => void;

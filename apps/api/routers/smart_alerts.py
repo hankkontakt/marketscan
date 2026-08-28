@@ -132,13 +132,20 @@ def update_alert(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Larmregel hittades inte")
 
     updates: dict = {}
-    if body.name is not None:              updates["name"] = body.name
-    if body.conditions is not None:        updates["conditions"] = [c.model_dump() for c in body.conditions]
-    if body.score_change_min is not None:  updates["score_change_min"] = body.score_change_min
-    if body.insider_min_count is not None: updates["insider_min_count"] = body.insider_min_count
-    if body.vol_spike_min_pct is not None: updates["vol_spike_min_pct"] = body.vol_spike_min_pct
-    if body.trigger_once is not None:      updates["trigger_once"] = body.trigger_once
-    if body.active is not None:            updates["active"] = body.active
+    if body.name is not None:
+        updates["name"] = body.name
+    if body.conditions is not None:
+        updates["conditions"] = [c.model_dump() for c in body.conditions]
+    if body.score_change_min is not None:
+        updates["score_change_min"] = body.score_change_min
+    if body.insider_min_count is not None:
+        updates["insider_min_count"] = body.insider_min_count
+    if body.vol_spike_min_pct is not None:
+        updates["vol_spike_min_pct"] = body.vol_spike_min_pct
+    if body.trigger_once is not None:
+        updates["trigger_once"] = body.trigger_once
+    if body.active is not None:
+        updates["active"] = body.active
 
     if not updates:
         return existing.data[0]

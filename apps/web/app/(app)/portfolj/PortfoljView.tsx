@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { MetricCard } from "@/components/ui/MetricCard";
-import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, X, Check, TrendingUp, Building2, Target, Receipt, BarChart3, Upload, Download, AlertCircle, Loader2 } from "lucide-react";
+import { Briefcase, Trash2, MessageSquare, PieChart, ShieldAlert, Plus, Check, Building2, Target, Receipt, BarChart3, Upload, Loader2 } from "lucide-react";
 import { usePortfolio, useRemoveHolding, useAddHolding, usePortfolioRisk, useTransactions, useTWR, useDeleteTransaction, useFundHoldings, useRemoveFundHolding, useResetPortfolio, type FundHolding } from "@/hooks/usePortfolio";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -18,7 +18,7 @@ import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 export function PortfoljView() {
   const { data: portfolio, isLoading } = usePortfolio();
-  const { data: fundHoldings = [], isLoading: fundsLoading } = useFundHoldings();
+  const { data: fundHoldings = [] } = useFundHoldings();
   const remove = useRemoveHolding();
   const removeFund = useRemoveFundHolding();
   const addHolding = useAddHolding();
@@ -47,13 +47,8 @@ export function PortfoljView() {
   const [addShares, setAddShares] = useState("");
   const [addCost, setAddCost] = useState("");
   const [showImport, setShowImport] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importPreview, setImportPreview] = useState<any[] | null>(null);
-  const [importOverrides, setImportOverrides] = useState<Record<number, string>>({});
-  const [importLoading, setImportLoading] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");
-  const [aiResponse, setAiResponse] = useState("");
+  const [, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState("");
   const [chatHistory, setChatHistory] = useState<{ role: string; content: string }[]>([]);
 
@@ -366,7 +361,7 @@ export function PortfoljView() {
       {holdings.length > 1 && (tab === "aktier" || tab === "total") && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <AllocationDonut holdings={holdings} totalValue={stocksValue} />
-          <RiskPanel holdings={holdings} />
+          <RiskPanel />
         </div>
       )}
 
@@ -689,9 +684,7 @@ const SECTOR_COLORS = [
   "var(--color-chart-9)", "var(--color-chart-10)", "var(--color-chart-11)", "var(--color-chart-12)",
 ];
 
-function RiskPanel({ holdings }: {
-  holdings: { ticker: string; name: string | null }[];
-}) {
+function RiskPanel() {
   const { data: risk, isLoading } = usePortfolioRisk();
 
   if (isLoading) return <RiskPanelSkeleton />;

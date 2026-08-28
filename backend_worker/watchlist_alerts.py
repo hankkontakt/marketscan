@@ -25,7 +25,6 @@ import json
 import logging
 import os
 import sys
-from datetime import date
 
 import psycopg2
 from psycopg2.extras import execute_values

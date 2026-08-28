@@ -759,13 +759,13 @@ function ScoreHistoryChart({ history }: { history: { date: string; score: number
             interval="preserveStartEnd"
           />
           <Tooltip
-            content={({ active, payload }: any) => {
+            content={({ active, payload }: { active?: boolean; payload?: Array<{ value?: number; payload?: { date: string } }> }) => {
               if (!active || !payload?.length) return null;
               return (
                 <div className="px-2 py-1.5 rounded-lg text-xs shadow-md bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]"
                      style={{ border: "1px solid var(--color-border-strong)" }}>
                   <span className="font-semibold">{payload[0].value}</span>
-                  <span className="ml-1 text-[var(--color-text-muted)]">{payload[0].payload.date}</span>
+                  <span className="ml-1 text-[var(--color-text-muted)]">{payload[0].payload?.date}</span>
                 </div>
               );
             }}
@@ -818,12 +818,12 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
                 </tr>
               </thead>
               <tbody>
-                {earnings.slice(0, 8).map((e: any, i: number) => {
-                  const surprise = e.estimate ? ((e.actual - e.estimate) / Math.abs(e.estimate) * 100).toFixed(1) : null;
+                {earnings.slice(0, 8).map((e, i: number) => {
+                  const surprise = e.actual != null && e.estimate ? ((e.actual - e.estimate) / Math.abs(e.estimate) * 100).toFixed(1) : null;
                   return (
                     <tr key={i} className="border-b border-[var(--color-border)] hover:bg-[var(--color-bg-elevated)]">
                       <td className="py-2 pr-4 text-[var(--color-text-primary)]">{e.quarter} {e.year}</td>
-                      <td className={cn("text-right py-2 pr-4 font-mono tabular", e.actual >= 0 ? "text-[var(--color-up)]" : "text-[var(--color-down)]")}>
+                      <td className={cn("text-right py-2 pr-4 font-mono tabular", (e.actual ?? 0) >= 0 ? "text-[var(--color-up)]" : "text-[var(--color-down)]")}>
                         {e.actual?.toFixed(2) ?? "—"}
                       </td>
                       <td className="text-right py-2 pr-4 font-mono tabular text-[var(--color-text-muted)]">

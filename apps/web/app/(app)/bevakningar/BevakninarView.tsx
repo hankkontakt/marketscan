@@ -288,7 +288,7 @@ export function BevakninarView() {
             <InfoTooltip text="Larm aktiveras när aktiekursen når din angivna nivå vid nästa dagliga uppdatering." />
           </div>
           <div className="rounded-2xl border overflow-hidden border-[var(--color-border)]">
-            {alerts.map((alert, i) => (
+            {alerts.map((alert) => (
               <div
                 key={alert.id}
                 className="flex items-center gap-4 px-5 py-3.5 border-b last:border-b-0 bg-[var(--color-bg-surface)] border-[var(--color-border)]"

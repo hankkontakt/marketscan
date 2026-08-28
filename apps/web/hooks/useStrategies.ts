@@ -65,12 +65,14 @@ export function useTriggerBacktest() {
   });
 }
 
+export type BacktestResultsResponse = BacktestResult | { status: "no_runs"; message: string };
+
 export function useBacktestResults(strategyId: string, runId?: string) {
   const params = runId ? `?run_id=${runId}` : "";
-  return useQuery<BacktestResult>({
+  return useQuery<BacktestResultsResponse>({
     queryKey: ["backtest-results", strategyId, runId],
     queryFn: () =>
-      api<BacktestResult>(`/api/strategies/${strategyId}/results${params}`),
+      api<BacktestResultsResponse>(`/api/strategies/${strategyId}/results${params}`),
     staleTime: 5 * 60_000,
     enabled: !!strategyId,
     retry: 1,

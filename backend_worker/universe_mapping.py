@@ -128,10 +128,10 @@ def fetch_emittent_candidates() -> list[dict]:
                 break
             except requests.RequestException as e:
                 logger.warning("FI-anrop misslyckades (page %d, försök %d): %s", page, attempt + 1, e)
-                time.sleep(backoff := 3 * (attempt + 1))
+                time.sleep(3 * (attempt + 1))
             except Exception as e:
                 logger.warning("FI-parse fel (page %d): %s", page, e)
-                time.sleep(backoff := 3 * (attempt + 1))
+                time.sleep(3 * (attempt + 1))
 
         if not rows:
             empty_pages += 1

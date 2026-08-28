@@ -3,14 +3,12 @@ Admin endpoints — Kontrollpanel backend.
 Requires admin role.
 Supports pipeline trigger, health/diagnostics, queue management, coverage.
 """
-import asyncio
 import logging
-from datetime import datetime, timedelta
 from collections import Counter
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from httpx import AsyncClient
-from apps.api.core.security import get_current_user, require_admin, User
+from apps.api.core.security import require_admin, User
 from apps.api.core.config import settings
 from apps.api.dependencies import get_supabase, get_supabase_admin, get_user_supabase
 

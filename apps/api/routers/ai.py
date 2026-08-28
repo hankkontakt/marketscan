@@ -2,7 +2,6 @@
 AI endpoints: NL screener parser, stock analysis, Analyskommittén, portfolio coach.
 All responses are cached per ticker/day to minimize token spend.
 """
-import asyncio
 import json
 import logging
 from datetime import date
@@ -308,7 +307,6 @@ class AICompareResponse(BaseModel):
 @router.post("/compare")
 async def ai_compare(body: AICompareRequest, sb=Depends(get_supabase), sb_admin=Depends(get_supabase_admin), user: User = Depends(get_current_user)):
     """AI that compares 2-5 stocks and recommends the most attractive one."""
-    import asyncio
 
     key = f"compare:{'-'.join(sorted(body.tickers))}:{date.today().isoformat()}"
     cached = get_cached(key, sb_admin)

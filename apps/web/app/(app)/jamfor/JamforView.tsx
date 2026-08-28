@@ -5,7 +5,6 @@ import { Search, X, Loader2, AlertCircle, TrendingUp, Brain, ChevronDown, Info }
 import { api } from "@/lib/api";
 import {
   formatScore,
-  formatPrice,
   formatPct,
   scoreColorClass,
   signalBadgeClass,
@@ -13,8 +12,8 @@ import {
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { MultiFactorRadar, tickerColor } from "@/components/charts/MultiFactorRadar";
-import { useExperience } from "@/components/providers/ExperienceProvider";
-import { useCompare, useStockSearch, useAICompare, type SearchResult, type CompareResponse } from "@/hooks/useCompare";
+import { useCompare, useStockSearch, useAICompare } from "@/hooks/useCompare";
+import type { ScanRow } from "@/types/scan";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip,
   ResponsiveContainer, CartesianGrid, Legend,
@@ -45,8 +44,10 @@ function formatMetric(val: number | string | null | undefined, label: string): s
 
 // ─── Compare Chart (normalized price) ───────────────────────────────────────
 
+type ChartPoint = { time: string; [ticker: string]: string | number };
+
 function ComparePriceChart({ tickers }: { tickers: string[] }) {
-  const [chartData, setChartData] = useState<any[] | null>(null);
+  const [chartData, setChartData] = useState<ChartPoint[] | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
 
@@ -65,7 +66,7 @@ function ComparePriceChart({ tickers }: { tickers: string[] }) {
       })
     ).then((results) => {
       if (cancelled) return;
-      const timeMap: Record<string, any> = {};
+      const timeMap: Record<string, ChartPoint> = {};
       for (const { ticker, candles } of results) {
         if (candles.length === 0) continue;
         const basePrice = candles[0]?.close || 1;
@@ -75,8 +76,8 @@ function ComparePriceChart({ tickers }: { tickers: string[] }) {
         }
       }
       const data = Object.values(timeMap)
-        .sort((a: any, b: any) => a.time.localeCompare(b.time));
-      setChartData(data as any[]);
+        .sort((a, b) => a.time.localeCompare(b.time));
+      setChartData(data);
     }).catch((err) => {
       if (!cancelled) setChartError(err instanceof Error ? err.message : "Kunde inte hämta prisdata");
     }).finally(() => {
@@ -124,7 +125,7 @@ function ComparePriceChart({ tickers }: { tickers: string[] }) {
 
 // ─── AI Compare Card ────────────────────────────────────────────────────────
 
-function AICompareCard({ tickers, stockDatas }: { tickers: string[]; stockDatas: any[] }) {
+function AICompareCard({ tickers, stockDatas }: { tickers: string[]; stockDatas: Partial<ScanRow>[] }) {
   const { data, isLoading, error } = useAICompare(tickers, stockDatas);
 
   if (isLoading) return <div className="skeleton h-40 rounded-xl" />;
@@ -185,10 +186,8 @@ export function JamforView() {
   const [query, setQuery] = useState("");
   const { data: results } = useStockSearch(query, 6);
   const { data: compareData, isLoading, error } = useCompare(tickers);
-  const [stockDatas, setStockDatas] = useState<any[]>([]);
+  const [stockDatas, setStockDatas] = useState<Partial<ScanRow>[]>([]);
   const [showAllMetrics, setShowAllMetrics] = useState(false);
-  const { level } = useExperience();
-  const isExpert = level === "expert";
 
   const addTicker = useCallback((ticker: string) => {
     setTickers((prev) => {
@@ -211,7 +210,7 @@ export function JamforView() {
     Promise.all(
       tickers.map(async (t) => {
         try {
-          return await api<any>(`/api/stocks/${t}`);
+          return await api<Partial<ScanRow>>(`/api/stocks/${t}`);
         } catch {
           return { ticker: t };
         }

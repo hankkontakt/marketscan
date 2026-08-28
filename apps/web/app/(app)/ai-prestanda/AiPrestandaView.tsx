@@ -8,7 +8,6 @@ import {
 import {
   useMlSummary, useMlOutcomes, useMlDeciles,
   useMlIcTrend, useMlTopPicks,
-  type OutcomeRow, type DecileRow, type IcPoint, type TopPickRow,
 } from "@/hooks/useMlPerformance";
 import {
   AreaChart, Area, BarChart, Bar, ScatterChart, Scatter,
@@ -16,7 +15,6 @@ import {
   ReferenceLine, Cell,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { formatPct } from "@/lib/format";
 
 // ── KPI-kort ──────────────────────────────────────────────────────────────────
 

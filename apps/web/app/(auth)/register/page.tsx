@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -12,7 +11,6 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
-  const router = useRouter();
   const supabase = createClient();
 
   async function handleRegister(e: React.FormEvent) {

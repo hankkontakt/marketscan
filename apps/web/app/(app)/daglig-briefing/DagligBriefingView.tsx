@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import {
   TrendingUp, TrendingDown, Users, Activity, Globe,
-  ArrowRight, Briefcase, Radio,
+  ArrowRight, Radio,
 } from "lucide-react";
 import { useScreener } from "@/hooks/useScreener";
 import { useScoreMovers } from "@/hooks/useAlerts";
@@ -14,7 +14,7 @@ import { usePortfolio, usePortfolioHistory, useFundHoldings } from "@/hooks/useP
 import { cn } from "@/lib/utils";
 import {
   formatPrice, scoreColorClass, formatScore,
-  changeClass, formatPctChange, signalBadgeClass, signalShortLabel,
+  signalBadgeClass, signalShortLabel,
 } from "@/lib/format";
 import type { ScanRow } from "@/types/scan";
 import type { ScoreMover } from "@/types/alerts";
@@ -382,14 +382,6 @@ export function DagligBriefingView() {
   // OMX + S&P for stat cards
   const omx = indices.find(i => i.name.toLowerCase().includes("omx") || i.name === "OMX30");
   const sp  = indices.find(i => i.name.includes("S&P") || i.name.includes("500"));
-
-  const REGIME_COLORS: Record<string, string> = {
-    green:   "text-[var(--color-up)]",
-    red:     "text-[var(--color-down)]",
-    amber:   "text-[var(--color-warn)]",
-    neutral: "text-[var(--color-text-secondary)]",
-  };
-  const regimeColor = REGIME_COLORS[regime?.color ?? "neutral"];
 
   return (
     <div className="space-y-5 max-w-6xl">

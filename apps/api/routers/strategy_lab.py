@@ -13,7 +13,6 @@ Endpoints:
   GET    /api/signal-analytics/{from_signal}/{to_signal} — specific transition stats
 """
 import logging
-from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
 from pydantic import BaseModel, field_validator
 
@@ -151,15 +150,24 @@ def update_strategy(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Strategi hittades inte")
 
     updates: dict = {}
-    if body.name is not None:            updates["name"] = body.name
-    if body.description is not None:     updates["description"] = body.description
-    if body.filter_json is not None:     updates["filter_json"] = body.filter_json
-    if body.max_positions is not None:   updates["max_positions"] = body.max_positions
-    if body.position_sizing is not None: updates["position_sizing"] = body.position_sizing
-    if body.rebalance_freq is not None:  updates["rebalance_freq"] = body.rebalance_freq
-    if body.initial_capital is not None: updates["initial_capital"] = body.initial_capital
-    if body.commission_pct is not None:  updates["commission_pct"] = body.commission_pct
-    if body.is_public is not None:       updates["is_public"] = body.is_public
+    if body.name is not None:
+        updates["name"] = body.name
+    if body.description is not None:
+        updates["description"] = body.description
+    if body.filter_json is not None:
+        updates["filter_json"] = body.filter_json
+    if body.max_positions is not None:
+        updates["max_positions"] = body.max_positions
+    if body.position_sizing is not None:
+        updates["position_sizing"] = body.position_sizing
+    if body.rebalance_freq is not None:
+        updates["rebalance_freq"] = body.rebalance_freq
+    if body.initial_capital is not None:
+        updates["initial_capital"] = body.initial_capital
+    if body.commission_pct is not None:
+        updates["commission_pct"] = body.commission_pct
+    if body.is_public is not None:
+        updates["is_public"] = body.is_public
 
     if not updates:
         return existing.data[0]
