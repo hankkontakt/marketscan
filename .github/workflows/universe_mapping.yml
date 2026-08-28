@@ -34,3 +34,4 @@ jobs:
         run: python -m backend_worker.universe_mapping
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}

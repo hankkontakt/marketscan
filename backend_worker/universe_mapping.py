@@ -40,7 +40,10 @@ FI_HEADERS = {
 
 RAW_ARCHIVE_DIR = Path(__file__).resolve().parent.parent / "data" / "fi_raw"
 PROBE_CACHE_PATH = RAW_ARCHIVE_DIR / "yahoo_probe_cache.json"
+ISIN_SYMBOL_CACHE_PATH = RAW_ARCHIVE_DIR / "isin_symbol_cache.json"
 PROBE_MAX_AGE_DAYS = 7
+ISIN_SYMBOL_HIT_TTL = 60      # träff: 60 dagar (ticker byter sällan)
+ISIN_SYMBOL_MISS_TTL = 14     # miss: 14 dagar (ny listning kan komma in senare)
 VERIFY_TO_DELISTED_DAYS = 14
 WINDOW_DAYS = 180         # insynsfönster för emittenthärledning (bredare täckning)
 PAGE_SIZE = 100
@@ -201,11 +204,80 @@ def probe_yahoo_ticker(ticker: str, cache: dict | None = None) -> bool:
     return alive
 
 
-# ─── DB ───────────────────────────────────────────────────────────────────────
+# ─── Automatisk ISIN→ticker (keyless, via yfinance Lookup) ────────────────────
+# NY:er linjer: IPO → insider-anmälan → ISIN i FI-registret → yf.Lookup(ISIN)
+# → ticker → registry 'listed' → shorts/QMJ kedjan tar över automatiskt.
 
-def _connect():
-    import psycopg2
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+_NORDIC_VENUE_RE = re.compile(r"(\.ST|\.OL|\.HE|\.CO)$")
+
+
+def _load_isin_symbol_cache() -> dict:
+    try:
+        if ISIN_SYMBOL_CACHE_PATH.exists():
+            return json.loads(ISIN_SYMBOL_CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_isin_symbol_cache(cache: dict) -> None:
+    RAW_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    ISIN_SYMBOL_CACHE_PATH.write_text(json.dumps(cache, indent=2, ensure_ascii=False),
+                                      encoding="utf-8")
+
+
+def lookup_finnhub_isin(isin: str) -> Optional[str]:
+    """ISIN → ticker via Finnhub profile2?isin= (free tier; kräver FINNHUB_API_KEY).
+
+    Verifierat i dokumentationen: 'You can input anything from symbol, security's
+    name to ISIN and Cusip'. Guardad — utan nyckel returnerar den None.
+    """
+    key = os.environ.get("FINNHUB_API_KEY")
+    if not key:
+        return None
+    try:
+        r = requests.get(
+            "https://finnhub.io/api/v1/profile2",
+            params={"isin": isin, "token": key},
+            timeout=15,
+        )
+        d = r.json()
+        ticker = d.get("ticker") or d.get("symbol")
+        return ticker if ticker else None
+    except Exception:
+        return None
+
+
+def lookup_isin_via_yfinance(isin: str, cache: dict | None = None) -> Optional[str]:
+    """ISIN → Yahoo-ticker via yf.Lookup. Cachad (hit 60 d / miss 14 d). None vid miss.
+
+    OBS: symbolen ligger i DataFrame-INDEX (inte kolumn) — index-fix verifierad.
+    """
+    cache = cache if cache is not None else _load_isin_symbol_cache()
+    now = date.today()
+    entry = cache.get(isin)
+    if entry:
+        ttl = ISIN_SYMBOL_HIT_TTL if entry.get("symbol") else ISIN_SYMBOL_MISS_TTL
+        if (now - date.fromisoformat(entry.get("ts", "2000-01-01"))).days <= ttl:
+            return entry.get("symbol")
+
+    symbol = None
+    try:
+        import yfinance as yf
+        df = yf.Lookup(isin).stock
+        if df is not None and not df.empty:
+            # Symbol i index (kolumnerna är t.ex. exchange/industryName)
+            for sym in df.index:
+                sym = str(sym)
+                if sym and _NORDIC_VENUE_RE.search(sym):
+                    symbol = sym
+                    break
+    except Exception:
+        pass
+
+    cache[isin] = {"symbol": symbol, "ts": now.isoformat()}
+    _save_isin_symbol_cache(cache)
+    return symbol
 
 
 def _map_isin_to_ticker(cur, isin: str) -> Optional[str]:
@@ -216,9 +288,16 @@ def _map_isin_to_ticker(cur, isin: str) -> Optional[str]:
     try:
         cur.execute("SELECT ticker FROM company_profiles WHERE isin = %s", (isin,))
         row = cur.fetchone()
-        return row[0] if row else None
+        if row and row[0]:
+            return row[0]
     except Exception:
-        return None
+        pass
+    # Nyckelfri fallback A: Finnhub (snabb, verifierad API-kontrakt; kräver GH-secret)
+    sym_fh = lookup_finnhub_isin(isin)
+    if sym_fh:
+        return sym_fh
+    # Nyckelfri fallback B: yfinance-ISIN-lookup ("ny listning"-kedjan)
+    return lookup_isin_via_yfinance(isin)
 
 
 # Nordic venue-suffixer — universumet är nordiska småbolag, inte finviz/US-skrapet

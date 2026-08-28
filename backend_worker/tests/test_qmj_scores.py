@@ -7,6 +7,7 @@ import pandas as pd
 from backend_worker.qmj_scores import (
     fy_age_fit, as_of_strict, bucket_mcap, rank_pct, composite,
     short_exclusion, extract_metrics, storage_to_frames, _frames_to_storage,
+    stratum_of,
 )
 
 
@@ -142,6 +143,26 @@ class TestExtractMetrics(unittest.TestCase):
         m2 = extract_metrics(fin2, bal2, cash2, 100.0, [0.001] * 260)
         # Samma värden efter round-trip
         self.assertIsNotNone(m2["roe"])
+
+
+class TestStratumOf(unittest.TestCase):
+    def test_established(self):
+        self.assertEqual(stratum_of(15, 1000e6, 80e6, 500e6), "established")
+
+    def test_new_small_by_revenue(self):
+        self.assertEqual(stratum_of(15, 100e6, 10e6, 50e6), "new_small")
+
+    def test_new_small_by_age(self):
+        self.assertEqual(stratum_of(1, 1000e6, 10e6, 100e6), "new_small")
+
+    def test_growth_early(self):
+        self.assertEqual(stratum_of(10, 1000e6, -20e6, 300e6), "growth_early")
+
+    def test_turnaround(self):
+        self.assertEqual(stratum_of(20, 1000e6, 10e6, -50e6), "turnaround")
+
+    def test_missing_data_falls_to_new(self):
+        self.assertEqual(stratum_of(None, None, None, None), "new_small")
 
 
 if __name__ == "__main__":

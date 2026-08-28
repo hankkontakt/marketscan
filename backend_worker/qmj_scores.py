@@ -94,6 +94,25 @@ def bucket_mcap(mcap_local: float) -> int:
     return 3
 
 
+def stratum_of(years_data: float | None, revenue: float | None,
+               ocf: float | None, equity: float | None) -> str:
+    """Jämförbarhetsskikt (ny vs gammal — 'olika ligor', samma mått):
+
+    - turnaround: negativt eget kapital (distress)
+    - new_small:  <3 års data eller omsättning < 250 Mkr
+    - established: omsättning >= 250 Mkr och OCF > 0
+    - growth_early: omsättning >= 250 Mkr, OCF <= 0 (växer innan lönsamhet)
+    """
+    if equity is not None and equity <= 0:
+        return "turnaround"
+    if (years_data is None or years_data < 3
+            or revenue is None or revenue < 250e6):
+        return "new_small"
+    if ocf is not None and ocf > 0:
+        return "established"
+    return "growth_early"
+
+
 def rank_pct(values: dict) -> dict:
     """Rank-percentil 0-100 (högt = bättre). N<3 → 50.0-neutralitet."""
     if not values:
@@ -190,6 +209,7 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
             return _row_val(cash, latest, *keys)
 
         ni = fval("Net Income")
+        rev = fval("Total Revenue")
         ebit = fval("Operating Income", "EBIT")
         gp = fval("Gross Profit")
         ocf = cval("Operating Cash Flow", "Net Cash Provided By Operating Activities", "Net Cash Provided by Operating Activities")
@@ -260,6 +280,11 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
             "mcap_local": mcap,
             "fy_end": fy_last.isoformat(),
             "suspect": suspect,
+            # För stratum (jämförbarhet ny vs gammal):
+            "revenue_latest": rev,
+            "ocf_latest": ocf,
+            "equity_latest": eq,
+            "years_data": len(sorted(fy_dates)),
         })
         if mcap is not None and ndebt is not None and ebitda and ebitda != 0:
             ev = float((mcap + ndebt) / ebitda)
@@ -460,12 +485,35 @@ def main():
         ("issuance", -1), ("ev_ebitda", -1), ("fcf_yield", 1),
         ("momentum_vol_scaled", 1),
     ]
+    # Skikt (ny vs gammal — percentiler beräknas INOM skikt när n >= MIN_GROUP_SIZE)
+    strata = {
+        t: stratum_of(m.get("years_data"), m.get("revenue_latest"),
+                      m.get("ocf_latest"), m.get("equity_latest"))
+        for t, m in metrics.items()
+    }
+    strat_groups: dict[str, list] = {}
+    for t, s in strata.items():
+        strat_groups.setdefault(s, []).append(t)
+    rank_modes = {
+        t: ("within_stratum" if len(strat_groups[strata[t]]) >= MIN_GROUP_SIZE else "global")
+        for t in metrics
+    }
+
     z_final: dict[str, dict] = {t: {} for t in metrics}
     for key, sign in metric_keys:
-        vals = {t: (m.get(key) * sign if m.get(key) is not None else None) for t, m in metrics.items()}
-        ranks = rank_pct(vals)
+        per_strat: dict[str, dict] = {}
+        for s, members in strat_groups.items():
+            if len(members) < MIN_GROUP_SIZE:
+                continue
+            vals = {t: (metrics[t].get(key) * sign if metrics[t].get(key) is not None else None)
+                    for t in members}
+            per_strat[s] = rank_pct(vals)
+        global_vals = {t: (m.get(key) * sign if m.get(key) is not None else None)
+                       for t, m in metrics.items()}
+        global_ranks = rank_pct(global_vals)
         for t in metrics:
-            z_final[t][key] = ranks.get(t)
+            local = (per_strat.get(strata[t]) or {}).get(t)
+            z_final[t][key] = local if local is not None else global_ranks.get(t)
 
     # Insider (köpkluster) + shorts-filter + säljkluster-varning
     insider_score, sell_flags, short_map = {}, {}, {}
@@ -546,6 +594,8 @@ def main():
             "ticker": t, "scan_date": today.isoformat(),
             "as_of_date": as_of.isoformat() if as_of else None,
             "rebalance_flag": now.month == 4,
+            "stratum": strata.get(t),
+            "rank_mode": rank_modes.get(t, "global"),
             "quality_z": round(float(q), 2) if q is not None else None,
             "momentum_z": round(float(mz), 2) if mz is not None else None,
             "value_z": round(float(v), 2) if v is not None else None,
@@ -569,13 +619,15 @@ def main():
             cur.execute("SAVEPOINT qmj_row")
             cur.execute("""
                 INSERT INTO qmj_scores (
-                    ticker, scan_date, as_of_date, rebalance_flag,
+                    ticker, scan_date, as_of_date, rebalance_flag, stratum, rank_mode,
                     quality_z, momentum_z, value_z, payout_z, insider_z,
                     alpha_rank, exclusion_reason, warning_flags, data_quality, metrics_json
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
                 ON CONFLICT (ticker, scan_date) DO UPDATE SET
                     as_of_date = EXCLUDED.as_of_date,
                     rebalance_flag = EXCLUDED.rebalance_flag,
+                    stratum = EXCLUDED.stratum,
+                    rank_mode = EXCLUDED.rank_mode,
                     quality_z = EXCLUDED.quality_z,
                     momentum_z = EXCLUDED.momentum_z,
                     value_z = EXCLUDED.value_z,
@@ -587,6 +639,7 @@ def main():
                     data_quality = EXCLUDED.data_quality,
                     metrics_json = EXCLUDED.metrics_json
             """, (r["ticker"], r["scan_date"], r["as_of_date"], r["rebalance_flag"],
+                  r.get("stratum"), r.get("rank_mode"),
                   r["quality_z"], r["momentum_z"], r["value_z"], r["payout_z"], r["insider_z"],
                   r["alpha_rank"], r["exclusion_reason"], r["warning_flags"], r["data_quality"],
                   r["metrics_json"]))
