@@ -413,17 +413,17 @@ def main():
         cur.execute("""
             SELECT ticker FROM universe_registry
             WHERE ticker IS NOT NULL AND status IN ('listed', 'verify')
-              AND (ticker LIKE '%.ST' OR ticker LIKE '%.OL' OR ticker LIKE '%.HE' OR ticker LIKE '%.CO')
+              AND (ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s)
             ORDER BY ticker LIMIT %s
-        """, (args.limit_tickers,))
+        """, ("%.ST", "%.OL", "%.HE", "%.CO", args.limit_tickers))
         tickers = [r[0] for r in cur.fetchall()]
         if not tickers:
             cur.execute("""
                 SELECT DISTINCT ticker FROM scan_results
                 WHERE ticker IS NOT NULL
-                  AND (ticker LIKE '%.ST' OR ticker LIKE '%.OL' OR ticker LIKE '%.HE' OR ticker LIKE '%.CO')
+                  AND (ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s)
                 LIMIT %s
-            """, (args.limit_tickers,))
+            """, ("%.ST", "%.OL", "%.HE", "%.CO", args.limit_tickers))
             tickers = [r[0] for r in cur.fetchall()]
 
     metrics: dict[str, dict] = {}
