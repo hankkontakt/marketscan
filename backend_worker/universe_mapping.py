@@ -258,9 +258,13 @@ def lookup_isin_via_yfinance(isin: str, cache: dict | None = None) -> Optional[s
     now = date.today()
     entry = cache.get(isin)
     if entry:
-        ttl = ISIN_SYMBOL_HIT_TTL if entry.get("symbol") else ISIN_SYMBOL_MISS_TTL
-        if (now - date.fromisoformat(entry.get("ts", "2000-01-01"))).days <= ttl:
-            return entry.get("symbol")
+        # Gammalt format (utan 'name') är ofullständigt för backfill — behandla som miss.
+        if not entry.get("name"):
+            entry = None
+        else:
+            ttl = ISIN_SYMBOL_HIT_TTL if entry.get("symbol") else ISIN_SYMBOL_MISS_TTL
+            if (now - date.fromisoformat(entry.get("ts", "2000-01-01"))).days <= ttl:
+                return entry.get("symbol")
 
     symbol = name = sector = None
     try:
