@@ -35,9 +35,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-
-      - name: Finnhub exchange universe (ticker coverage)
-        run: python -m backend_worker.finnhub_universe --exchange SE,FI,DK,NO,IS
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+      # NOT: Finnhub /stock/symbol har INGEN nordisk täckning på free tier
+      # (verifierat 2026-08-28: SE/FI/DK/NO/IS → 0 symboler). Täckningsvägen är
+      # FI-registret + profile2?isin=-mapparen (gratis). Modulen
+      # backend_worker/finnhub_universe.py finns kvar för en framtida betald tier.
