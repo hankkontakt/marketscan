@@ -54,6 +54,21 @@ växer 29-100+ per natt; QMJ täcker +120 tickers per vecka.
   py_compile alla, prod-receipts bekräftade.
 - **Migrationer**: 045 (news_events) + 046 (stratum/rank_mode) applicerade.
 
+## UPPDATERING 2026-08-28 (rond 3 — radarn live, 4 punkter)
+
+1. **Radar-sidan LIVE** — `/api/market-intel/radar` (verifierad i prod: DANSKE.CO 6
+   nyheter/48h, ONCO "bridge financing" → negative 0,7, MYCR "order" → positive 0,9,
+   CRAYN.OL stratum=new_small ungdata) + UI `/radar` (200, Aktiva/Topprank, tema-filter,
+   ärlighetsrad; tsc OK). Radarn samlar: kvalitet/momentum/insider-z + blankning +
+   insiderkluster + nyheter 48h + varningar per bolag.
+2. **Few-shot-prompten INBYGGD** (vinnaren i token-experimentet: 3 exempel, thinking OFF).
+3. **Tema-filter** i radarns API + UI-dropdown (ipo/order/vinstvarning/ledning/
+   regulatorik/sector-ai/sector-forsvar).
+4. **Finnhub exchange-täckning: verifierad = INGEN på free tier** (SE/FI/DK/NO/IS → 0
+   symboler, även US-kontrollen: tillagd kandidatlista; /stock/exchange ger icke-JSON).
+   Täckningsvägen kvar: FI-registret (156) + profile2?isin= (gratis, verifierad.
+   Modulen finnhub_universe.py kvar för framtida betald tier.
+
 ## Beslutlogg (v1 → v2)
 
 | # | Korrigering | Orsak (bevisad/observerad) |
