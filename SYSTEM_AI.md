@@ -498,10 +498,10 @@ Alla routes prefixas med `/api/`. FastAPI körs på `http://localhost:8000` (dev
 
 ## 6. Databas — Supabase Schema
 
-**Projekt-ID:** `eukhlhowbbrccerxpisp`
+**Projekt-ID:** `vrvunpeukhkrtryaedxv`
 **Region:** eu-north-1 (Stockholm)
-**URL:** `https://eukhlhowbbrccerxpisp.supabase.co`
-**Dashboard:** https://supabase.com/dashboard/project/eukhlhowbbrccerxpisp
+**URL:** `https://vrvunpeukhkrtryaedxv.supabase.co`
+**Dashboard:** https://supabase.com/dashboard/project/vrvunpeukhkrtryaedxv
 
 ### 6.1 Tabeller
 
@@ -674,7 +674,7 @@ Committee-analys cachas i Supabase-tabellen `ai_cache` per ticker per dag (24h T
 
 | Variabel | Status | Värde/Anmärkning |
 |---|---|---|
-| `SUPABASE_URL` | ✅ Klar | `https://eukhlhowbbrccerxpisp.supabase.co` |
+| `SUPABASE_URL` | ✅ Klar | `https://vrvunpeukhkrtryaedxv.supabase.co` |
 | `SUPABASE_ANON_KEY` | ✅ Klar | Publik nyckel (RLS enforced) |
 | `SUPABASE_SERVICE_KEY` | ✅ Klar | Admin-nyckel (bypass RLS) |
 | `SUPABASE_JWT_SECRET` | ✅ Klar | För lokal JWT-validering (HS256) |
@@ -688,7 +688,7 @@ Committee-analys cachas i Supabase-tabellen `ai_cache` per ticker per dag (24h T
 
 | Variabel | Status | Värde |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | ✅ Klar | `https://eukhlhowbbrccerxpisp.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ Klar | `https://vrvunpeukhkrtryaedxv.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ Klar | anon-nyckeln |
 | `NEXT_PUBLIC_API_URL` | ✅ Klar (dev) | `http://localhost:8000` |
 
@@ -838,7 +838,7 @@ curl https://marketscan-api.vercel.app/api/stocks?q=tesla&limit=3
 curl https://marketscan-api.vercel.app/api/stocks/EXEL
 
 # Kolla antal aktier i databasen
-curl -s "https://eukhlhowbbrccerxpisp.supabase.co/rest/v1/scan_results?select=ticker&limit=1" \
+curl -s "https://vrvunpeukhkrtryaedxv.supabase.co/rest/v1/scan_results?select=ticker&limit=1" \
   -H "apikey: $SUPABASE_ANON_KEY" | jq length
 
 # Starta API med detaljerad loggning
@@ -910,6 +910,14 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 ## 19. Ändringslogg
 
 > Nyaste överst. Format: `YYYY-MM-DD — beskrivning (fil)`.
+
+### 2026-08-28 — "Endast 200 aktier"-roten + Supabase-omstart
+
+- `/api/scan` 500 (ResponseValidationError) vid limit>250: BITF/SQ hade `mews_flag=NULL` (COPY skrev explicit NULL som kringgick DEFAULT false) och `ScanRow` krävde strängt bool → tolererar nu NULL (`bool | None = False`); `_prepare_df` coerces bool-kolumner till False. DB-reparation: NULL→false (2× mews_flag, 418× ml_flag_uncertain).
+- Screener visade max 200 rader: `limit=200` härdkodat i ScreenerView + API-default → nu 500 (API `le=500` oförändrat). Live-API returnerar nu 426 rader.
+- Segment-skevhet (243 "large_cap"): 10 valutor saknades i `_FX_TO_USD` (BRL, GBp, HKD, INR, KRW, MXN, NZD, PLN, SGD, TWD → fallback 1:1). Tabellen utökad + DB omklassificerad (242/30/11/143).
+- Supabase-omstart: alla refs `eukhlhowbbrccerxpisp` (borttaget projekt, NXDOMAIN) → `vrvunpeukhkrtryaedxv` i HANDOFF.md, SYSTEM_AI.md, (`apps/web/.env.*`-cache).
+- Universumet hänger vid 2026-08-21-filen (420 rader + 6 seed-kvarlevor): ORSAK = `hankkontakt/stock-scanner` GitHub Actions spärrade ("recent account payments have failed" — billing-spärr i GitHub) → kräver användaråtgärd.
 
 ### 2026-06-07 — Fas 7: Kalender, Admin, Jämför-cleanup, Felsökningslager & nya features
 

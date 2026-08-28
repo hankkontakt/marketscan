@@ -140,7 +140,7 @@ marketscan/
 ### `C:\Users\hthur\OneDrive\Desktop\marketscan\.env` (läses av FastAPI)
 
 ```env
-SUPABASE_URL=https://eukhlhowbbrccerxpisp.supabase.co       ✅ klar
+SUPABASE_URL=https://vrvunpeukhkrtryaedxv.supabase.co       ✅ klar
 SUPABASE_ANON_KEY=eyJ...                                      ✅ klar
 SUPABASE_SERVICE_KEY=eyJ...                                   ✅ klar
 SUPABASE_JWT_SECRET=...                                       ✅ klar
@@ -157,7 +157,7 @@ CORS_ORIGINS=["http://localhost:3000"]
 ### `C:\Users\hthur\OneDrive\Desktop\marketscan\apps\web\.env.local` (läses av Next.js)
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://eukhlhowbbrccerxpisp.supabase.co   ✅ klar
+NEXT_PUBLIC_SUPABASE_URL=https://vrvunpeukhkrtryaedxv.supabase.co   ✅ klar
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...                                  ✅ klar
 NEXT_PUBLIC_API_URL=http://localhost:8000                              ✅ klar
 ```
@@ -549,10 +549,10 @@ För att undvika att upprepa samma misstag:
 
 ## 16. Supabase-projekt
 
-- **Projekt-ID:** `eukhlhowbbrccerxpisp`
+- **Projekt-ID:** `vrvunpeukhkrtryaedxv`
 - **Region:** eu-north-1 (Stockholm)
-- **URL:** https://eukhlhowbbrccerxpisp.supabase.co
-- **Dashboard:** https://supabase.com/dashboard/project/eukhlhowbbrccerxpisp
+- **URL:** https://vrvunpeukhkrtryaedxv.supabase.co
+- **Dashboard:** https://supabase.com/dashboard/project/vrvunpeukhkrtryaedxv
 
 ---
 

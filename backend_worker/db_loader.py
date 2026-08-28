@@ -35,19 +35,32 @@ SEGMENT_THRESHOLDS = {
     "small_cap":  300_000_000,      # USD
 }
 
-# Static FX rates → USD.  Updated 2026-06; refresh periodically.
+# Static FX rates → USD.  Updated 2026-08-28; refresh periodically.
 # Used to normalise market_cap values before applying USD thresholds.
+# NOTE 2026-08-28: 10 currencies were missing (BRL, GBp, HKD, INR, KRW, MXN,
+# NZD, PLN, SGD, TWD) → fell back to 1:1 → ~97 rows classified ~10x too big
+# (inflated large_cap). GBp = GBP per pence (0.01 × 1.27).
 _FX_TO_USD: dict[str, float] = {
     "USD": 1.0,
     "SEK": 0.093,   # 1 SEK ≈ 0.093 USD
     "EUR": 1.08,
     "GBP": 1.27,
+    "GBp": 0.0127,  # 1 pence ≈ 0.0127 USD
     "NOK": 0.092,
     "DKK": 0.145,
     "CHF": 1.12,
     "CAD": 0.74,
     "AUD": 0.65,
     "JPY": 0.0066,
+    "INR": 0.0112,
+    "HKD": 0.128,
+    "KRW": 0.00073,
+    "TWD": 0.031,
+    "SGD": 0.765,
+    "BRL": 0.175,
+    "PLN": 0.255,
+    "MXN": 0.053,
+    "NZD": 0.60,
 }
 
 
