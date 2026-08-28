@@ -5,7 +5,7 @@
 > Beslut: evidensbaserad signalstack med gratis, officiella källor och mätbar
 > forward-utfallshistorik. Inga "alpha"-claims i UI.
 
-## STATUS 2026-08-28 (implementering klart — alla vågor)
+## STATUS 2026-08-28 (implementering + produktion klart)
 
 | Task | Status | Bevis |
 |---|---|---|
@@ -17,12 +17,25 @@
 | C1 market_intel-router (5 endpoints) | ✅ 151 route-import OK; `def` (repo-konvention), RLS-public read |
 | C2 UI: badges + kvalitetslista + nav | ✅ tsc OK; textregler respekterade (ingen "alpha"-text i UI) |
 | Gates | ✅ py_compile alla, import alla, 14/14 unittest, tsc, smoke (prod 200 OK) |
+| Migrationer 040-044 | ✅ `supabase db push` → **applicerade på produktion**, migration list remote=local |
+| Production run 1 (2026-08-28) | ✅ shorts 338 rader, universum 29+29, QMJ **44 rader skrivna, 0 fel** |
+| Deploy | ✅ Vercel auto-deploy: API 200 på /api/market-intel/*, web /kvalitetslista 200 |
+| Prod-verifiering (deployad API) | ✅ qmj/rank = 42+ nordiska rader; shorts/DYNVO.ST = 9,72 % |
 
-**Kvar (du gör):**
-1. Kör migrationerna **040–044** i Supabase SQL Editor (repo-praxis: manuellt).
-2. Push → workflows aktiveras (universe_mapping 03:45, shorts 03:50, qmj fredag 02:00 UTC).
-3. Efter 1-2 veckor: kontrollera `short_positions`-rader + `qmj_scores`.
-4. Om du vill: `python -m backend_worker.qmj_scores --limit-tickers 5` lokalt först.
+**Buggar hittade & fixade i produktionsfasen (alla bevisade):**
+1. `fy_age_fit` spans negativa (fallande kolumner) → sortering.
+2. `latest`-kolumn = äldsta (fallande) → fy_last.
+3. Enhetsfel mcap/ratio (absoluta enheter).
+4. Baslinje-semantik shorts (222→0 falska new_discoveries) via worker_state.
+5. marknadssök rate-limits: retry+backoff (annars 29 emittenter per natt).
+6. TIMESTAMPTZ datetime vs date (delisting-detektor).
+7. `psycopg2 %`-kollision: LIKE-mönster som parametrar.
+8. **np.float64 i composite → SQL-text "np.float64(...)" → 'schema np'** (reproducerad mot postgres:16, fixad med float-cast + savepoints).
+9. Read-fel aborterade transaktion → rollback-hygiene.
+
+**Kvar (du gör): INGENTING akut** — signal_analytics weekly fyller factor_metrics
+(90/180/365 dagar) allt eftersom score_history ackumuleras; universum-registret
+växer 29-100+ per natt; QMJ täcker +120 tickers per vecka.
 
 ## Beslutlogg (v1 → v2)
 
