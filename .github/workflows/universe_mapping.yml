@@ -1,0 +1,36 @@
+name: Universe Mapping
+
+# Daglig synk av universumsregistret: FI-emittenter (sanning) + ISIN→ticker-mappning
+# + delisting-detektor (Yahoo-presence). Används av shorts/QMJ/insider-arbetare.
+
+on:
+  schedule:
+    - cron: "45 3 * * *"    # Dagligen 03:45 UTC
+  workflow_dispatch:
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "."
+
+jobs:
+  universe-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend_worker/requirements.txt
+          pip install beautifulsoup4 lxml
+
+      - name: Sync universe registry
+        run: python -m backend_worker.universe_mapping
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

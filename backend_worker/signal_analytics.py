@@ -254,6 +254,158 @@ def compute_signal_analytics(dsn: str) -> int:
     return processed
 
 
+# ─── A3: Forward-faktorvalidering (factor_metrics) ────────────────────────────
+# Mäter per faktor (score_quality, score_momentum, ...) om poängen faktiskt
+# predikterar framtida avkastning på 90/180/365 dagar. Resultat i
+# factor_metrics-tabellen (migration 042). Netto = decil-spread − 2×1 % (round-trip).
+
+FACTOR_FIELDS = ["score_total", "score_quality", "score_momentum", "score_growth", "score_value"]
+FACTOR_HORIZONS = [90, 180, 365]
+MIN_SAMPLES = 20
+ROUND_TRIP_COST = 0.02  # 1 % per sida (dokumenterat: 84-100 bps spread i nordiska småbolag)
+
+
+def _forward_return_at(cur, ticker: str, from_date: date, days: int) -> float | None:
+    """Avkastning N dagar efter from_date, närmast tillgängliga pris (±14 dagar)."""
+    target = from_date + timedelta(days=days)
+    cur.execute("""
+        SELECT price FROM score_history
+        WHERE ticker = %s AND scan_date BETWEEN %s AND %s AND price IS NOT NULL
+        ORDER BY scan_date ASC LIMIT 1
+    """, (ticker, target.isoformat(), (target + timedelta(days=14)).isoformat()))
+    after = cur.fetchone()
+    cur.execute("""
+        SELECT price FROM score_history
+        WHERE ticker = %s AND scan_date = %s AND price IS NOT NULL
+    """, (ticker, from_date.isoformat()))
+    at_date = cur.fetchone()
+    if not after or not at_date:
+        return None
+    try:
+        p0, p1 = float(at_date[0]), float(after[0])
+        return (p1 - p0) / p0 if p0 else None
+    except (TypeError, ZeroDivisionError):
+        return None
+
+
+def _spearman(x: list[float], y: list[float]) -> float:
+    """Rank-korrelation (Pearson på ranks). Numpy-only."""
+    if len(x) < MIN_SAMPLES:
+        return float("nan")
+    rx = np.empty(len(x))
+    ry = np.empty(len(y))
+    # rank via argsort (ties får medelrank — acceptabelt för IC-ändamål)
+    def rank(a):
+        order = np.argsort(a, kind="mergesort")
+        r = np.empty(len(a))
+        r[order] = np.arange(len(a))
+        return r
+    rx = rank(np.array(x))
+    ry = rank(np.array(y))
+    if float(np.std(rx)) == 0 or float(np.std(ry)) == 0:
+        return float("nan")
+    return float(np.corrcoef(rx, ry)[0, 1])
+
+
+def compute_factor_metrics(dsn: str) -> int:
+    """Beräkna Rank-IC + decil-spread per faktor/horisont → factor_metrics. Returnerar antal rader."""
+    written = 0
+    try:
+        with psycopg2.connect(dsn, client_encoding="UTF8") as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT to_regclass('public.factor_metrics')")
+            if cur.fetchone()[0] is None:
+                logger.warning("factor_metrics-tabellen saknas (migration 042 ej körd) — hoppar över")
+                return 0
+    except Exception as e:
+        logger.warning("factor_metrics-kontroll misslyckades: %s", e)
+        return 0
+
+    with psycopg2.connect(dsn, client_encoding="UTF8") as conn:
+        conn.autocommit = False
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Observationer: veckovis sampling per ticker (billigt + tillräckligt för IC)
+        cur.execute("""
+            SELECT ticker, scan_date, score_total, score_quality, score_momentum,
+                   score_growth, score_value, price
+            FROM score_history
+            WHERE price IS NOT NULL AND score_total IS NOT NULL
+              AND EXTRACT(DOW FROM scan_date) = 3
+            ORDER BY scan_date
+        """)
+        rows = cur.fetchall()
+        logger.info("factor_metrics: %d veckovisa observationer laddade", len(rows))
+
+        if len(rows) < MIN_SAMPLES:
+            logger.warning("För få observationer (%d) — hoppar över", len(rows))
+            return 0
+
+        # Bygg per-horisont: (ticker, scan_date, faktor-value) → forward-return
+        for horizon in FACTOR_HORIZONS:
+            samples: dict[str, list] = {f: [] for f in FACTOR_FIELDS}
+            for r in rows:
+                sd = r["scan_date"]
+                if isinstance(sd, str):
+                    sd = date.fromisoformat(sd[:10])
+                ret = _forward_return_at(cur, r["ticker"], sd, horizon)
+                if ret is None:
+                    continue
+                for f in FACTOR_FIELDS:
+                    v = r.get(f)
+                    if v is not None and v != 0:
+                        samples[f].append((float(v), ret))
+
+            for f in FACTOR_FIELDS:
+                pts = samples[f]
+                if len(pts) < MIN_SAMPLES:
+                    continue
+                xs = np.array([p[0] for p in pts])
+                ys = np.array([p[1] for p in pts])
+                ic = _spearman(list(xs), list(ys))
+
+                decile_edges = np.percentile(xs, np.arange(10, 100, 10))
+                deciles = np.digitize(xs, decile_edges)  # 1..10
+                top = ys[deciles == 10]
+                bottom = ys[deciles == 1]
+                if len(top) < 3 or len(bottom) < 3:
+                    continue
+                spread = float(np.mean(top) - np.mean(bottom))
+                win_top = float(np.mean(top > 0))
+
+                cur_plain = conn.cursor()
+                cur_plain.execute("""
+                    INSERT INTO factor_metrics (
+                        factor, horizon_days, computed_date, n, rank_ic,
+                        decile_spread, decile_spread_net, win_rate, computed_at
+                    ) VALUES (%s, %s, CURRENT_DATE, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (factor, horizon_days, computed_date) DO UPDATE SET
+                        n = EXCLUDED.n, rank_ic = EXCLUDED.rank_ic,
+                        decile_spread = EXCLUDED.decile_spread,
+                        decile_spread_net = EXCLUDED.decile_spread_net,
+                        win_rate = EXCLUDED.win_rate,
+                        computed_at = NOW()
+                """, (
+                    f, horizon, len(pts),
+                    ic if ic == ic else None,           # NaN → NULL
+                    round(spread, 6),
+                    round(spread - ROUND_TRIP_COST, 6),
+                    round(win_top, 4),
+                ))
+                written += 1
+                logger.info("  %s/%dd: n=%d, IC=%.3f, spread=%.2f%% (net %.2f%%)",
+                            f, horizon, len(pts), ic, spread * 100, (spread - ROUND_TRIP_COST) * 100)
+            conn.commit()
+
+    logger.info("factor_metrics klar: %d rader skrivna", written)
+    return written
+
+
 if __name__ == "__main__":
     dsn = os.environ["DATABASE_URL"]
     compute_signal_analytics(dsn)
+    # A3: forward-faktorvalidering (tolererar saknad tabell — se guard ovan)
+    try:
+        compute_factor_metrics(dsn)
+    except Exception as e:
+        logger.error("factor_metrics beräkning misslyckades: %s", e)

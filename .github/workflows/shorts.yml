@@ -1,0 +1,36 @@
+name: FI Short Positions
+
+# Daglig snapshot av FI:s blankningsregister (net short positions).
+# Riskfilter + ny-disclosure-varning. 0-rader-fetch → jobb failar (formatändring-larm).
+
+on:
+  schedule:
+    - cron: "50 3 * * *"    # Dagligen 03:50 UTC
+  workflow_dispatch:
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "."
+
+jobs:
+  fi-short:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend_worker/requirements.txt
+          pip install beautifulsoup4 lxml
+
+      - name: Snapshot short positions
+        run: python -m backend_worker.fi_short_positions
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

@@ -207,8 +207,110 @@ def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
     return clusters
 
 
-def upsert_clusters(clusters: pd.DataFrame, conn):
-    """Upsert cluster-signaler till insider_cluster_signals-tabellen."""
+def calculate_sell_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
+    """Beräkna SÄLJkluster (unique_sellers_30d, total_sell_amount_30d).
+
+    Akademisk grund (Lund 2015, svensk data 2005-2014): säljkluster har STÖRRE
+    förklaringskraft än köpkluster. Används som varningsflagga (inte rank-ändring)
+    eftersom säljare kan vara ombalansering/skatt — övertro = falska larm.
+    """
+    cutoff_30d = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+    cutoff_90d = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+
+    sells_90d = pd.read_sql(f"""
+        SELECT ticker, name, role, shares, price, amount, trade_date
+        FROM insider_trades
+        WHERE type = 'sell'
+          AND trade_date >= '{cutoff_90d}'
+        ORDER BY ticker, trade_date
+    """, conn)
+
+    if sells_90d.empty:
+        return pd.DataFrame()
+
+    history_all = pd.read_sql("""
+        SELECT ticker, name, trade_date, shares, price
+        FROM insider_trades
+        WHERE type = 'sell'
+        ORDER BY ticker, name, trade_date
+    """, conn)
+
+    def _is_routine_hist(ticker: str, name: str, trade_date: str, shares: float, price: float) -> bool:
+        """Samma routine-detektion som för köp (samma person, samma månad/belopp)."""
+        if not history_all.empty and name:
+            person_hist = history_all[
+                (history_all["ticker"] == ticker) &
+                (history_all["name"].str.lower().fillna("").str.strip() == name.lower().strip())
+            ]
+            if len(person_hist) >= 3:
+                prev_months = [str(d)[:7] for d in person_hist["trade_date"].iloc[:-1] if pd.notna(d)]
+                current_month = str(trade_date)[:7] if pd.notna(trade_date) else ""
+                if prev_months and current_month:
+                    unique_prev = set(prev_months[-4:])
+                    if len(unique_prev) == 1 and list(unique_prev)[0] == current_month:
+                        return True
+                prev_vals = []
+                for _, row in person_hist.iterrows():
+                    s = float(row.get("shares", 0) or 0)
+                    p = float(row.get("price", 0) or 1)
+                    if s > 0 and p > 0:
+                        prev_vals.append(s * p)
+                current_val = float(shares or 0) * float(price or 1)
+                if len(prev_vals) >= 3 and current_val > 0:
+                    avg_val = sum(prev_vals[:-1]) / len(prev_vals[:-1])
+                    if avg_val > 0 and 0.8 <= (current_val / avg_val) <= 1.2:
+                        return True
+        return False
+
+    routine_mask = sells_90d.apply(
+        lambda r: _is_routine_hist(r["ticker"], r.get("name", ""),
+                                   r.get("trade_date", ""), r.get("shares", 0), r.get("price", 0)),
+        axis=1,
+    )
+    opportunistic = sells_90d[~routine_mask].copy()
+
+    sells_30d = opportunistic[opportunistic["trade_date"] >= cutoff_30d].copy()
+    if sells_30d.empty:
+        return pd.DataFrame()
+
+    sellers = (
+        sells_30d.groupby("ticker")["name"].nunique().reset_index()
+        .rename(columns={"name": "unique_sellers_30d"})
+    )
+    amounts = (
+        sells_30d.groupby("ticker")["amount"].sum().reset_index()
+        .rename(columns={"amount": "total_sell_amount_30d"})
+    )
+    df = sellers.merge(amounts, on="ticker", how="left")
+    logger.info("Säljklusteranalys: %d tickers med säljaraktivitets", len(df))
+    return df
+
+
+def upsert_clusters(clusters: pd.DataFrame, conn, sell_clusters: pd.DataFrame | None = None):
+    """Upsert cluster-signaler till insider_cluster_signals-tabellen.
+
+    Säljkluster slås ihop (left-join) — NULL-värden fylls med 0.
+    """
+    if sell_clusters is not None and not sell_clusters.empty:
+        if clusters.empty:
+            # Säljkluster existerar utan köp — ändå varningsflaggvärda
+            clusters = sell_clusters.copy()
+            clusters["unique_buyers_30d"] = 0
+            clusters["total_buy_amount_30d"] = 0.0
+            clusters["cluster_score"] = 0.0
+            clusters["is_cluster"] = False
+            clusters["exec_buy_90d"] = False
+            clusters["unique_sellers_30d"] = clusters["unique_sellers_30d"].fillna(0).astype(int)
+            clusters["total_sell_amount_30d"] = clusters["total_sell_amount_30d"].fillna(0.0)
+            clusters = clusters.sort_values("unique_sellers_30d", ascending=False).reset_index(drop=True)
+        else:
+            clusters = clusters.merge(sell_clusters, on="ticker", how="left")
+            clusters["unique_sellers_30d"] = clusters.get("unique_sellers_30d", pd.Series(0, index=clusters.index)).fillna(0).astype(int)
+            clusters["total_sell_amount_30d"] = clusters.get("total_sell_amount_30d", pd.Series(0.0, index=clusters.index)).fillna(0.0)
+    else:
+        clusters["unique_sellers_30d"] = clusters.get("unique_sellers_30d", pd.Series(0, index=clusters.index)).fillna(0).astype(int)
+        clusters["total_sell_amount_30d"] = clusters.get("total_sell_amount_30d", pd.Series(0.0, index=clusters.index)).fillna(0.0)
+
     if clusters.empty:
         logger.info("Inga kluster att upsert")
         return
@@ -220,22 +322,27 @@ def upsert_clusters(clusters: pd.DataFrame, conn):
             cur.execute("""
                 INSERT INTO insider_cluster_signals
                     (ticker, unique_buyers_30d, total_buy_amount_30d,
-                     cluster_score, is_cluster, exec_buy_90d, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                     cluster_score, is_cluster, exec_buy_90d,
+                     unique_sellers_30d, total_sell_amount_30d, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 ON CONFLICT (ticker) DO UPDATE SET
                     unique_buyers_30d = EXCLUDED.unique_buyers_30d,
                     total_buy_amount_30d = EXCLUDED.total_buy_amount_30d,
                     cluster_score = EXCLUDED.cluster_score,
                     is_cluster = EXCLUDED.is_cluster,
                     exec_buy_90d = EXCLUDED.exec_buy_90d,
+                    unique_sellers_30d = EXCLUDED.unique_sellers_30d,
+                    total_sell_amount_30d = EXCLUDED.total_sell_amount_30d,
                     updated_at = NOW()
             """, (
                 row["ticker"],
-                int(row["unique_buyers_30d"]),
+                int(row.get("unique_buyers_30d", 0)),
                 float(row.get("total_buy_amount_30d", 0)),
                 float(row.get("cluster_score", 0)),
                 bool(row.get("is_cluster", False)),
                 bool(row.get("exec_buy_90d", False)),
+                int(row.get("unique_sellers_30d", 0)),
+                float(row.get("total_sell_amount_30d", 0)),
             ))
         except Exception as e:
             logger.warning("Upsert failed for %s: %s", row.get("ticker"), e)
@@ -255,6 +362,7 @@ def main():
     conn = psycopg2.connect(database_url)
 
     clusters = calculate_clusters(conn)
+    sell_clusters = calculate_sell_clusters(conn)
 
     if not clusters.empty:
         # Visa topp-10
@@ -265,7 +373,7 @@ def main():
                   f"kluster={'✅' if r['is_cluster'] else '—'}, "
                   f"exec={'✅' if r['exec_buy_90d'] else '—'}")
 
-    upsert_clusters(clusters, conn)
+    upsert_clusters(clusters, conn, sell_clusters)
     conn.close()
 
     result = {

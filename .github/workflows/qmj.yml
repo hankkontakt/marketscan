@@ -1,0 +1,43 @@
+name: QMJ Scores
+
+# Veckovis QMJ-komposit: kvalitet/momentum/insider/värde/payout med punkt-i-tid-regel.
+# Batch-limit 120 tickers/natt för yfinance-rate-limit-respekt (cache: data/qmj_raw/).
+# Körs fredag natt; vid behov manuellt (workflow_dispatch: limit-tickers).
+
+on:
+  schedule:
+    - cron: "0 2 * * 5"      # Fredag 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      limit_tickers:
+        description: "Antal tickers att bearbeta (0 = alla med cache/budget)"
+        required: false
+        default: "120"
+        type: string
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "."
+
+jobs:
+  qmj:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend_worker/requirements.txt
+
+      - name: Compute QMJ scores
+        run: |
+          LIMIT="${{ github.event.inputs.limit_tickers || '120' }}"
+          python -m backend_worker.qmj_scores --limit-tickers "$LIMIT"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
