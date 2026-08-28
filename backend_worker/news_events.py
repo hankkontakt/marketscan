@@ -54,21 +54,33 @@ RULE_BEARINGS = {
 }
 
 
-def fetch_nasdaq(market: str = "SSE", limit: int = DEFAULT_LIMIT) -> list[dict]:
-    r = requests.get(
-        NASDAQ_URL,
-        params={"type": "json", "market": market, "limit": limit, "offset": 0},
-        timeout=40,
-    )
-    r.raise_for_status()
-    data = r.json()
-    items = (
-        data.get("results", {}).get("item")
-        or data.get("item") or data.get("items") or []
-    )
-    if isinstance(items, dict):
-        items = [items]
-    return items
+def fetch_nasdaq(market: str = "SSE", limit: int = DEFAULT_LIMIT,
+                 max_pages: int = 3) -> list[dict]:
+    """Hämta med start-paginering tills en sida ger färre än limit träffar.
+
+    API-kontraktet (verifierat 2026-08-29): query.action IGNORERAR 'offset' —
+    sidparametern heter 'start' (0, limit, 2*limit, ...). Max max_pages sidor.
+    """
+    out: list[dict] = []
+    for page in range(max_pages):
+        r = requests.get(
+            NASDAQ_URL,
+            params={"type": "json", "market": market, "limit": limit,
+                    "start": page * limit},
+            timeout=40,
+        )
+        r.raise_for_status()
+        data = r.json()
+        items = (
+            data.get("results", {}).get("item")
+            or data.get("item") or data.get("items") or []
+        )
+        if isinstance(items, dict):
+            items = [items]
+        out.extend(items)
+        if len(items) < limit:
+            break
+    return out
 
 
 def apply_rule_bearings(conn, source_category: str, bearing: str, confidence: float,
@@ -94,6 +106,8 @@ def main():
                         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
     items = fetch_nasdaq(args.market, args.limit)
+    logger.info("Nasdaq: %d meddelanden hämtade (%d sidor max)",
+                len(items), 3)
     if not items:
         logger.error("Nasdaq-API:t gav 0 meddelanden")
         print(json.dumps({"status": "error", "rows": 0}))

@@ -28,7 +28,7 @@ export function BevakninarView() {
   const { data: watchlist = [], isLoading } = useWatchlist();
   const { data: alerts = [] } = useQuery<PriceAlert[]>({
     queryKey: ["alerts"],
-    queryFn: () => api("/api/alerts"),
+    queryFn: () => api("/api/price-alerts"),
     staleTime: 60_000,
   });
   const qc = useQueryClient();
@@ -52,7 +52,7 @@ export function BevakninarView() {
 
   const createAlert = useMutation({
     mutationFn: (body: { ticker: string; condition: string; target_price: number; note?: string }) =>
-      api("/api/alerts", { method: "POST", body: JSON.stringify(body) }),
+      api("/api/price-alerts", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["alerts"] });
       setShowAlertForm(null); setAlertPrice(""); setAlertNote("");
@@ -62,7 +62,7 @@ export function BevakninarView() {
   });
 
   const deleteAlert = useMutation({
-    mutationFn: (id: string) => api(`/api/alerts/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => api(`/api/price-alerts/${id}`, { method: "DELETE" }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["alerts"] }); toast.success("Larm borttaget"); },
   });
 

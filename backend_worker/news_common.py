@@ -1,7 +1,7 @@
 """
 news_common.py — Delad logik för nyhetskedjan (normalisering, namnmatch, upsert).
 
-Används av: news_events.py (Nasdaq-officiell), news_discovery.py (Google News/DDGS).
+Används av: news_events.py (Nasdaq-officiell), news_discovery.py (Google News).
 """
 from __future__ import annotations
 
@@ -41,19 +41,30 @@ def load_registry(conn) -> dict:
     return out
 
 
+# Generiska ämnesord som ALDRIG får trigga ticker-match (oavsett case).
+GENERIC_BASES = {"investor", "note", "sci", "abb", "bba", "etc"}
+
+
 def match_ticker(headline: str, registry: dict) -> Optional[str]:
     """Slå upp ticker genom norm-namn-substring i rubriken (längst match vinner).
 
     Fallback för reg-rader som bara har ticker som 'namn' (X-): matcha basdelen
     av tickern (SIVE.ST → \\bsive\\w*) med ordgräns (undantag: flerklass-tickers
     med '-', t.ex. ERIC-B.ST, hoppas över — för kollisionsrisk).
+
+    Falsk-positiv-skydd (2026-08-29):
+    - Generiska baser (investor/note/sci/abb/bba/etc) matchas aldrig.
+    - Baser 2-3 tecken: token i texten måste vara UPPER-case (INVE/ABB skrivs
+      versaler i rubriker).
+    - Baser 4-5 tecken: token måste vara capitalized eller UPPER-case
+      ("Hexagon" matchar HEXA-B.ST, "hexa" i löptext gör det inte).
     """
     if not headline:
         return None
     hl = norm(headline)
     best = None
     for key, (ticker, name) in registry.items():
-        if len(key) < 4:
+        if len(key) < 4 or key in GENERIC_BASES:
             continue
         if key in hl and (best is None or len(key) > len(best[0])):
             best = (key, ticker)
@@ -62,9 +73,17 @@ def match_ticker(headline: str, registry: dict) -> Optional[str]:
         hl_raw = (headline or "").lower()
         for key, (ticker, _) in registry.items():
             base = (ticker or "").split(".")[0].lower().replace("-b", "").replace("-a", "")
-            if not base or len(base) < 3 or "-" in ticker.split(".")[0]:
+            if not base or len(base) < 2 or base in GENERIC_BASES or "-" in ticker.split(".")[0]:
                 continue
-            if re.search(rf"\b{base}\w*", hl_raw) and (best is None or len(base) > len(best[0])):
+            m = re.search(rf"\b{base}\w*", hl_raw)
+            if not m:
+                continue
+            token = headline[m.start():m.end()]
+            if len(base) <= 3 and not token.isupper():
+                continue
+            if 4 <= len(base) <= 5 and not (token[0].isupper() or token.isupper()):
+                continue
+            if best is None or len(base) > len(best[0]):
                 best = (base, ticker)
     return best[1] if best else None
 
@@ -152,15 +171,20 @@ def parse_pubdate(s: str) -> Optional[str]:
 # klassificeras ALDRIG av LLM:en — det får neutral + låg förtroende + märkning.
 
 INJECTION_PATTERNS = [
-    r"\bignore\b", r"\bignore all previous\b", r"\bforget everything\b",
-    r"\bignore previous instructions\b", r"\bdisregard\b",
-    r"\bsystem\s*[:>]", r"\bassistant\s*[:>]", r"\buser\s*[:>]",
+    r"\bignore\s+(?:all|previous|the|any|any previous)",
+    r"\bignore all previous\b", r"\bignore previous instructions\b",
+    r"\bignore the previous\b", r"\bignore preceding instructions\b",
+    r"\bforget\s+(?:everything|all|previous)",
+    r"\bdisregard\s+(?:previous|the|all|instructions)",
+    r"\bsystem\s*(?:message|prompt|instructions|instruktion|says|told)",
+    r"\bassistant\s*[:>]", r"\buser\s*[:>]",
     r"</?system>", r"<\s*system", r"<\s*assistant", r"<!--", r"<%",
     r"\{\{\s*[a-z_]+\s*\}\}", r"\[\[", r"```", r"`json`", r"```json",
-    r"\btestfall\b", r"\btest case\b", r"\bcorrige", r"\bcorrect your answer\b",
+    r"\bcorrige", r"\bcorrect your answer\b",
     r"\bbecome a\b", r"\byou are now\b", r"\bno longer need\b",
-    r"\bignore the previous\b", r"\btreat everything above\b",
-    r"\bhallucinat", r"\bberätta\s+(\bnu\b|\batt\b)", r"\bkommandon\b",
+    r"\btreat everything above\b",
+    r"\bhallucinat", r"\bberätta\s+(\bnu\b|\batt\b)",
+    r"\bact\s+as\b", r"\bpretend\b", r"\bfrom now on",
 ]
 
 

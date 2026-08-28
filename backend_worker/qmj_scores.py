@@ -17,7 +17,7 @@ Data-regler (per granskning):
 
 Användning:
     python -m backend_worker.qmj_scores --dry-run --limit-tickers 5
-    python -m backend_worker.qmj_scores --limit-tickers 120
+    python -m backend_worker.qmj_scores --limit-tickers 0   # 0 = alla (standard)
 """
 from __future__ import annotations
 
@@ -217,6 +217,25 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
     if fin is None or bal is None or cash is None or fin.empty or bal.empty:
         return out
     try:
+        # Volatilitet + momentum 12-1 (vol-skalad) ur prishistoriken — beräknas
+        # INNAN annual-gaten: ny-listade bolag (<3 års bokslut, fy_last None) ska
+        # ändå få momentum/vol när prishistorik finns (tidig return hoppade över).
+        vr = np.array(hist_returns) if hist_returns else np.array([])
+        out["vol_ann"] = float(np.std(vr) * math.sqrt(252)) if (len(vr) >= 20 and float(np.std(vr)) > 0) else None
+        mom, mom_scaled = None, None
+        if len(vr) >= 240:   # ~12 månader minus senaste månad (tillåter 1–2 saknade sessioner)
+            cum = (1 + pd.Series(np.array(vr))).cumprod()
+            try:
+                p1, p2 = cum.iloc[-22], cum.iloc[-240]
+                if p1 and p2 and p2 > 0:
+                    mom = float(p1 / p2 - 1)
+                    if out.get("vol_ann"):
+                        mom_scaled = float(mom / out["vol_ann"])
+            except Exception:
+                pass
+        out["momentum_raw"] = mom
+        out["momentum_vol_scaled"] = mom_scaled
+
         fy_dates = model_periods(fin)
         if len(fy_dates) != len(fin.columns):
             return out
@@ -287,6 +306,9 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
         mcap = (price * shares_latest) if (price and shares_latest) else None
         # OBS: yfinance-rapporterar i ABSOLUTA enheter (t.ex. -11388000 = -11,4 Mkr)
         # och mcap = pris × aktieantal är också absolut → alla ratioer utan omvandling.
+        # Interest Expense är NEGATIV hos yfinance → intcov = ebit / abs(interest),
+        # annars blir intcov negativ och sign=1 (högre bättre) belönar de mest
+        # skuldsatta. interest == 0 eller None → intcov None (faktorn skippas).
         ebitda = (ebit + d_a) if (ebit is not None and d_a is not None) else ebit
         ndebt = (debt - cash_bal) if (debt is not None and cash_bal is not None) else debt
         fcf = (ocf + capex) if (ocf is not None and capex is not None) else ocf
@@ -299,7 +321,7 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
             "accruals": ((ni - ocf) / ta) if (ni is not None and ocf is not None and ta and ta != 0) else None,
             "leverage": (tl / eq) if (tl is not None and eq and eq != 0) else None,
             "ndebt_ebitda": (ndebt / ebitda) if (ndebt is not None and ebitda and ebitda != 0) else None,
-            "intcov": (ebit / interest) if (ebit is not None and interest and interest != 0) else None,
+            "intcov": (ebit / abs(interest)) if (ebit is not None and interest and interest != 0) else None,
             "roe_vol": float(np.std(roe_series)) if len(roe_series) >= 2 else None,
             "issuance": issuance,
             "ev_ebitda": None,
@@ -319,23 +341,6 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
         if fcf is not None and mcap and mcap > 0:
             fy = float(fcf / mcap)
             out["fcf_yield"] = fy if abs(fy) <= 1.0 else None   # >100 % yield = datafel
-
-        # Volatilitet + momentum 12-1 (vol-skalad) ur prishistoriken
-        vr = np.array(hist_returns) if hist_returns else np.array([])
-        out["vol_ann"] = float(np.std(vr) * math.sqrt(252)) if (len(vr) >= 20 and float(np.std(vr)) > 0) else None
-        mom, mom_scaled = None, None
-        if len(vr) >= 240:   # ~12 månader minus senaste månad (tillåter 1–2 saknade sessioner)
-            cum = (1 + pd.Series(np.array(vr))).cumprod()
-            try:
-                p1, p2 = cum.iloc[-22], cum.iloc[-240]
-                if p1 and p2 and p2 > 0:
-                    mom = float(p1 / p2 - 1)
-                    if out.get("vol_ann"):
-                        mom_scaled = float(mom / out["vol_ann"])
-            except Exception:
-                pass
-        out["momentum_raw"] = mom
-        out["momentum_vol_scaled"] = mom_scaled
 
         present = [k for k in ("roe", "roa", "gmar", "cfoa", "leverage", "ndebt_ebitda") if out.get(k) is not None]
         out["data_quality"] = "ok" if len(present) >= 4 else "partial"
@@ -445,7 +450,8 @@ def storage_to_frames(s: dict):
 
 def main():
     parser = argparse.ArgumentParser(description="QMJ composite scores")
-    parser.add_argument("--limit-tickers", type=int, default=120)
+    parser.add_argument("--limit-tickers", type=int, default=0,
+                        help="Max antal tickers att bearbeta (0 = alla, standard)")
     parser.add_argument("--ticker", type=str, help="Endast en ticker (debug)")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force-fetch", action="store_true")
@@ -453,6 +459,7 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+    start = time.time()
     conn = None
     if not args.dry_run:
         if not os.environ.get("DATABASE_URL"):
@@ -466,21 +473,39 @@ def main():
         tickers = [args.ticker]
     elif conn:
         cur = conn.cursor()
-        cur.execute("""
-            SELECT ticker FROM universe_registry
-            WHERE ticker IS NOT NULL AND status IN ('listed', 'verify')
-              AND (ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s)
-            ORDER BY ticker LIMIT %s
-        """, ("%.ST", "%.OL", "%.HE", "%.CO", args.limit_tickers))
+        # 0 = ALLA (ingen LIMIT); N > 0 = manuell begränsad körning.
+        limit = args.limit_tickers if args.limit_tickers and args.limit_tickers > 0 else None
+        if limit:
+            cur.execute("""
+                SELECT ticker FROM universe_registry
+                WHERE ticker IS NOT NULL AND status = 'listed'
+                  AND (ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s)
+                ORDER BY ticker LIMIT %s
+            """, ("%.ST", "%.OL", "%.HE", "%.CO", limit))
+        else:
+            cur.execute("""
+                SELECT ticker FROM universe_registry
+                WHERE ticker IS NOT NULL AND status = 'listed'
+                  AND (ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s)
+                ORDER BY ticker
+            """, ("%.ST", "%.OL", "%.HE", "%.CO"))
         tickers = [r[0] for r in cur.fetchall()]
         if not tickers:
-            cur.execute("""
-                SELECT DISTINCT ticker FROM scan_results
-                WHERE ticker IS NOT NULL
-                  AND (ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s)
-                LIMIT %s
-            """, ("%.ST", "%.OL", "%.HE", "%.CO", args.limit_tickers))
+            if limit:
+                cur.execute("""
+                    SELECT DISTINCT ticker FROM scan_results
+                    WHERE ticker IS NOT NULL
+                      AND (ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s)
+                    LIMIT %s
+                """, ("%.ST", "%.OL", "%.HE", "%.CO", limit))
+            else:
+                cur.execute("""
+                    SELECT DISTINCT ticker FROM scan_results
+                    WHERE ticker IS NOT NULL
+                      AND (ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s OR ticker LIKE %s)
+                """, ("%.ST", "%.OL", "%.HE", "%.CO"))
             tickers = [r[0] for r in cur.fetchall()]
+    logger.info("Universum: %d tickers att bearbeta (limit=%s)", len(tickers), limit if limit else "alla")
 
     metrics: dict[str, dict] = {}
     errors = 0
@@ -495,7 +520,8 @@ def main():
         metrics[t]["ticker"] = t
         time.sleep(FETCH_SLEEP)
 
-    logger.info("Klart: %d/%d tickers med data (%d fel)", len(metrics), len(tickers), errors)
+    logger.info("Klart: %d/%d tickers med data (%d fel) på %.1f s",
+                len(metrics), len(tickers), errors, time.time() - start)
 
     # Sektorkarta (universe_registry) för sektorrelativ värdepercentil.
     # Många rader saknar sektor idag (backfill pågår) → fallback global, ok.
@@ -605,27 +631,34 @@ def main():
         as_of = None
         if fy_end and as_of_strict(fy_end, today):
             as_of = fy_end
-        # Data äldre än as-of-regel → behandla som ej giltig (data_quality partial)
+        # PIT-gate: annual-data giltig först från fy_end + 5 mån. Innan dess →
+        # inga lookahead-poäng: alla z=None, alpha_rank=None (ärligt, ingen rank).
+        pit_blocked = bool(fy_end) and not as_of
         dq = m.get("data_quality", "partial")
-        if fy_end and not as_of:
+        if pit_blocked:
             dq = "partial"
 
-        q = np.mean([z_final[t].get(k) for k in
-                     ("roe", "roa", "gmar", "cfoa", "leverage", "ndebt_ebitda", "intcov", "roe_vol", "vol_ann")
-                     if z_final[t].get(k) is not None]) if any(
-            z_final[t].get(k) is not None for k in
-            ("roe", "roa", "gmar", "cfoa", "leverage", "ndebt_ebitda", "intcov", "roe_vol", "vol_ann")
-        ) else None
-        mz = z_final[t].get("momentum_vol_scaled")
-        v = np.mean([z_final[t].get(k) for k in ("ev_ebitda", "fcf_yield") if z_final[t].get(k) is not None]) if any(
-            z_final[t].get(k) is not None for k in ("ev_ebitda", "fcf_yield")) else None
+        if pit_blocked:
+            q = mz = v = p = iz = None
+        else:
+            q = np.mean([z_final[t].get(k) for k in
+                         ("roe", "roa", "gmar", "cfoa", "leverage", "ndebt_ebitda", "intcov", "roe_vol", "vol_ann")
+                         if z_final[t].get(k) is not None]) if any(
+                z_final[t].get(k) is not None for k in
+                ("roe", "roa", "gmar", "cfoa", "leverage", "ndebt_ebitda", "intcov", "roe_vol", "vol_ann")
+            ) else None
+            mz = z_final[t].get("momentum_vol_scaled")
+            v = np.mean([z_final[t].get(k) for k in ("ev_ebitda", "fcf_yield") if z_final[t].get(k) is not None]) if any(
+                z_final[t].get(k) is not None for k in ("ev_ebitda", "fcf_yield")) else None
+            p = np.mean([z_final[t].get(k) for k in ("issuance",) if z_final[t].get(k) is not None]) if z_final[t].get("issuance") is not None else None
+            iz = insider_z_raw.get(t, 50.0)
         value_rows.append({"ticker": t, "sector": sector_map.get(t), "value_metric": v})
-        p = np.mean([z_final[t].get(k) for k in ("issuance",) if z_final[t].get(k) is not None]) if z_final[t].get("issuance") is not None else None
-        iz = insider_z_raw.get(t, 50.0)
 
         short = short_map.get(t)
         ex = short_exclusion(short.get("pct") if short else None,
                              short.get("new") if short else False)
+        if pit_blocked:
+            ex = "PIT: senaste bokslut ej giltigt (fy_end+5mån)"
         flags = []
         if sell_flags.get(t):
             flags.append("sell_cluster")

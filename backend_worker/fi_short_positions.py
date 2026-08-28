@@ -15,6 +15,13 @@ emittent?id=<LEI> innehåller ISIN). ISIN → ticker via universe_registry /
 company_profiles. Lazy: max 25 detaljsidor/dag, cachad, prioritering på mest
 blankade emittenter.
 
+Cache-migrering 2026-08-29: LEI→ISIN-cachen flyttades från
+data/fi_raw/lei_isin_cache.json till worker_state (key='lei_isin_cache',
+JSONB). Lokalfilen var efemär i GH Actions (data/ är gitignored) → varje
+körning började tom och ~300 LEI:s/körning fick ticker=NULL efter mappning
+(radarn/QMJ-shortfiltret missade dem). Cachen ackumuleras nu över dagar;
+lokalfilen läses fortfarande som read-only-fallback vid DB-fel.
+
 Robusthet: 0-rader = formatändring → LARM (exit 1). Last-known-good behålls —
 exklusioner rensas aldrig utifrån en tom fetch. Idempotent per (scan_date, lei).
 
@@ -49,6 +56,7 @@ FI_HEADERS = {
 
 RAW_ARCHIVE_DIR = Path(__file__).resolve().parent.parent / "data" / "fi_raw"
 LEI_ISIN_CACHE_PATH = RAW_ARCHIVE_DIR / "lei_isin_cache.json"
+LEI_ISIN_CACHE_KEY = "lei_isin_cache"   # worker_state-nyckel (JSONB) sedan 2026-08-29
 DETAIL_LIMIT_PER_RUN = 25      # detaljsidor (LEI→ISIN) per körning
 DETAIL_DELAY = 1.2             # sekunder — fi.se rate-limitar
 MAX_DAILY_ROWS = 2000
@@ -77,7 +85,22 @@ def _clean_cell(raw: str) -> str:
 
 
 def _to_float(val: str) -> float | None:
-    v = val.strip().replace("%", "").replace(",", ".").replace("\u00a0", "")
+    """Robust float-parse: tusentalsavgränsare + decimal i sv- och en-format.
+
+    - Mellanslag/NBSP tas bort ('1 234,56' → '1234,56').
+    - Både komma och punkt → SISTA separatorn är decimalavgränsare (mönster
+      från fi_insider_bulk._parse_float): '1,234.56' → 1234.56,
+      '1.234,56' → 1234.56.
+    - Annars nuvarande logik (komma → punkt, '%' tas bort).
+    """
+    v = val.strip().replace("%", "").replace("\u00a0", "").replace(" ", "")
+    if "," in v and "." in v:
+        if v.rfind(",") > v.rfind("."):
+            v = v.replace(".", "").replace(",", ".")
+        else:
+            v = v.replace(",", "")
+    else:
+        v = v.replace(",", ".")
     v = re.sub(r"[^0-9.\-]", "", v)
     try:
         return float(v)
@@ -90,17 +113,88 @@ def _parse_date(val: str) -> str | None:
     return m.group(1) if m else None
 
 
+# Kolumnnamn (rubrikrad) → kanonisk nyckel (mönster från fi_insider_bulk.py).
+# FI:s blankningsregister (en-GB, verifierat 2026-08-29): 'Issuer name',
+# 'Issuer LEI code', 'Latest position date', 'Sum short %'. Svenska varianter
+# som defensivt stöd (samma fyra kolumner).
+_HEADER_ALIASES = {
+    "issuer name": "issuer_name",
+    "emittent": "issuer_name",
+    "emittentnamn": "issuer_name",
+    "issuer lei code": "lei",
+    "lei": "lei",
+    "lei code": "lei",
+    "lei-kod": "lei",
+    "latest position date": "latest_position_date",
+    "position date": "latest_position_date",
+    "datum": "latest_position_date",
+    "date": "latest_position_date",
+    "sum short %": "total_short_pct",
+    "sum short": "total_short_pct",
+    "total short %": "total_short_pct",
+    "summa kort position": "total_short_pct",
+    "summa kort position, %": "total_short_pct",
+}
+
+
+def _norm_header(h: str) -> str:
+    """Normalisera rubrik för alias-matchning (lowercase, kollapsa mellanslag)."""
+    return re.sub(r"\s+", " ", (h or "").strip().lower())
+
+
+def _build_col_map(header_row: list[str]) -> dict[str, int]:
+    """Rubrikrad → {kanonisk nyckel: kolumnindex} (okända kolumner skippas)."""
+    col_map: dict[str, int] = {}
+    for i, h in enumerate(header_row):
+        key = _HEADER_ALIASES.get(_norm_header(h))
+        if key:
+            col_map[key] = i
+    return col_map
+
+
 def parse_register(html: str) -> list[dict]:
-    """Parse FI-registret: rader [emittentnamn | LEI (20 tecken) | datum | summa short %]."""
+    """Parse FI-registret: rader [emittentnamn | LEI (20 tecken) | datum | summa short %].
+
+    Kolumnmappning via rubrikradsnamn (header-aliaser, mönster från
+    fi_insider_bulk.py). Positionellt index endast som fallback när
+    rubrikraden saknas eller inte matchar kända alias.
+    """
     rows: list[dict] = []
     row_re = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
     cell_re = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.S | re.I)
 
-    for tr in row_re.findall(html):
-        cells = [_clean_cell(c) for c in cell_re.findall(tr)]
-        if len(cells) < 4:
+    trs = row_re.findall(html)
+    if not trs:
+        return rows
+
+    # Rubrikrad = första <tr> med <th>-celler → kolumnmappning på namn.
+    col_map: dict[str, int] | None = None
+    header_idx = -1
+    for i, tr in enumerate(trs):
+        if "<th" in tr.lower():
+            header_cells = [_clean_cell(c) for c in cell_re.findall(tr)]
+            col_map = _build_col_map(header_cells)
+            header_idx = i
+            break
+
+    for i, tr in enumerate(trs):
+        if i == header_idx:
             continue
-        name, lei, date_val, pct_val = cells[0], cells[1], cells[2], cells[3]
+        cells = [_clean_cell(c) for c in cell_re.findall(tr)]
+        if col_map:
+            keys = ("issuer_name", "lei", "latest_position_date", "total_short_pct")
+            if any(k not in col_map for k in keys):
+                continue
+            if max(col_map[k] for k in keys) >= len(cells):
+                continue
+            name = cells[col_map["issuer_name"]]
+            lei = cells[col_map["lei"]]
+            date_val = cells[col_map["latest_position_date"]]
+            pct_val = cells[col_map["total_short_pct"]]
+        else:
+            if len(cells) < 4:
+                continue
+            name, lei, date_val, pct_val = cells[0], cells[1], cells[2], cells[3]
         if not re.fullmatch(r"[A-Z0-9]{20}", lei.upper()):
             continue
         pct = _to_float(pct_val)
@@ -118,6 +212,10 @@ def parse_register(html: str) -> list[dict]:
 # ─── LEI→ISIN-anrikning (lazy, cachad) ────────────────────────────────────────
 
 def _load_lei_isin_cache() -> dict:
+    """Läs LEI→ISIN-cache från lokalfilen (READ-ONLY sedan 2026-08-29).
+
+    Andra lagret — används som fallback vid DB-fel. Saknad/korrupt fil → {}.
+    """
     try:
         if LEI_ISIN_CACHE_PATH.exists():
             return json.loads(LEI_ISIN_CACHE_PATH.read_text(encoding="utf-8"))
@@ -126,10 +224,46 @@ def _load_lei_isin_cache() -> dict:
     return {}
 
 
-def _save_lei_isin_cache(cache: dict) -> None:
-    RAW_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    LEI_ISIN_CACHE_PATH.write_text(json.dumps(cache, indent=2, ensure_ascii=False),
-                                   encoding="utf-8")
+def _load_lei_cache(conn) -> dict:
+    """Läs LEI→ISIN-cache från worker_state (key='lei_isin_cache').
+
+    Primärt lager (migrerat från lokalfilen 2026-08-29 — data/ är gitignored
+    och därmed efemär i GH Actions). Ingen rad → {} (standard). DB-fel →
+    fallback till lokalfilen (read-only).
+    """
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM worker_state WHERE key = %s", (LEI_ISIN_CACHE_KEY,))
+        row = cur.fetchone()
+        if row:
+            value = row[0]
+            if isinstance(value, dict):
+                return value
+            if isinstance(value, str):
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+        return {}
+    except Exception as e:
+        logger.warning("LEI-cache DB-läsning misslyckades — fallback till lokalfil: %s", e)
+        return _load_lei_isin_cache()
+
+
+def _save_lei_cache(conn, cache: dict) -> None:
+    """Upsert LEI→ISIN-cache till worker_state (key='lei_isin_cache').
+
+    Skrivs ALLTID till DB (lokalfilen är read-only sedan migreringen).
+    """
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO worker_state (key, value, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        """, (LEI_ISIN_CACHE_KEY, json.dumps(cache)))
+        conn.commit()
+    except Exception as e:
+        logger.warning("LEI-cache DB-skrivning misslyckades: %s", e)
 
 
 def fetch_lei_isin(lei: str) -> str | None:
@@ -151,12 +285,16 @@ def fetch_lei_isin(lei: str) -> str | None:
         return None
 
 
-def enrich_lei_to_isin(rows: list[dict]) -> dict:
+def enrich_lei_to_isin(rows: list[dict], conn=None) -> dict:
     """Anrika rader utan känd ISIN: max DETAIL_LIMIT_PER_RUN detaljsidor, cachad.
 
     Prioriterar högst short % först — riskfiltret gäller de mest blankade.
+
+    Cachen ligger i worker_state (key='lei_isin_cache'); lokalfilen är
+    read-only-fallback vid DB-fel. conn=None → lokalfilen läses read-only
+    (ingen skrivning sker — dry-run-vägen).
     """
-    cache = _load_lei_isin_cache()
+    cache = _load_lei_cache(conn) if conn is not None else _load_lei_isin_cache()
     unknown = [r for r in rows if r["lei"] not in cache]
     unknown.sort(key=lambda r: r["total_short_pct"], reverse=True)
 
@@ -169,7 +307,8 @@ def enrich_lei_to_isin(rows: list[dict]) -> dict:
         time.sleep(DETAIL_DELAY)
         fetched += 1
 
-    _save_lei_isin_cache(cache)
+    if conn is not None:
+        _save_lei_cache(conn, cache)
 
     enriched = 0
     for r in rows:
@@ -352,7 +491,20 @@ def main():
         print(json.dumps({"status": "error", "message": "0 rows parsed", "rows": 0}))
         sys.exit(1)
 
-    enrich = enrich_lei_to_isin(rows)
+    # LEI→ISIN-cache: DB (worker_state) på riktiga körningar; dry-run = read-only.
+    conn = None
+    if not args.dry_run and os.environ.get("DATABASE_URL"):
+        try:
+            conn = _connect()
+        except Exception as e:
+            logger.warning("DB-anslutning misslyckades — LEI-cache faller tillbaka till lokalfil: %s", e)
+
+    try:
+        enrich = enrich_lei_to_isin(rows, conn=conn)
+    finally:
+        if conn is not None:
+            conn.close()
+
     logger.info("Parsade %d emittentrader; %s", len(rows),
                 json.dumps({k: v for k, v in enrich.items()}))
 

@@ -1,6 +1,6 @@
 """
-news_discovery.py — Bred nyhetssökning (Google News RSS + DDGS) med tema-filter
-och "mention-surge"-detektor (omtalande 24-48h vs 30-dagars baslinje).
+news_discovery.py — Bred nyhetssökning (Google News RSS) med tema-filter
+och "mention-surge"-detektor (omtalande 48h vs 30-dagars baslinje).
 
 Google News RSS är VERIFIERAD (2026-08-28): after:/site:/booleska filter fungerar
 från valfri server, gratis, utan nyckel. Cap ~100 träffar per query → fönster-queries.
@@ -70,27 +70,35 @@ def fetch_gnews(query: str, after_days: int = 2) -> list[dict]:
     return out
 
 
-def compute_surge(conn, ticker: str, now_hits: int) -> float | None:
-    """(antal omtalande 48h) / (per-dag-snitt 30d) → surge-faktor (>1 = förhöjd).
+def count_hits(conn, ticker: str) -> tuple[int, int]:
+    """(total_30d, now_hits) — träffar i 30-dagars-baslinjen resp. senaste
+    SURGE_WINDOW_HOURS (en query, FILTER-aggregat)."""
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT
+            COUNT(*) FILTER (WHERE published_at > NOW() - INTERVAL '%s days'),
+            COUNT(*) FILTER (WHERE published_at > NOW() - INTERVAL '%s hours')
+        FROM news_events
+        WHERE ticker = %s
+    """, (str(BASELINE_DAYS), str(SURGE_WINDOW_HOURS), ticker))
+    row = cur.fetchone()
+    return (row[0] or 0, row[1] or 0)
+
+
+def compute_surge(total_30d: int, now_hits: int,
+                  window_hours: int = SURGE_WINDOW_HOURS) -> float | None:
+    """(antal omtalande senaste window_hours) / (förväntat antal under fönstret
+    givet 30-dagars-baslinjen) → surge-faktor (>1 = förhöjd).
 
     COLD-START-Guard: baslinjen måste ha >= 3 observationer, annars None
     (annars blåser en enda nyhet upp surge till ~30x på en tom historik).
+    now_hits == 0 → None (radarn ska inte visa surge för inaktiv ticker).
     """
-    if not ticker:
+    if total_30d < 3 or now_hits <= 0:
         return None
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT COUNT(*) FROM news_events
-            WHERE ticker = %s AND published_at > NOW() - INTERVAL '%s days'
-        """, (ticker, BASELINE_DAYS,))
-        total_30d = cur.fetchone()[0]
-        if total_30d < 3:
-            return None
-        baseline_per_day = total_30d / BASELINE_DAYS
-        return round(now_hits / baseline_per_day, 2)
-    except Exception:
-        return None
+    baseline_per_hour = total_30d / (24 * BASELINE_DAYS)
+    expected = baseline_per_hour * window_hours
+    return round(now_hits / max(expected, 1), 2)
 
 
 def main():
@@ -140,7 +148,8 @@ def main():
         r["ticker"] = ticker
         if ticker:
             matched += 1
-            r["mention_surge"] = compute_surge(conn, ticker, 1)
+            total_30d, now_hits = count_hits(conn, ticker)
+            r["mention_surge"] = compute_surge(total_30d, now_hits)
         else:
             r["mention_surge"] = None
         norm_rows.append(r)

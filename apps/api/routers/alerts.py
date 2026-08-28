@@ -5,7 +5,7 @@ from apps.api.dependencies import get_user_supabase, get_supabase_admin
 from apps.api.core.security import get_current_user, require_admin, User
 from apps.api.schemas.portfolio import PriceAlertIn, PriceAlertOut
 
-router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+router = APIRouter(prefix="/api/price-alerts", tags=["alerts"])
 
 
 @router.get("", response_model=list[PriceAlertOut])

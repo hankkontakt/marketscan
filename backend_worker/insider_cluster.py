@@ -32,6 +32,65 @@ _EXEC_TITLES = [
 ]
 
 
+def dedupe_trades(rows: pd.DataFrame) -> pd.DataFrame:
+    """Ta bort dublettrader innan klusteraggregering.
+
+    Samma transaktion kan skrivas av BÅDE FI-kedjan (fi_insider_bulk) och
+    Finnhub-kedjan (insider_fetcher) med olika name-format (t.ex.
+    "Andersson, Lars" vs "Lars Andersson") → unika-köpare-räkningen
+    dubbelräknar samma person.
+
+    HEURISTIK (inte namnnormering): två rader med samma
+    (ticker, trade_date, type, ROUND(shares)) samma dag antas vara samma
+    transaktion från två källor. Behåll raden med mest info (flest ifyllda
+    fält bland name/role/price/amount); tie-break: sista raden i
+    indataordningen (approximerar "senast skriven" — frågan väljer inte
+    created_at).
+
+    Args:
+        rows: DataFrame med kolumnerna ticker, trade_date, type, shares
+            (+ valfritt name, role, price, amount).
+
+    Returns:
+        DataFrame utan dublettrader (index återställt).
+    """
+    if rows.empty:
+        return rows.copy()
+
+    df = rows.copy()
+    df["_dedupe_key"] = (
+        df["ticker"].astype(str)
+        + "|"
+        + pd.to_datetime(df["trade_date"]).dt.strftime("%Y-%m-%d")
+        + "|"
+        + df["type"].astype(str)
+        + "|"
+        + df["shares"].round().astype(str)
+    )
+
+    def _info_score(r):
+        score = 0
+        for col in ("name", "role", "price", "amount"):
+            v = r.get(col)
+            if pd.isna(v):
+                continue
+            if isinstance(v, str) and not v.strip():
+                continue
+            score += 1
+        return score
+
+    df["_info_score"] = df.apply(_info_score, axis=1)
+    df["_row_idx"] = np.arange(len(df))
+
+    # Mest info först; tie-break: senast i indataordningen.
+    keep = (
+        df.sort_values(["_info_score", "_row_idx"])
+        .groupby("_dedupe_key", sort=False)
+        .tail(1)
+    )
+    return keep.drop(columns=["_dedupe_key", "_info_score", "_row_idx"]).reset_index(drop=True)
+
+
 def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
     """Beräkna klustersignaler för alla tickers med insider-trades.
 
@@ -45,7 +104,9 @@ def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
     cutoff_90d = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
     # PIT-jämförelse i DataFrame: pandas levererar datetime.date från psycopg2 —
     # en str-cutoff ger TypeError ('>=' date vs str). Jämför mot Timestamp.
-    cutoff_30d_ts = pd.Timestamp(datetime.now() - timedelta(days=lookback_days))
+    # Midnatt på gränsdagen: samma-dags-trades ska INGÅ i fönstret (annars
+    # exkluderas gränsdagens rader delvis när cutoff bär tid-på-dagen).
+    cutoff_30d_ts = pd.Timestamp((datetime.now() - timedelta(days=lookback_days)).date())
 
     # Alla köp senaste 90 dagar (för routine-filter + exec-detektion)
     query_90d = f"""
@@ -60,6 +121,11 @@ def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
     if all_buys_90d.empty:
         logger.info("Inga insiderköp senaste %d dagar", lookback_days)
         return pd.DataFrame()
+
+    # Dubbelräkning FI/Finnhub: samma transaktion skrivs av båda kedjorna med
+    # olika name-format → gruppera bort dubletter innan routine-filter +
+    # klusteraggregering (heuristik, inte namnnormering).
+    all_buys_90d = dedupe_trades(all_buys_90d)
 
     # Hämta historik för routine-detektion (alla buys)
     query_all = """
@@ -123,7 +189,9 @@ def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
         logger.info("Filtrerade bort %d routine-trades", n_routine)
 
     # Separera 30d och 90d efter filtrering
-    buys_30d = opportunistic_buys[pd.to_datetime(opportunistic_buys["trade_date"]) >= cutoff_30d_ts].copy()
+    buys_30d = opportunistic_buys[
+        pd.to_datetime(opportunistic_buys["trade_date"]).dt.floor("D") >= cutoff_30d_ts
+    ].copy()
     buys_90d_filtered = opportunistic_buys.copy()
 
     # Market cap från scan_results
@@ -185,9 +253,13 @@ def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
         amount = row["total_buy_amount_30d"]
         ticker = row["ticker"]
 
-        mc = mcap_map.get(ticker, 1)
-        if mc <= 0:
-            mc = 1
+        # Ingen market_cap → kan inte normalisera beloppet → ingen score.
+        # Tickern exkluderas från kluster-scoring (is_cluster beror bara på
+        # unika köpare, så raden behålls med score=None).
+        mc = mcap_map.get(ticker)
+        if mc is None or mc <= 0:
+            logger.info("no_mcap: %s — exkluderas från kluster-scoring", ticker)
+            return np.nan
 
         amount_ratio = amount / mc
         log_amount = np.log1p(max(amount_ratio, 0))
@@ -197,6 +269,11 @@ def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
         return n_buyers * log_amount * exec_weight
 
     clusters["cluster_score"] = clusters.apply(_score, axis=1).round(4)
+    # NaN (saknad market_cap) → None i utdata. is_cluster har ingen
+    # score-tröskel (bara unika köpare ≥ 3), så None påverkar inte flaggan.
+    if clusters["cluster_score"].isna().any():
+        clusters["cluster_score"] = clusters["cluster_score"].astype(object)
+        clusters.loc[clusters["cluster_score"].isna(), "cluster_score"] = None
     clusters["is_cluster"] = clusters["unique_buyers_30d"] >= 3
     clusters["exec_buy_90d"] = clusters["has_exec_90d"]
 
@@ -216,7 +293,7 @@ def calculate_sell_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
     eftersom säljare kan vara ombalansering/skatt — övertro = falska larm.
     """
     cutoff_90d = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-    cutoff_30d_ts = pd.Timestamp(datetime.now() - timedelta(days=lookback_days))
+    cutoff_30d_ts = pd.Timestamp((datetime.now() - timedelta(days=lookback_days)).date())
 
     sells_90d = pd.read_sql(f"""
         SELECT ticker, name, role, shares, price, amount, trade_date
@@ -228,6 +305,9 @@ def calculate_sell_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
 
     if sells_90d.empty:
         return pd.DataFrame()
+
+    # Samma dubbelräknings-heuristik som för köp (FI/Finnhub, olika name-format).
+    sells_90d = dedupe_trades(sells_90d)
 
     history_all = pd.read_sql("""
         SELECT ticker, name, trade_date, shares, price
@@ -270,7 +350,9 @@ def calculate_sell_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
     )
     opportunistic = sells_90d[~routine_mask].copy()
 
-    sells_30d = opportunistic[pd.to_datetime(opportunistic["trade_date"]) >= cutoff_30d_ts].copy()
+    sells_30d = opportunistic[
+        pd.to_datetime(opportunistic["trade_date"]).dt.floor("D") >= cutoff_30d_ts
+    ].copy()
     if sells_30d.empty:
         return pd.DataFrame()
 
@@ -320,6 +402,9 @@ def upsert_clusters(clusters: pd.DataFrame, conn, sell_clusters: pd.DataFrame | 
 
     for _, row in clusters.iterrows():
         try:
+            # cluster_score kan vara None (saknad market_cap) → skriv 0.0
+            score = row.get("cluster_score")
+            score_db = 0.0 if score is None or pd.isna(score) else float(score)
             cur.execute("""
                 INSERT INTO insider_cluster_signals
                     (ticker, unique_buyers_30d, total_buy_amount_30d,
@@ -339,7 +424,7 @@ def upsert_clusters(clusters: pd.DataFrame, conn, sell_clusters: pd.DataFrame | 
                 row["ticker"],
                 int(row.get("unique_buyers_30d", 0)),
                 float(row.get("total_buy_amount_30d", 0)),
-                float(row.get("cluster_score", 0)),
+                score_db,
                 bool(row.get("is_cluster", False)),
                 bool(row.get("exec_buy_90d", False)),
                 int(row.get("unique_sellers_30d", 0)),
@@ -369,8 +454,9 @@ def main():
         # Visa topp-10
         print("\nTopp-10 insiderkluster:")
         for _, r in clusters.head(10).iterrows():
+            score_str = f"{r['cluster_score']:.2f}" if r["cluster_score"] is not None else "—"
             print(f"  {r['ticker']:<10} {int(r['unique_buyers_30d'])} köpare, "
-                  f"score={r['cluster_score']:.2f}, "
+                  f"score={score_str}, "
                   f"kluster={'✅' if r['is_cluster'] else '—'}, "
                   f"exec={'✅' if r['exec_buy_90d'] else '—'}")
 

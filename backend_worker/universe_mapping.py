@@ -202,8 +202,13 @@ def _save_probe_cache(cache: dict) -> None:
                                 encoding="utf-8")
 
 
-def probe_yahoo_ticker(ticker: str, cache: dict | None = None) -> bool:
-    """True = Yahoo har priser (levande). Cachad 7 dagar."""
+def probe_yahoo_ticker(ticker: str, cache: dict | None = None) -> Optional[bool]:
+    """True = Yahoo har priser (levande); False = definitivt ingen symbol
+    (tom historik); None = OKÄNT (undantag/timeout).
+
+    Cachad 7 dagar — men None skrivs ALDRIG till cache: en nätverksblink ska
+    inte frysa in ett falskt 'delisted' i en vecka.
+    """
     cache = cache if cache is not None else _load_probe_cache()
     cutoff = (date.today() - timedelta(days=PROBE_MAX_AGE_DAYS)).isoformat()
     entry = cache.get(ticker)
@@ -215,7 +220,7 @@ def probe_yahoo_ticker(ticker: str, cache: dict | None = None) -> bool:
         hist = yf.Ticker(ticker).history(period="5d")
         alive = bool(hist is not None and not hist.empty)
     except Exception:
-        alive = False
+        return None
 
     cache[ticker] = {"alive": alive, "probed_at": date.today().isoformat()}
     _save_probe_cache(cache)
@@ -381,17 +386,41 @@ def _map_isin_to_ticker(cur, isin: str) -> Optional[str]:
 _NORDIC_SUFFIX_SQL = "(ticker LIKE '%.ST' OR ticker LIKE '%.OL' OR ticker LIKE '%.HE' OR ticker LIKE '%.CO')"
 
 
+def _registry_has_real_ticker(cur, ticker: str) -> bool:
+    """True om tickern redan finns i universe_registry med riktig (icke X-) ISIN.
+
+    Duplikat-guard (FIX 3): bolaget har redan en riktig rad → kandidaten ska
+    skippas. Cur-fel → False (guard: krascha inte seed-vägen på en check).
+    """
+    if not ticker:
+        return False
+    try:
+        cur.execute(
+            "SELECT DISTINCT ticker FROM universe_registry WHERE ticker = %s AND isin NOT LIKE 'X-%'",
+            (ticker,),
+        )
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
 def seed_from_existing(cur) -> list[dict]:
     """Seed-registerrader ur befintliga källor — ENBART nordiska venue-suffix.
 
     Tickers utan ISIN får syntetisk nyckel 'TXT:<ticker>' (ingen riktig ISIN
     existerar för den raden; dokumenteras i source='ticker_only').
+
+    Duplikat-guard (FIX 3): före varje kandidat kontrolleras att tickern inte
+    redan finns i universe_registry med en riktig (icke X-) ISIN — då skippas
+    kandidaten (bolaget har redan en riktig rad).
     """
     rows: list[dict] = []
     try:
         cur.execute("SELECT ticker, isin FROM company_profiles WHERE isin IS NOT NULL AND isin <> '' AND " + _NORDIC_SUFFIX_SQL)
         for ticker, isin in cur.fetchall():
             if isin and not isin.upper().startswith(("TXT:", "X-")):
+                if _registry_has_real_ticker(cur, ticker):
+                    continue
                 rows.append({"isin": isin.upper(), "ticker": ticker,
                              "name": ticker, "source": "company_profiles"})
     except Exception:
@@ -401,6 +430,8 @@ def seed_from_existing(cur) -> list[dict]:
         cur.execute("SELECT DISTINCT ticker FROM scan_results WHERE ticker IS NOT NULL AND " + _NORDIC_SUFFIX_SQL)
         for (ticker,) in cur.fetchall():
             if ticker and not ticker.startswith("X-"):
+                if _registry_has_real_ticker(cur, ticker):
+                    continue
                 rows.append({"isin": f"X-{ticker.upper()}", "ticker": ticker,
                              "name": ticker, "source": "ticker_only"})
     except Exception:
@@ -410,6 +441,8 @@ def seed_from_existing(cur) -> list[dict]:
         cur.execute("SELECT DISTINCT ticker FROM smallcap_results WHERE ticker IS NOT NULL AND " + _NORDIC_SUFFIX_SQL)
         for (ticker,) in cur.fetchall():
             if ticker and not ticker.startswith("X-"):
+                if _registry_has_real_ticker(cur, ticker):
+                    continue
                 rows.append({"isin": f"X-{ticker.upper()}", "ticker": ticker,
                              "name": ticker, "source": "ticker_only"})
     except Exception:
@@ -418,6 +451,8 @@ def seed_from_existing(cur) -> list[dict]:
     # Seed-registerrader från SEED_TICKERS (användarens garanterade bolag, t.ex.
     # innehav som FI-poll-fönstret missat). Namn hämtas ur SEED_NAMES.
     for isin, ticker in SEED_TICKERS.items():
+        if _registry_has_real_ticker(cur, ticker):
+            continue
         rows.append({"isin": isin, "ticker": ticker,
                      "name": SEED_NAMES.get(isin, ticker), "source": "seed"})
     return rows
@@ -437,12 +472,16 @@ def upsert_registry(candidates: list[dict]) -> dict:
         ticker = _map_isin_to_ticker(cur, isin)
         if not ticker:
             unmapped += 1
+        # FIX 2: källans ticker (alltid från _map_isin_to_ticker — aldrig X-prefix)
+        # överstyr en föråldrad registry-ticker (COALESCE behöll den gamla).
+        # Enda skyddet: EXCLUDED.ticker NULL/blank (omappad ISIN) → behåll befintlig.
         cur.execute("""
             INSERT INTO universe_registry (isin, ticker, orgnr, lei, name, source, updated_at)
             VALUES (%s, %s, NULL, NULL, %s, %s, NOW())
             ON CONFLICT (isin) DO UPDATE SET
                 name = EXCLUDED.name,
-                ticker = COALESCE(universe_registry.ticker, EXCLUDED.ticker),
+                ticker = CASE WHEN EXCLUDED.ticker IS NOT NULL AND EXCLUDED.ticker <> ''
+                              THEN EXCLUDED.ticker ELSE universe_registry.ticker END,
                 source = EXCLUDED.source,
                 updated_at = NOW()
         """, (isin, ticker, c.get("name"), c.get("source", "insyn")))
@@ -469,14 +508,22 @@ def upsert_registry(candidates: list[dict]) -> dict:
 
 
 def run_delisting_detector() -> dict:
-    """Yahoo-presence för registry-tickers → listed/verify/delisted."""
+    """Yahoo-presence för registry-tickers → listed/verify/delisted.
+
+    probe_yahoo_ticker returnerar True/False/None:
+      True  → levande → status 'listed'.
+      False → definitivt ingen symbol → verify-kedjan (14-dagars-logiken).
+      None  → OKÄNT (undantag/timeout) → ingen statusändring; räknas som
+              probe_unknown och rapporteras i resultatet.
+    """
     conn = _connect()
     cur = conn.cursor()
     cur.execute("SELECT isin, ticker, status, updated_at FROM universe_registry WHERE ticker IS NOT NULL")
     rows = cur.fetchall()
 
     cache = _load_probe_cache()
-    stats = {"checked": 0, "listed_ok": 0, "to_verify": 0, "to_delist": 0}
+    stats = {"checked": 0, "listed_ok": 0, "to_verify": 0, "to_delist": 0,
+             "probe_unknown": 0}
 
     for isin, ticker, status, updated_at in rows:
         try:
@@ -486,7 +533,7 @@ def run_delisting_detector() -> dict:
             continue
         stats["checked"] += 1
 
-        if alive:
+        if alive is True:
             if status != "listed":
                 cur.execute(
                     "UPDATE universe_registry SET status='listed', delisted_date=NULL WHERE isin=%s",
@@ -495,22 +542,29 @@ def run_delisting_detector() -> dict:
                 stats["listed_ok"] += 1
             continue
 
-        if status == "listed":
-            cur.execute("UPDATE universe_registry SET status='verify', updated_at=NOW() WHERE isin=%s", (isin,))
-            stats["to_verify"] += 1
-        elif status == "verify":
-            since = updated_at or (date.today() - timedelta(days=VERIFY_TO_DELISTED_DAYS + 1))
-            if isinstance(since, str):
-                since = date.fromisoformat(since[:10])
-            elif hasattr(since, "date"):          # TIMESTAMPTZ → datetime
-                since = since.date()
-            if (date.today() - since).days >= VERIFY_TO_DELISTED_DAYS:
-                cur.execute(
-                    "UPDATE universe_registry SET status='delisted', delisted_date=%s WHERE isin=%s",
-                    (date.today().isoformat(), isin),
-                )
-                stats["to_delist"] += 1
-                logger.warning("Delisted (verify > %d d): %s (%s)", VERIFY_TO_DELISTED_DAYS, ticker, isin)
+        if alive is False:
+            if status == "listed":
+                cur.execute("UPDATE universe_registry SET status='verify', updated_at=NOW() WHERE isin=%s", (isin,))
+                stats["to_verify"] += 1
+            elif status == "verify":
+                since = updated_at or (date.today() - timedelta(days=VERIFY_TO_DELISTED_DAYS + 1))
+                if isinstance(since, str):
+                    since = date.fromisoformat(since[:10])
+                elif hasattr(since, "date"):          # TIMESTAMPTZ → datetime
+                    since = since.date()
+                if (date.today() - since).days >= VERIFY_TO_DELISTED_DAYS:
+                    cur.execute(
+                        "UPDATE universe_registry SET status='delisted', delisted_date=%s WHERE isin=%s",
+                        (date.today().isoformat(), isin),
+                    )
+                    stats["to_delist"] += 1
+                    logger.warning("Delisted (verify > %d d): %s (%s)", VERIFY_TO_DELISTED_DAYS, ticker, isin)
+            continue
+
+        # alive is None — OKÄNT: ingen statusändring (behåll nuvarande status).
+        stats["probe_unknown"] += 1
+        logger.warning("probe_unknown %s (%s): Yahoo-svar saknas — behåller status '%s'",
+                       ticker, isin, status)
 
     conn.commit()
     _save_probe_cache(cache)

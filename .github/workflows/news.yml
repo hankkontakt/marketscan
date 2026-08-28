@@ -3,7 +3,7 @@ name: News Pipeline
 permissions:
   contents: read
 
-# Nyhetskedjan: officiella Nasdaq-meddelanden (regelbäringar) → bred GNews/DDGS-
+# Nyhetskedjan: officiella Nasdaq-meddelanden (regelbäringar) → bred GNews-
 # discovery (mention-surge) → DeepSeek-klassificering av resterande händelser.
 # Allt körs på GH Actions — inget lokalt. Cron 04:40 UTC (efter shorts 03:50).
 
@@ -34,7 +34,7 @@ jobs:
         run: python -m backend_worker.news_events
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      - name: Google News theme sweep + DDGS (mention surge)
+      - name: Google News theme sweep (mention surge)
         run: python -m backend_worker.news_discovery
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

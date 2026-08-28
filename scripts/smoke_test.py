@@ -52,6 +52,7 @@ AUTH_REQUIRED = [  # expect 401/403 without a token
     ("GET", "/api/portfolio/funds", None),
     ("GET", "/api/watchlist", None),
     ("GET", "/api/alerts", None),
+    ("GET", "/api/price-alerts", None),
     ("GET", "/api/notifications", None),
     ("GET", "/api/profile", None),
     ("GET", "/api/transactions", None),

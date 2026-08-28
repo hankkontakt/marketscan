@@ -10,14 +10,17 @@ from backend_worker.qmj_scores import (
 )
 
 
-def _mk_frames():
+def _mk_frames(interest_expense=None):
     """Syntetiska bokslut (3 år): känt korrekta förväntningsvärden."""
     periods = ["2023-12-31", "2024-12-31", "2025-12-31"]
+    if interest_expense is None:
+        # yfinance rapporterar Interest Expense NEGATIV (absoluta enheter)
+        interest_expense = [-1_200_000.0, -1_200_000.0, -1_200_000.0]
     fin = pd.DataFrame({
         "Net Income":           [8.0, 9.0, 10.0],
         "Operating Income":     [12.0, 13.0, 14.0],
         "Gross Profit":         [26.0, 28.0, 30.0],
-        "Interest Expense":     [2.0, 2.0, 2.0],
+        "Interest Expense":     interest_expense,
     }, index=periods).T
     bal = pd.DataFrame({
         "Total Assets":                                          [180.0, 190.0, 200.0],
@@ -114,7 +117,8 @@ class TestExtractMetrics(unittest.TestCase):
         self.assertAlmostEqual(m["accruals"], (10.0 - 12.0) / 200.0, places=4)
         self.assertAlmostEqual(m["leverage"], 90.0 / 110.0, places=4)
         self.assertAlmostEqual(m["ndebt_ebitda"], 40.0 / 18.0, places=4)
-        self.assertAlmostEqual(m["intcov"], 14.0 / 2.0, places=4)
+        # intcov = ebit / abs(interest) — yfinance ger NEGATIV Interest Expense
+        self.assertAlmostEqual(m["intcov"], 14.0 / 1_200_000.0, places=10)
         self.assertAlmostEqual(m["issuance"], 0.0, places=4)
         # mcap = 100 × 10M = 1e9 (absolut) → grupp 1
         self.assertEqual(bucket_mcap(m["mcap_local"]), 1)
@@ -131,6 +135,40 @@ class TestExtractMetrics(unittest.TestCase):
         fin, bal, cash = _mk_frames()
         m = extract_metrics(fin, bal, cash, 100.0, [0.001] * 100)
         self.assertIsNone(m["momentum_raw"])
+
+    def test_intcov_zero_interest_none(self):
+        # interest == 0 → intcov None (faktorn skippas, ingen division med 0)
+        fin, bal, cash = _mk_frames(interest_expense=[0.0, 0.0, 0.0])
+        m = extract_metrics(fin, bal, cash, 100.0, [0.001] * 260)
+        self.assertIsNone(m["intcov"])
+
+    def test_momentum_without_annual_data(self):
+        # Ny-listat bolag: <3 års bokslut (fy_last None) men prishistorik finns →
+        # momentum/vol ska ändå beräknas (bug: tidig return hoppade över blocket).
+        periods = ["2024-12-31", "2025-12-31"]
+        fin = pd.DataFrame({
+            "Net Income":           [9.0, 10.0],
+            "Operating Income":     [13.0, 14.0],
+            "Gross Profit":         [28.0, 30.0],
+            "Interest Expense":     [-1_200_000.0, -1_200_000.0],
+        }, index=periods).T
+        bal = pd.DataFrame({
+            "Total Assets":                            [190.0, 200.0],
+            "Total Liabilities Net Minority Interest": [85.0, 90.0],
+            "Stockholders Equity":                     [105.0, 110.0],
+            "Total Debt":                              [58.0, 60.0],
+            "Cash And Cash Equivalents":               [19.0, 20.0],
+            "Ordinary Shares Number":                  [10e6, 10e6],
+        }, index=periods).T
+        cash = pd.DataFrame({
+            "Operating Cash Flow":                     [11.5, 12.0],
+            "Capital Expenditure":                     [-3.0, -3.0],
+            "Depreciation And Amortization":           [3.5, 4.0],
+        }, index=periods).T
+        m = extract_metrics(fin, bal, cash, 100.0, [0.001] * 260)
+        self.assertIsNone(m["fy_end"])
+        self.assertIsNotNone(m["momentum_raw"])
+        self.assertIsNotNone(m["momentum_vol_scaled"])
 
     def test_roundtrip_storage(self):
         fin, bal, cash = _mk_frames()

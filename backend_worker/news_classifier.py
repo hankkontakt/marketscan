@@ -54,17 +54,49 @@ SYSTEM_PROMPT = (
 )
 
 
+VALID_BEARINGS = {"positive", "negative", "neutral", "conditional"}
+
+
+def normalize_bearing(raw) -> str:
+    """Normalisera LLM-bäring mot tillåtna värden; ogiltigt → 'neutral'."""
+    b = str(raw or "")[:24].strip().lower()
+    return b if b in VALID_BEARINGS else "neutral"
+
+
+def clamp_confidence(raw) -> float:
+    """Förtroendetak 0.85; saknat värde → 0.3 (0.0 får vara 0.0)."""
+    if raw is None:
+        return 0.3
+    return min(float(raw), 0.85)
+
+
+def _age_str(published_at) -> str:
+    """Ålder på händelsen vid klassificering ('3.2h' / '2d' / '?')."""
+    if not published_at:
+        return "?"
+    try:
+        from datetime import datetime
+        pub = datetime.fromisoformat(str(published_at).replace("Z", "+00:00"))
+        if pub.tzinfo is None:
+            pub = pub.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        hours = (datetime.now(pub.tzinfo) - pub).total_seconds() / 3600
+        return f"{hours:.1f}h" if hours < 48 else f"{hours / 24:.0f}d"
+    except Exception:
+        return "?"
+
+
 def load_unclassified(conn, limit: int) -> list[dict]:
     cur = conn.cursor()
     cur.execute("""
-        SELECT event_id, headline, source_category, ticker
+        SELECT event_id, headline, source_category, ticker, published_at
         FROM news_events
         WHERE bearing IS NULL AND ticker IS NOT NULL
-        ORDER BY published_at DESC
+        ORDER BY published_at ASC
         LIMIT %s
     """, (limit,))
     return [
-        {"event_id": e[0], "headline": e[1], "category": e[2] or "", "ticker": e[3]}
+        {"event_id": e[0], "headline": e[1], "category": e[2] or "",
+         "ticker": e[3], "published_at": e[4]}
         for e in cur.fetchall()
     ]
 
@@ -120,22 +152,26 @@ def classify_batch(conn, items: list[dict], api_key: str) -> dict:
                 parsed = {"bearing": "neutral", "confidence": 0.3,
                           "direction": "unparsed", "reason": content[:80]}
             cur = conn.cursor()
+            raw_bearing = normalize_bearing(parsed.get("bearing"))
+            if str(parsed.get("bearing") or "")[:24].strip().lower() != raw_bearing:
+                logger.warning("Ogiltig bearing '%s' → neutral (%s)",
+                               str(parsed.get("bearing") or "")[:24],
+                               it["headline"][:50])
+            confidence = clamp_confidence(parsed.get("confidence"))
             cur.execute("""
                 UPDATE news_events
                 SET bearing = %s, confidence = %s, direction = %s, classified_at = NOW()
                 WHERE event_id = %s
-            """, (str(parsed.get("bearing", "neutral"))[:24],
-                  min(float(parsed.get("confidence") or 0.3), 0.85),   # förtroendetak
+            """, (raw_bearing, confidence,
                   str(parsed.get("direction", ""))[:60], it["event_id"]))
             conn.commit()
             updated += 1
-            if parsed.get("bearing") == "neutral" and (parsed.get("confidence") or 1) < 0.5:
+            if raw_bearing == "neutral" and (parsed.get("confidence") or 1) < 0.5:
                 logger.info("Osäker → neutral (%s): %s", parsed.get("reason", ""),
                             it["headline"][:50])
-            logger.info("Klassad %s → %s (%.2f): %s",
-                        it["ticker"], parsed.get("bearing"),
-                        float(parsed.get("confidence") or 0),
-                        it["headline"][:55])
+            logger.info("Klassad %s → %s (%.2f) [%s gammal]: %s",
+                        it["ticker"], raw_bearing, confidence,
+                        _age_str(it.get("published_at")), it["headline"][:55])
         except Exception as e:
             logger.warning("Klassificeringsfel: %s", e)
             time.sleep(3)

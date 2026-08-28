@@ -4,7 +4,8 @@ permissions:
   contents: read
 
 # Veckovis QMJ-komposit: kvalitet/momentum/insider/värde/payout med punkt-i-tid-regel.
-# Batch-limit 120 tickers/natt för yfinance-rate-limit-respekt (cache: data/qmj_raw/).
+# Standard: bearbeta ALLA listade tickers (0 = alla); --limit-tickers N för manuella
+# begränsade körningar (cache: data/qmj_raw/).
 # Körs fredag natt; vid behov manuellt (workflow_dispatch: limit-tickers).
 
 on:
@@ -13,9 +14,9 @@ on:
   workflow_dispatch:
     inputs:
       limit_tickers:
-        description: "Antal tickers att bearbeta (0 = alla med cache/budget)"
+        description: "Antal tickers att bearbeta (0 = alla — standard)"
         required: false
-        default: "120"
+        default: "0"
         type: string
 
 env:
@@ -40,7 +41,7 @@ jobs:
 
       - name: Compute QMJ scores
         run: |
-          LIMIT="${{ github.event.inputs.limit_tickers || '120' }}"
+          LIMIT="${{ github.event.inputs.limit_tickers || '0' }}"
           python -m backend_worker.qmj_scores --limit-tickers "$LIMIT"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
