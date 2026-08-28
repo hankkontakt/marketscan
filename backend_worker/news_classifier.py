@@ -41,8 +41,13 @@ SYSTEM_PROMPT = (
     '"confidence":0.0-1.0,'
     '"reason":"högst 15 ord på svenska"}'
     " 4) Vid osäkerhet: bearing=neutral, confidence<=0.4. "
-    "5) Kända kontexter: vinstvarning→negative; bytesemission/villkor→negative; "
-    "order/avtal→positive; ledningsbyte→conditional; FDA/godkännande→positive."
+    " EXEMPEL (few-shot, verifierat bäst 2026-08-28):\n"
+    '1) "Sivers säkrar order värd 77 miljoner" -> {"bearing":"positive",'
+    '"direction":"order","confidence":0.9,"reason":"Stor order ökar intäkterna"}\n'
+    '2) "Riktad emission om 250 mkr" -> {"bearing":"negative",'
+    '"direction":"rights_issue","confidence":0.7,"reason":"Utspädning av befintliga ägare"}\n'
+    '3) "VD avgick efter tapp mot aktien" -> {"bearing":"conditional",'
+    '"direction":"ceo_change","confidence":0.6,"reason":"Kontext beroende av efterträdare"}'
 )
 
 

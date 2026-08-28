@@ -35,3 +35,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+
+      - name: Finnhub exchange universe (ticker coverage)
+        run: python -m backend_worker.finnhub_universe --exchange SE,FI,DK,NO,IS
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}

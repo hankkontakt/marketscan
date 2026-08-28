@@ -174,3 +174,53 @@ export function marketIntelQmjRank(): Promise<QmjRankItem[]> {
 export function marketIntelClusters(ticker: string): Promise<ClusterInfo> {
   return api<ClusterInfo>(`/api/market-intel/clusters/${encodeURIComponent(ticker)}`);
 }
+
+// ─── Kandidatradar ────────────────────────────────────────────────────────────
+// Endpoint: GET /api/market-intel/radar?theme=<tema|tom>&sort=activity|rank&limit=40.
+// Fältnamn matchar kontraktet i apps/api/routers/market_intel.py (RadarItemOut).
+
+export type RadarBearing = "positive" | "negative" | "neutral" | "conditional" | null;
+
+export interface RadarEvent {
+  headline: string;
+  bearing: RadarBearing;
+  confidence: number | null;
+  published_at: string | null;
+  message_url: string | null;
+}
+
+export interface RadarItem {
+  ticker: string;
+  name: string | null;
+  stratum: "established" | "growth_early" | "new_small" | "turnaround" | null;
+  alpha_rank: number | null;
+  quality_z: number | null;
+  momentum_z: number | null;
+  value_z: number | null;
+  payout_z: number | null;
+  insider_z: number | null;
+  exclusion_reason: string | null;
+  short_pct: number | null;
+  new_disclosure: boolean;
+  cluster_score: number | null;
+  sellers_30d: number;
+  news_48h: number;
+  mention_surge: number | null;
+  top_events: RadarEvent[];
+  warnings: string[];
+}
+
+export interface RadarResponse {
+  total: number;
+  items: RadarItem[];
+}
+
+export function marketIntelRadar(
+  theme?: string,
+  sort: "activity" | "rank" = "activity",
+  limit = 40,
+): Promise<RadarResponse> {
+  const params = new URLSearchParams({ sort, limit: String(limit) });
+  if (theme) params.set("theme", theme);
+  return api<RadarResponse>(`/api/market-intel/radar?${params.toString()}`);
+}

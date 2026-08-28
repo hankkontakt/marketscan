@@ -22,6 +22,7 @@ import {
   Newspaper,
   Zap,
   ListChecks,
+  Radar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { href: "/strategi-lab",     icon: FlaskConical,    label: "Strategi Lab" },
   { href: "/signal-analytics", icon: Activity,        label: "Signalanalys" },
   { href: "/insider-radar",    icon: Eye,             label: "Insider Radar" },
+  { href: "/radar",            icon: Radar,           label: "Radar" },
   { href: "/kvalitetslista",   icon: ListChecks,      label: "Kvalitetslista" },
   { href: "/mangdubblare",     icon: Zap,             label: "Mångdubblare" },
   { href: "/daglig-briefing",  icon: Newspaper,       label: "Daglig Briefing" },
