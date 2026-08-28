@@ -19,7 +19,7 @@ from apps.api.routers import (
     screener, stocks, portfolio, ai, admin, profile,
     watchlist, alerts, saved_screens, snapshots, markets, calendar,
     options, prediction, smallcap, backtests, sector_rotation_router, paper_trading_router,
-    notifications, transactions, macro_regime, insider,
+    notifications, transactions, macro_regime, insider, market_intel,
 )
 from apps.api.routers import risk, smart_alerts, strategy_lab, ml_performance
 from apps.api.routers import feedback as feedback_router
@@ -119,6 +119,7 @@ app.include_router(transactions.router)
 app.include_router(macro_regime.router, prefix="/api")
 app.include_router(insider.router, prefix="/api")
 app.include_router(insider.radar_router, prefix="/api")  # /api/insider-radar (market-wide)
+app.include_router(market_intel.router, prefix="/api")   # /api/market-intel/* (read-only)
 
 # Mega-project routers
 app.include_router(risk.router)            # /api/portfolio/analytics, /optimize, /rebalance, ...
