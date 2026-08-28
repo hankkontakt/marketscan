@@ -12,6 +12,7 @@ from apps.api.core.enrichment import enrich_with_scan_data
 from apps.api.core.avanza_import import (
     build_preview,
     parse_positioner_csv, parse_inkopskurser_csv, get_buy_date,
+    norm_ticker_input,
 )
 from apps.api.core.prices import fetch_price_history_batch
 
@@ -87,7 +88,10 @@ def add_holding(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ingen portfölj hittad")
     portfolio_id = port.data[0]["id"]
 
-    ticker = body.ticker.upper()
+    # Normalize via the same machine as the import chain (kortnamn_to_ticker):
+    # "tagm b" → "TAGM-B.ST", "NCAB" → "NCAB.ST"; already-suffixed tickers
+    # ("TAGM-B.ST") are left alone. Uppercased + stripped inside.
+    ticker = norm_ticker_input(body.ticker)
 
     # If ticker not in universe, queue it for the next pipeline run.
     # Uses admin client because regular users lack the UPDATE policy on
@@ -729,7 +733,7 @@ def construct_portfolio(
             portfolio_stats,
         )
     except ImportError as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVE, f"portfolio_construction saknas: {e}")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"portfolio_construction saknas: {e}")
 
     # 1. Hämta användarens riskprofil (eller defaulta till balanserad)
     risk_profile = {}

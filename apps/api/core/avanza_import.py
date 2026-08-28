@@ -187,6 +187,32 @@ def kortnamn_to_ticker(kortnamn: str, marknad: str) -> str | None:
     return f"{base}{suffix}" if base else None
 
 
+def norm_ticker_input(ticker: str) -> str:
+    """
+    Normalize a manually-entered ticker to canonical Yahoo Finance form.
+
+    Uses the same machine as the import chain (kortnamn_to_ticker with the
+    Nasdaq Stockholm market code), so a manual add_holding lands in the same
+    canonical form as an Avanza import ("TAGM B" → "TAGM-B.ST").
+
+    CAUTION — documented Sweden-app default: a ticker WITHOUT an exchange
+    suffix gets ".ST" appended, even for non-Nordic names ("AAPL" → "AAPL.ST").
+    This app is Sweden-focused; the pipeline's universe is dominated by
+    Stockholm listings. A ticker that ALREADY carries a suffix (contains a
+    dot, e.g. "TAGM-B.ST", "ASML.AS", "BRK-B") is left alone — never double-
+    suffixed. Input is uppercased and stripped.
+    Examples:
+      "tagm b"    → "TAGM-B.ST"
+      "NCAB"      → "NCAB.ST"
+      "TAGM-B.ST" → "TAGM-B.ST"  (already suffixed — untouched)
+      "AAPL"      → "AAPL.ST"    (documented Sweden-app default)
+    """
+    t = (ticker or "").strip().upper()
+    if not t or "." in t:
+        return t  # empty, or already has an exchange suffix — don't guess
+    return kortnamn_to_ticker(t, "XSTO") or t
+
+
 def normalize_name(name: str) -> str:
     return (
         name.lower()

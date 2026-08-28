@@ -1,12 +1,20 @@
 """Tester för qmj_scores.py — rena funktioner (ingen nätverk/DB)."""
+import io
+import json
+import os
+import sys
 import unittest
+from contextlib import redirect_stdout
 from datetime import date
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
 
+import backend_worker.qmj_scores as qmj_scores
 from backend_worker.qmj_scores import (
     fy_age_fit, as_of_strict, bucket_mcap, rank_pct, composite,
     short_exclusion, extract_metrics, storage_to_frames, _frames_to_storage,
-    stratum_of,
+    stratum_of, latest_valid_period, main,
 )
 
 
@@ -200,6 +208,121 @@ class TestStratumOf(unittest.TestCase):
 
     def test_missing_data_falls_to_new(self):
         self.assertEqual(stratum_of(None, None, None, None), "new_small")
+
+
+class TestLatestValidPeriod(unittest.TestCase):
+    def test_latest_valid_period(self):
+        # [2024-12-31, 2025-12-31] + today 2026-08-29 → "2025-12-31"
+        self.assertEqual(
+            latest_valid_period(["2024-12-31", "2025-12-31"], date(2026, 8, 29)),
+            "2025-12-31")
+        # [2026-03-31] + today 2026-08-29 → None (fy_end+5mån > today)
+        self.assertIsNone(latest_valid_period(["2026-03-31"], date(2026, 8, 29)))
+        # [2026-03-31, 2025-12-31] → "2025-12-31" (fallback till äldre giltig)
+        self.assertEqual(
+            latest_valid_period(["2026-03-31", "2025-12-31"], date(2026, 8, 29)),
+            "2025-12-31")
+
+    def test_empty_and_garbage(self):
+        self.assertIsNone(latest_valid_period([], date(2026, 8, 29)))
+        self.assertIsNone(latest_valid_period(["inte-datum"], date(2026, 8, 29)))
+
+
+class TestExtractMetricsPeriod(unittest.TestCase):
+    def test_period_column_used(self):
+        fin, bal, cash = _mk_frames()
+        m = extract_metrics(fin, bal, cash, 100.0, [0.001] * 260, period="2024-12-31")
+        self.assertEqual(m["fy_end"], "2024-12-31")
+        # 2024-kolumnen: roe = 9/105, roa = 13/190, gmar = 28/190, cfoa = 11.5/190
+        self.assertAlmostEqual(m["roe"], 9.0 / 105.0, places=4)
+        self.assertAlmostEqual(m["roa"], 13.0 / 190.0, places=4)
+        self.assertAlmostEqual(m["gmar"], 28.0 / 190.0, places=4)
+        self.assertAlmostEqual(m["cfoa"], 11.5 / 190.0, places=4)
+        # period != senaste FY → data_quality partial
+        self.assertEqual(m["data_quality"], "partial")
+        self.assertEqual(m["fy_periods"], ["2023-12-31", "2024-12-31", "2025-12-31"])
+
+    def test_period_equals_fy_last_quality_as_today(self):
+        fin, bal, cash = _mk_frames()
+        m = extract_metrics(fin, bal, cash, 100.0, [0.001] * 260, period="2025-12-31")
+        self.assertEqual(m["fy_end"], "2025-12-31")
+        self.assertEqual(m["data_quality"], "ok")
+        self.assertAlmostEqual(m["roe"], 10.0 / 110.0, places=4)
+
+    def test_invalid_period_falls_back_to_fy_last(self):
+        fin, bal, cash = _mk_frames()
+        m = extract_metrics(fin, bal, cash, 100.0, [0.001] * 260, period="1999-12-31")
+        self.assertEqual(m["fy_end"], "2025-12-31")
+        self.assertAlmostEqual(m["roe"], 10.0 / 110.0, places=4)
+
+
+class _FakeDate(date):
+    """datetime.date med fryst today() — deterministiska main-tester."""
+
+    @classmethod
+    def today(cls):
+        return date(2026, 8, 29)
+
+
+class TestMainPitFallback(unittest.TestCase):
+    """Main-flöde: mocked fetch → fallback till senaste giltiga period ger poäng
+    i stället för PIT-block (senaste FY 2026-03-31 ej giltig 2026-08-29)."""
+
+    def _mk_raw(self):
+        periods = ["2024-03-31", "2025-03-31", "2026-03-31"]
+        fin = pd.DataFrame({
+            "Net Income":           [8.0, 9.0, 10.0],
+            "Operating Income":     [12.0, 13.0, 14.0],
+            "Gross Profit":         [26.0, 28.0, 30.0],
+            "Interest Expense":     [-1_200_000.0, -1_200_000.0, -1_200_000.0],
+        }, index=periods).T
+        bal = pd.DataFrame({
+            "Total Assets":                                          [180.0, 190.0, 200.0],
+            "Total Liabilities Net Minority Interest":               [80.0, 85.0, 90.0],
+            "Stockholders Equity":                                   [100.0, 105.0, 110.0],
+            "Total Debt":                                            [55.0, 58.0, 60.0],
+            "Cash And Cash Equivalents":                             [18.0, 19.0, 20.0],
+            "Ordinary Shares Number":                                [10e6, 10e6, 10e6],
+        }, index=periods).T
+        cash = pd.DataFrame({
+            "Operating Cash Flow":                                   [11.0, 11.5, 12.0],
+            "Capital Expenditure":                                   [-2.5, -3.0, -3.0],
+            "Depreciation And Amortization":                         [3.0, 3.5, 4.0],
+        }, index=periods).T
+        frames = {"financials": fin, "balance_sheet": bal, "cashflow": cash}
+        hist = pd.DataFrame({"Close": [100.0] * 260})
+        stored = _frames_to_storage(frames, hist)
+        stored["ticker"] = "TEST.ST"
+        stored["fetched_at"] = "2026-08-29"
+        return stored
+
+    @patch.object(qmj_scores, "date", _FakeDate)
+    @patch("backend_worker.qmj_scores.time.sleep")
+    @patch("psycopg2.connect")
+    @patch("backend_worker.qmj_scores.fetch_ticker_data")
+    def test_fallback_gives_scores_instead_of_pit_block(self, mock_fetch, mock_connect, _mock_sleep):
+        mock_fetch.return_value = self._mk_raw()
+        mock_connect.return_value = MagicMock()
+        # fetchall-ordning: universum, sektor, insider, short
+        mock_connect.return_value.cursor.return_value.fetchall.side_effect = [
+            [("TEST.ST",)], [], [], []]
+        buf = io.StringIO()
+        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://mock"}):
+            with patch.object(sys, "argv", ["qmj_scores.py"]):
+                with redirect_stdout(buf):
+                    main()
+        out = json.loads(buf.getvalue())
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual([r["ticker"] for r in out["top5"]], ["TEST.ST"])
+        # as_of_date = vald giltig period (2025-03-31), inte senaste FY (2026-03-31)
+        cursor = mock_connect.return_value.cursor.return_value
+        insert_calls = [c for c in cursor.execute.call_args_list
+                        if "INSERT INTO qmj_scores" in str(c.args[0])]
+        self.assertEqual(len(insert_calls), 1)
+        params = insert_calls[0].args[1]
+        self.assertEqual(params[2], "2025-03-31")   # as_of_date
+        self.assertEqual(params[11], 50.0)          # alpha_rank — poäng, inte PIT-block
+        self.assertIn('"as_of": "2025-03-31"', params[15])
 
 
 if __name__ == "__main__":

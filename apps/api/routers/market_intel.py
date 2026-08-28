@@ -375,6 +375,8 @@ class RadarItemOut(BaseModel):
     mention_surge: float | None = None
     top_events: list[RadarEventOut] = []
     warnings: list[str] = []
+    data_quality: str | None = None
+    as_of_date: date | None = None
 
 
 class RadarResponse(BaseModel):
@@ -385,7 +387,7 @@ class RadarResponse(BaseModel):
 
 
 RADAR_THEMES = {"ipo", "order", "vinstvarning", "ledning", "regulatorik",
-                "sector-ai", "sector-forsvar"}
+                "sector-ai", "sector-forsvar", "dilution"}
 
 # Kanonisk visningsordning för signal-IC (F3) — UI:n visar faktorerna i denna ordning.
 FACTOR_ORDER = ["score_total", "score_quality", "score_momentum",
@@ -445,13 +447,14 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
             res = (
                 sb.table("qmj_scores")
                 .select("ticker,stratum,alpha_rank,quality_z,momentum_z,value_z,"
-                        "payout_z,insider_z,exclusion_reason,sector_value_z,value_mode")
+                        "payout_z,insider_z,exclusion_reason,sector_value_z,value_mode,"
+                        "data_quality,as_of_date")
                 .eq("scan_date", scan_date)
                 .execute()
             )
             qmj = {r["ticker"]: r for r in (res.data or [])}
 
-        since = (_dt.datetime.utcnow() - timedelta(hours=48)).isoformat()
+        since = (_dt.datetime.now(_dt.timezone.utc) - timedelta(hours=48)).isoformat()
         news_query = (
             sb.table("news_events")
             .select("ticker,headline,bearing,confidence,published_at,message_url,"
@@ -600,7 +603,8 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
             })
 
     items = []
-    all_tickers = set(qmj.keys()) | set(news_by_ticker.keys()) | set(shorts.keys())
+    all_tickers = (set(qmj.keys()) | set(news_by_ticker.keys())
+                   | set(shorts.keys()) | set(clusters.keys()))
     for t in all_tickers:
         row = qmj.get(t, {})
         s = shorts.get(t, {})
@@ -643,6 +647,8 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
             mention_surge=float(nb["surge"]) if nb.get("surge") is not None else None,
             top_events=[RadarEventOut(**e) for e in nb["events"]],
             warnings=warnings,
+            data_quality=row.get("data_quality"),
+            as_of_date=row.get("as_of_date"),
         ))
 
     if sort == "rank":
@@ -652,6 +658,7 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
     else:
         items.sort(key=lambda i: (i.news_48h, i.mention_surge or 0), reverse=True)
 
+    total_count = len(items)
     items = items[: max(1, min(limit, 100))]
-    return RadarResponse(total=len(items), items=items,
+    return RadarResponse(total=total_count, items=items,
                          signal_ics=signal_ics, qmj_regime=qmj_regime)

@@ -10,10 +10,15 @@ from apps.api.core.search_utils import safe_search
 
 router = APIRouter(prefix="/scan", tags=["screener"])
 
+# All segments in the universe. The app's focus is the full market (small/micro
+# included), so the /scan DEFAULT is "no segment filter" — every segment is
+# returned unless the client explicitly passes ?segments=...
+_ALL_SEGMENTS = ["large_cap", "mid_cap", "small_cap", "micro_cap"]
+
 
 @router.get("", response_model=list[ScanRow])
 def get_scan(
-    segments: list[str] = Query(default=["large_cap", "mid_cap"]),
+    segments: list[str] | None = Query(default=None),
     score_min: float = Query(default=0, ge=0, le=100),
     score_max: float = Query(default=100, ge=0, le=100),
     sector: str | None = None,
@@ -34,12 +39,16 @@ def get_scan(
     q = (
         sb.table("scan_results")
         .select("*")
-        .in_("segment", segments)
         .gte("score_total", score_min)
         .lte("score_total", score_max)
         .order("score_total", desc=True)
         .limit(limit)
     )
+
+    # Default = ALL segments (small/micro included — the app's focus). Only
+    # filter when the client explicitly passes ?segments=...
+    if segments is not None:
+        q = q.in_("segment", segments)
 
     if sector:
         q = q.eq("sector", sector)
@@ -124,7 +133,7 @@ def get_scan_meta(sb=Depends(get_supabase)):
 
 @router.get("/export")
 def export_scan(
-    segments: list[str] = Query(["large_cap", "mid_cap", "small_cap", "micro_cap"]),
+    segments: list[str] = Query(default=list(_ALL_SEGMENTS)),
     sb=Depends(get_supabase),
 ):
     """Export scan results as CSV."""

@@ -22,6 +22,7 @@ Användning:
 from __future__ import annotations
 
 import argparse
+import calendar
 import json
 import logging
 import math
@@ -82,6 +83,40 @@ def as_of_strict(fy_end: date, today: date) -> bool:
             m, y = 1, y + 1
         d = date(y, m, min(d.day, 28))
     return d <= today
+
+
+def _fy_plus_months(d: date, add_months: int) -> date:
+    """d + add_months kalendermånader (dag klamras till månadens sista dag).
+
+    OBS: skiljer sig från as_of_strict:s dag-klampning till 28 — här används
+    kalendermånadssemantik (fy_end + 5 mån = t.ex. 2026-03-31 → 2026-08-31),
+    vilket är den semantik latest_valid_periods kontrakt kräver.
+    """
+    m, y = d.month, d.year
+    for _ in range(add_months):
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def latest_valid_period(fy_dates: list[str], today: date,
+                        add_months: int = AS_OF_ADD_MONTHS) -> Optional[str]:
+    """Senaste period-ISO-datum där fy_end + add_months <= today. None om inget giltigt.
+
+    "Latest published annual as-of scan date": blandad FY-vintage är korrekt när
+    tvärsnittet rankas på vad som faktiskt var publikt (PIT-honesty).
+    """
+    best: Optional[str] = None
+    for p in fy_dates:
+        try:
+            d = date.fromisoformat(p)
+        except (TypeError, ValueError):
+            continue
+        if _fy_plus_months(d, add_months) <= today:
+            if best is None or p > best:
+                best = p
+    return best
 
 
 def bucket_mcap(mcap_local: float) -> int:
@@ -208,10 +243,13 @@ def model_periods(df: pd.DataFrame) -> list:
 
 
 def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
-                    price: Optional[float], hist_returns: list) -> dict:
+                    price: Optional[float], hist_returns: list,
+                    period: Optional[str] = None) -> dict:
     """Extrahera QMJ-metrik ur RÅA bokslut (yfinance-format: index=items, kolumner=perioder).
 
     Saknade värden → None (caller ger neutral 50). "data_quality": ok|partial.
+    period: ISO-datum för en specifik periodkolumn (t.ex. senaste GILTIGA
+    årsbokslut vid PIT-fallback). None → senaste FY (nuvarande beteende).
     """
     out: dict = {"data_quality": "partial"}
     if fin is None or bal is None or cash is None or fin.empty or bal.empty:
@@ -239,11 +277,23 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
         fy_dates = model_periods(fin)
         if len(fy_dates) != len(fin.columns):
             return out
+        out["fy_periods"] = [str(p) for p in fy_dates]
         fy_last, suspect = fy_age_fit(fy_dates, date.today())
         if fy_last is None:
             out["fy_end"] = None
             return out
-        latest = fy_last.isoformat()   # kolumner kan vara fallande — använd sorterat max
+        # period given → använd den kolumnen (PIT-fallback); annars senaste FY.
+        # Kolumner kan vara fallande — använd sorterat max som sanity.
+        use_period = False
+        if period is not None:
+            p_date = _to_date(period)
+            if p_date is not None and p_date in fy_dates:
+                latest = period
+                use_period = True
+            else:
+                latest = fy_last.isoformat()
+        else:
+            latest = fy_last.isoformat()
 
         def bval(*keys):
             return _row_val(bal, latest, *keys)
@@ -327,7 +377,7 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
             "ev_ebitda": None,
             "fcf_yield": None,
             "mcap_local": mcap,
-            "fy_end": fy_last.isoformat(),
+            "fy_end": latest,
             "suspect": suspect,
             # För stratum (jämförbarhet ny vs gammal):
             "revenue_latest": rev,
@@ -342,8 +392,12 @@ def extract_metrics(fin: pd.DataFrame, bal: pd.DataFrame, cash: pd.DataFrame,
             fy = float(fcf / mcap)
             out["fcf_yield"] = fy if abs(fy) <= 1.0 else None   # >100 % yield = datafel
 
-        present = [k for k in ("roe", "roa", "gmar", "cfoa", "leverage", "ndebt_ebitda") if out.get(k) is not None]
-        out["data_quality"] = "ok" if len(present) >= 4 else "partial"
+        if use_period and period != fy_last.isoformat():
+            # Fallback-period ≠ senaste FY → delvis data (äldre bokslut)
+            out["data_quality"] = "partial"
+        else:
+            present = [k for k in ("roe", "roa", "gmar", "cfoa", "leverage", "ndebt_ebitda") if out.get(k) is not None]
+            out["data_quality"] = "ok" if len(present) >= 4 else "partial"
         return out
     except Exception as e:
         logger.debug("extract_metrics failed: %s", e)
@@ -469,6 +523,7 @@ def main():
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
 
     tickers = []
+    limit = None  # --ticker-vägen använder ingen limit (UnboundLocalError-fix 2026-08-29)
     if args.ticker:
         tickers = [args.ticker]
     elif conn:
@@ -509,6 +564,7 @@ def main():
 
     metrics: dict[str, dict] = {}
     errors = 0
+    today = date.today()
     for i, t in enumerate(tickers):
         raw = fetch_ticker_data(t, force=args.force_fetch)
         if not raw:
@@ -516,8 +572,20 @@ def main():
             time.sleep(FETCH_SLEEP)
             continue
         fin, bal, cash = storage_to_frames(raw)
-        metrics[t] = extract_metrics(fin, bal, cash, raw.get("close_last"), raw.get("returns_1y") or [])
-        metrics[t]["ticker"] = t
+        price = raw.get("close_last")
+        hist_returns = raw.get("returns_1y") or []
+        m = extract_metrics(fin, bal, cash, price, hist_returns)
+        # PIT-fallback: senaste GILTIGA årsbokslut (fy_end + 5 mån <= today) i
+        # stället för alltid senaste FY — blandad FY-vintage är korrekt när
+        # tvärsnittet rankas på vad som faktiskt var publikt.
+        vp = latest_valid_period(m.get("fy_periods", []), today)
+        if vp and vp != m.get("fy_end"):
+            m = extract_metrics(fin, bal, cash, price, hist_returns, period=vp)
+        elif not vp:
+            # Inga giltiga perioder → PIT-block (aldrig ranka på ogiltig period)
+            m["fy_end"] = None
+        m["ticker"] = t
+        metrics[t] = m
         time.sleep(FETCH_SLEEP)
 
     logger.info("Klart: %d/%d tickers med data (%d fel) på %.1f s",
@@ -617,7 +685,6 @@ def main():
 
     insider_z_raw = rank_pct({t: v for t, v in insider_score.items()})
 
-    today = date.today()
     rows = []
     now = datetime.now()
     value_rows = []
@@ -628,12 +695,12 @@ def main():
                 fy_end = date.fromisoformat(m["fy_end"])
             except Exception:
                 fy_end = None
-        as_of = None
-        if fy_end and as_of_strict(fy_end, today):
-            as_of = fy_end
-        # PIT-gate: annual-data giltig först från fy_end + 5 mån. Innan dess →
-        # inga lookahead-poäng: alla z=None, alpha_rank=None (ärligt, ingen rank).
-        pit_blocked = bool(fy_end) and not as_of
+        # PIT-gate: annual-data giltig först från fy_end + 5 mån. Fallback till
+        # senaste GILTIGA period sker redan i fetch-loopen (extract_metrics med
+        # period=...); här är fy_end det valda giltiga perioddatumet, eller None
+        # när inga giltiga perioder finns → block (ärligt, ingen rank).
+        as_of = fy_end
+        pit_blocked = not bool(fy_end)
         dq = m.get("data_quality", "partial")
         if pit_blocked:
             dq = "partial"
@@ -688,7 +755,7 @@ def main():
                 k: m.get(k) for k in ("roe", "roa", "gmar", "cfoa", "leverage",
                                       "ndebt_ebitda", "ev_ebitda", "fcf_yield",
                                       "momentum_raw", "mcap_local") if m.get(k) is not None
-            }, default=str),
+            } | ({"as_of": m["fy_end"]} if m.get("fy_end") else {}), default=str),
         })
 
     # Sektorrelativ värdepercentil (visningsfält; kompositen behåller global value_z)

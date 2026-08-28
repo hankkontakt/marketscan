@@ -17,6 +17,7 @@ import unittest
 from types import SimpleNamespace
 
 from apps.api.routers.market_intel import (QmjRegimeOut,
+                                           RADAR_THEMES,
                                            RadarItemOut, RadarResponse,
                                            get_qmj_regime, get_radar)
 
@@ -78,12 +79,14 @@ def _base_tables(**overrides):
              "alpha_rank": 90.0, "quality_z": 80.0, "momentum_z": 70.0,
              "value_z": 60.0, "payout_z": 50.0, "insider_z": 40.0,
              "exclusion_reason": None, "sector_value_z": 75.0,
-             "value_mode": "sector"},
+             "value_mode": "sector", "data_quality": "ok",
+             "as_of_date": "2026-03-31"},
             {"ticker": "BBB.ST", "scan_date": "2026-08-28", "stratum": "small",
              "alpha_rank": 85.0, "quality_z": 70.0, "momentum_z": 60.0,
              "value_z": 50.0, "payout_z": 40.0, "insider_z": 30.0,
              "exclusion_reason": None, "sector_value_z": None,
-             "value_mode": "global"},
+             "value_mode": "global", "data_quality": "partial",
+             "as_of_date": None},
         ],
         "news_events": [
             {"ticker": "AAA.ST", "headline": "Order", "bearing": "positive",
@@ -150,6 +153,15 @@ class TestSchemas(unittest.TestCase):
         self.assertEqual(resp.signal_ics, [])
         self.assertIsNone(resp.qmj_regime)
 
+    def test_radar_themes_contains_dilution(self):
+        # RADAR_THEMES matchar news_discovery.py-temalistan exakt (8 teman).
+        self.assertIn("dilution", RADAR_THEMES)
+        self.assertEqual(
+            RADAR_THEMES,
+            {"ipo", "order", "vinstvarning", "ledning", "regulatorik",
+             "sector-ai", "sector-forsvar", "dilution"},
+        )
+
     def test_qmj_regime_out(self):
         r = QmjRegimeOut(computed_date="2026-08-01", data_through="2026-07-31",
                          premium_12m=0.042, percentile=0.87, n_obs=372,
@@ -184,6 +196,52 @@ class TestRadar(unittest.TestCase):
         resp = get_radar(sb=sb)
         tickers = {i.ticker for i in resp.items}
         self.assertNotIn("CCC.ST", tickers)
+
+    def test_union_includes_cluster_only_ticker(self):
+        # Kluster-tickers är hög-signal: en ticker som BARA finns i
+        # insider_cluster_signals ska ändå dyka upp i radarn (anrikad).
+        sb = FakeSupabase(_base_tables(
+            insider_cluster_signals=[
+                {"ticker": "DDD.ST", "cluster_score": 0.9,
+                 "unique_sellers_30d": 4},
+            ],
+        ))
+        resp = get_radar(sb=sb)
+        by_ticker = {i.ticker: i for i in resp.items}
+        self.assertIn("DDD.ST", by_ticker)
+        self.assertEqual(by_ticker["DDD.ST"].cluster_score, 0.9)
+        self.assertEqual(by_ticker["DDD.ST"].sellers_30d, 4)
+        self.assertIn("säljkluster", by_ticker["DDD.ST"].warnings)
+
+    def test_data_quality_and_as_of_fields(self):
+        sb = FakeSupabase(_base_tables())
+        resp = get_radar(sb=sb)
+        by_ticker = {i.ticker: i for i in resp.items}
+        aaa = by_ticker["AAA.ST"]
+        self.assertEqual(aaa.data_quality, "ok")
+        self.assertEqual(aaa.as_of_date.isoformat(), "2026-03-31")
+        bbb = by_ticker["BBB.ST"]
+        self.assertEqual(bbb.data_quality, "partial")
+        self.assertIsNone(bbb.as_of_date)
+
+    def test_total_is_uncapped_count(self):
+        # > limit (40) tickers → total = pre-cap count, len(items) = cap.
+        qmj_rows = [
+            {"ticker": f"T{i:03d}.ST", "scan_date": "2026-08-28",
+             "stratum": "mid", "alpha_rank": float(100 - i),
+             "quality_z": 50.0, "momentum_z": 50.0, "value_z": 50.0,
+             "payout_z": 50.0, "insider_z": 50.0, "exclusion_reason": None,
+             "sector_value_z": None, "value_mode": "global"}
+            for i in range(45)
+        ]
+        sb = FakeSupabase(_base_tables(
+            qmj_scores=qmj_rows, news_events=[], short_positions=[],
+            insider_cluster_signals=[],
+        ))
+        resp = get_radar(sb=sb)
+        self.assertEqual(resp.total, 45)
+        self.assertEqual(len(resp.items), 40)
+        self.assertNotEqual(resp.total, len(resp.items))
 
     def test_signal_ics_canonical_order_and_latest_per_factor(self):
         sb = FakeSupabase(_base_tables())
@@ -269,6 +327,8 @@ class TestRouteContract(unittest.TestCase):
         self.assertEqual(aaa["value_mode"], "sector")
         self.assertEqual(aaa["earnings_sue"], 1.8)
         self.assertEqual(aaa["earnings_announced"], "2026-08-20")
+        self.assertEqual(aaa["data_quality"], "ok")
+        self.assertEqual(aaa["as_of_date"], "2026-03-31")
         self.assertEqual(body["qmj_regime"]["regime"], "stark")
         self.assertEqual(
             [m["factor"] for m in body["signal_ics"]],

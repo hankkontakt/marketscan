@@ -26,12 +26,14 @@ Upsert-semantik (migration 049, insider_trades_reconcile_key):
 
 ISIN→ticker-mappningskedja (billigast först, ingen extern kostnad per rad):
   SEED_TICKERS → company_profiles.isin → universe_registry.isin →
-  isin_symbol_cache.json (READ-ONLY) → None. Finnhub/yfinance anropas ALDRIG
-  per transaktion (för dyrt på ~300 rader). insider_trades.ticker är NOT NULL
-  (migration 015) → endast MAPPADE rader skrivs; unmapped loggas + arkiveras.
+  isin_symbol_cache (worker_state key='isin_symbol_cache'; lokalfilen som
+  read-only-fallback) → None. Finnhub/yfinance anropas ALDRIG per transaktion
+  (för dyrt på ~300 rader). insider_trades.ticker är NOT NULL (migration 015)
+  → endast MAPPADE rader skrivs; unmapped loggas + arkiveras.
 
-0-rader: varning + {"status":"ok","rows":0,"empty_ok":true} + ping söksidan
-utan filter (bevis på levande endpoint). Hårdfel ENDAST vid exceptions.
+0-rader: HTML-ping med SAMMA datumfilter skiljer formatbyte (export 0 men
+HTML har rader → hårdfel exit 1) från tomt fönster ({"status":"ok","rows":0,
+"empty_ok":true} + ping utan filter som bevis på levande endpoint).
 
 Användning:
     python -m backend_worker.fi_insider_bulk --days 7
@@ -70,8 +72,11 @@ FI_HEADERS = {
 
 RAW_ARCHIVE_DIR = Path(__file__).resolve().parent.parent / "data" / "fi_raw"
 # Nyligen-cachad ISIN→ticker-mappning (skrivs av universe_mapping.py).
-# Läses här READ-ONLY som sista steg i mappningskedjan — misslyckas tyst.
+# Sedan 2026-08-29: worker_state (key='isin_symbol_cache') primärt — lokalfilen
+# är efemär i GH Actions (data/ gitignored). Lokalfilen läses read-only som
+# fallback vid DB-fel/saknad rad (migrering av befintligt innehåll).
 ISIN_SYMBOL_CACHE_PATH = RAW_ARCHIVE_DIR / "isin_symbol_cache.json"
+ISIN_SYMBOL_CACHE_KEY = "isin_symbol_cache"   # worker_state-nyckel (JSONB)
 _RETRY_ATTEMPTS = 3          # retry+backoff (repo-mönster, se universe_mapping)
 _RETRY_BACKOFF = 3           # sekunder × försöksnummer
 _PAGE_DELAY = 0.4            # sekunder mellan HTML-fallback-sidor (rate limiting)
@@ -144,8 +149,9 @@ def parse_fi_csv(content: bytes) -> list[dict]:
     """Parse FI CSV-export (UTF-16-LE, semikolonseparerad) → råa rader.
 
     Returnerar dicts med kanoniska nycklar (isin, name, karaktar, shares,
-    trade_date, status, …). shares/price konverteras till float med rätt
-    decimalformat per språk (sv CSV = komma-decimal, en-GB = punkt-decimal).
+    trade_date, status, …). shares/price konverteras till float med PER-CELL
+    decimaldetektering (_parse_float) — FI byter språk (sv↔en-GB) utan
+    förvarning, så rubrikspråket kan inte avgöra decimalformatet.
     Tomt fönster → header-only → [].
     """
     text = content.decode("utf-16-le", errors="replace")
@@ -161,9 +167,6 @@ def parse_fi_csv(content: bytes) -> list[dict]:
         return []
     header = [_norm_header(h) for h in rows[0]]
     col_map = _build_col_map(header)
-    # sv-exporten använder komma som decimalavgränsare ('20000,0', '7,00926');
-    # en-GB-exporten punkt ('20000.0'). Detekteras på rubrikspråket.
-    decimal_comma = "publiceringsdatum" in header
     data: list[dict] = []
     for r in rows[1:]:
         if not any(c.strip() for c in r):
@@ -173,7 +176,7 @@ def parse_fi_csv(content: bytes) -> list[dict]:
             if i < len(r):
                 val = r[i].strip()
                 if key in ("shares", "price"):
-                    val = _parse_float(val, decimal_comma=decimal_comma)
+                    val = _parse_float(val)
                 rec[key] = val
         data.append(rec)
     return data
@@ -198,9 +201,9 @@ def _parse_fi_html(html: str) -> list[dict]:
                 if i < len(tds):
                     val = tds[i].get_text(strip=True)
                     # sv HTML-tabellen: NBSP-tusentalsavgränsare ('20 000')
-                    # + komma-decimal ('2,79') — samma format som sv-CSV.
+                    # + komma-decimal ('2,79') — per-cell-detekteras.
                     if key in ("shares", "price"):
-                        val = _parse_float(val, decimal_comma=True)
+                        val = _parse_float(val)
                     row[key] = val
             if row:
                 rows.append(row)
@@ -339,13 +342,17 @@ def _classify_transaction(karaktar: str) -> str:
     return "unknown"
 
 
-def _parse_float(val, decimal_comma: bool = False) -> Optional[float]:
-    """Parse numeriskt fält.
+def _parse_float(val) -> Optional[float]:
+    """Parse numeriskt fält — PER-CELL decimaldetektering (fix 2026-08-29).
 
-    decimal_comma=True (sv CSV): komma = decimalavgränsare ('20000,0',
-    '7,00926'). decimal_comma=False (en-GB CSV / HTML): punkt = decimal,
-    komma = tusentalsavgränsare ('20,000'). Redan numeriska värden (från
-    parsern) returneras oförändrade.
+    FI byter språk (sv↔en-GB) utan förvarning; rubrikbaserad decimal_comma
+    gav '7,00926' → 700926 (100 000×-fel) vid språkbyte. Regler:
+      - Både komma OCH punkt → SISTA separatorn är decimalavgränsare
+        (fi_insider-mönstret): '1,234.56' → 1234.56, '1.234,56' → 1234.56.
+      - Annars komma → punkt (svensk form): '7,00926' → 7.00926,
+        '20000,0' → 20000.0.
+      - NBSP/mellanslag (tusentalsavgränsare) tas bort: '20 000' → 20000.
+    Redan numeriska värden (från parsern) returneras oförändrade.
     """
     if val is None:
         return None
@@ -354,16 +361,15 @@ def _parse_float(val, decimal_comma: bool = False) -> Optional[float]:
     s = str(val).strip().replace("\u00a0", "").replace(" ", "")
     if not s:
         return None
-    if decimal_comma:
-        s = s.replace(",", ".")
-    elif "," in s and "." in s:
-        # sista separatorn är decimalavgränsare
+    if "," in s and "." in s:
+        # sista separatorn är decimalavgränsare (fi_insider-mönstret)
         if s.rfind(",") > s.rfind("."):
             s = s.replace(".", "").replace(",", ".")
         else:
             s = s.replace(",", "")
-    elif "," in s:
-        s = s.replace(",", "")   # tusentalsavgränsare (HTML)
+    else:
+        # svensk form: komma = decimalavgränsare
+        s = s.replace(",", ".")
     try:
         return float(s)
     except (ValueError, TypeError):
@@ -460,11 +466,11 @@ def aggregate_trades(trades: list[dict]) -> list[dict]:
 
 # ─── DB ───────────────────────────────────────────────────────────────────────
 
-def _load_isin_symbol_cache() -> dict:
+def _load_isin_symbol_cache_file() -> dict:
     """Läs isin_symbol_cache.json (READ-ONLY, skrivs av universe_mapping) → dict.
 
-    Saknad/korrupt fil → {} (misslyckas tyst — kostsamma externa uppslag görs
-    aldrig här).
+    Andra lagret — fallback vid DB-fel/saknad rad. Saknad/korrupt fil → {}
+    (misslyckas tyst — kostsamma externa uppslag görs aldrig här).
     """
     try:
         if ISIN_SYMBOL_CACHE_PATH.exists():
@@ -474,6 +480,51 @@ def _load_isin_symbol_cache() -> dict:
     return {}
 
 
+def _load_isin_symbol_cache(conn=None) -> dict:
+    """Läs ISIN→ticker-cache: worker_state (key='isin_symbol_cache') primärt.
+
+    Migrerad från lokalfilen 2026-08-29 (data/ är gitignored → efemär i GH
+    Actions; kedjans sista fallback var alltid tom i CI). Lokalfilen läses
+    read-only som fallback vid DB-fel ELLER saknad rad (migrering av
+    befintligt lokalfilsinnehåll). conn=None → lokalfilen endast.
+    """
+    if conn is not None:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM worker_state WHERE key = %s",
+                        (ISIN_SYMBOL_CACHE_KEY,))
+            row = cur.fetchone()
+            if row:
+                value = row[0]
+                if isinstance(value, dict):
+                    return value
+                if isinstance(value, str):
+                    parsed = json.loads(value)
+                    if isinstance(parsed, dict):
+                        return parsed
+        except Exception as e:
+            logger.warning("ISIN-cache DB-läsning misslyckades — fallback till lokalfil: %s", e)
+            return _load_isin_symbol_cache_file()
+    return _load_isin_symbol_cache_file()
+
+
+def _save_isin_symbol_cache(conn, cache: dict) -> None:
+    """Upsert ISIN→ticker-cache till worker_state (key='isin_symbol_cache').
+
+    Skrivs ALLTID till DB (lokalfilen är read-only sedan migreringen).
+    """
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO worker_state (key, value, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        """, (ISIN_SYMBOL_CACHE_KEY, json.dumps(cache)))
+        conn.commit()
+    except Exception as e:
+        logger.warning("ISIN-cache DB-skrivning misslyckades: %s", e)
+
+
 def extract_map_isin(isin, seed_map, profiles_set, registry_set, cache) -> Optional[str]:
     """Ren ISIN→ticker-ledningskedja — testbar utan DB/externa anrop.
 
@@ -481,7 +532,7 @@ def extract_map_isin(isin, seed_map, profiles_set, registry_set, cache) -> Optio
       1. seed_map (SEED_TICKERS — manuell seed, universe_mapping.py)
       2. profiles_set (company_profiles.isin → ticker, befintlig källa)
       3. registry_set (universe_registry.isin → ticker, FI-sanning)
-      4. cache (isin_symbol_cache.json-innehåll, READ-ONLY)
+      4. cache (isin_symbol_cache — worker_state, lokalfil som fallback)
     → None om inget ovan. Kostar ALDRIG Finnhub/yfinance per transaktion.
     """
     if not isin:
@@ -500,12 +551,13 @@ def extract_map_isin(isin, seed_map, profiles_set, registry_set, cache) -> Optio
     return None
 
 
-def _map_isin_to_ticker(isin: str, conn) -> Optional[str]:
+def _map_isin_to_ticker(isin: str, conn, cache: Optional[dict] = None) -> Optional[str]:
     """Mappa ISIN → ticker via ledningskedjan (billigast först).
 
     DB-uppslag (company_profiles → universe_registry, ticker ej NULL/blank)
-    + cache-fil → ren extract_map_isin-kedja. Kostar ALDRIG Finnhub/yfinance
-    per transaktion.
+    + cache (worker_state key='isin_symbol_cache'; lokalfil som fallback) →
+    ren extract_map_isin-kedja. Kostar ALDRIG Finnhub/yfinance per transaktion.
+    cache=None → laddas via _load_isin_symbol_cache(conn).
     """
     if not isin:
         return None
@@ -526,9 +578,75 @@ def _map_isin_to_ticker(isin: str, conn) -> Optional[str]:
             registry[isin] = row[0]
     except Exception:
         pass
-    # 4. Nyligen-cachad mappning (universe_mapping skriver isin_symbol_cache.json)
-    return extract_map_isin(isin, SEED_TICKERS, profiles, registry,
-                            _load_isin_symbol_cache())
+    # 4. Nyligen-cachad mappning (universe_mapping skriver isin_symbol_cache)
+    if cache is None:
+        cache = _load_isin_symbol_cache(conn)
+    return extract_map_isin(isin, SEED_TICKERS, profiles, registry, cache)
+
+
+def _like_escape(s: str) -> str:
+    """Escape LIKE-vildtecken (% _) före ILIKE (Postgres default-escape: \\)."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _map_issuer_to_ticker(issuer: str, conn) -> Optional[str]:
+    """Issuer-namn → ticker via universe_registry.name (primärt).
+
+    Varför inte description/industry först: fritext/bransch-LIKE matchar fel
+    ticker (t.ex. en leverantör vars description nämner kunden) + LIMIT 1 är
+    godtycklig. universe_registry.name är FI-sanning (emittentnamn).
+
+    Vägar (träff loggas):
+      1. registry-name: LOWER(name) = LOWER(issuer) — exakt, normaliserad.
+      2. registry-name-prefix: name ILIKE '<issuer-prefix>%' när issuer ≥ 4
+         tecken (LIKE-vildtecken escapes).
+      3. company_profiles-description: gamla fritext-vägen — ENDAST när
+         registret saknar matchande rad (sista fallback).
+    """
+    if not issuer:
+        return None
+    issuer = issuer.strip()
+    try:
+        cur = conn.cursor()
+        # 1. Exakt match (case-normaliserad) mot FI-sanningsnamnet
+        cur.execute(
+            "SELECT ticker FROM universe_registry "
+            "WHERE LOWER(name) = LOWER(%s) AND ticker IS NOT NULL LIMIT 1",
+            (issuer,),
+        )
+        row = cur.fetchone()
+        if row and row[0]:
+            logger.info("Issuer-fallback träff: registry-name (exakt) för %r", issuer)
+            return row[0]
+        # 2. Prefix-match (issuer ≥ 4 tecken) — FI-namn har ofta suffix
+        #    ('AB', 'publ') som saknas i exportens emittentfält.
+        if len(issuer) >= 4:
+            cur.execute(
+                "SELECT ticker FROM universe_registry "
+                "WHERE name ILIKE %s AND ticker IS NOT NULL LIMIT 1",
+                (f"{_like_escape(issuer)}%",),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                logger.info("Issuer-fallback träff: registry-name (prefix) för %r", issuer)
+                return row[0]
+    except Exception:
+        pass
+    # 3. Sista fallback: gamla fritext-vägen — ENDAST när registret saknar rad.
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT ticker FROM company_profiles "
+            "WHERE LOWER(description) LIKE %s OR LOWER(industry) LIKE %s LIMIT 1",
+            (f"%{issuer.lower()}%", f"%{issuer.lower()}%"),
+        )
+        row = cur.fetchone()
+        if row and row[0]:
+            logger.info("Issuer-fallback träff: company_profiles-description för %r", issuer)
+            return row[0]
+    except Exception:
+        pass
+    return None
 
 
 def save_raw_archive(trades: list[dict], archive_date: str):
@@ -556,21 +674,17 @@ def upsert_trades(trades: list[dict], conn) -> dict:
     cur = conn.cursor()
     unmapped: list[dict] = []
     mapped: list[dict] = []
+    # Cache laddas EN gång (worker_state primärt, lokalfil som fallback) och
+    # sparas tillbaka — ackumuleras över dagar (data/ är gitignored i CI).
+    cache = _load_isin_symbol_cache(conn)
 
     for trade in trades:
-        ticker = _map_isin_to_ticker(trade["isin"], conn)
+        ticker = _map_isin_to_ticker(trade["isin"], conn, cache)
         if not ticker and trade.get("issuer"):
-            # Fallback: försök mappa på issuer-namn
-            try:
-                cur.execute(
-                    "SELECT ticker FROM company_profiles "
-                    "WHERE LOWER(description) LIKE %s OR LOWER(industry) LIKE %s LIMIT 1",
-                    (f"%{trade['issuer'].lower()}%", f"%{trade['issuer'].lower()}%"),
-                )
-                row = cur.fetchone()
-                ticker = row[0] if row else None
-            except Exception:
-                pass
+            # Fallback: issuer-namn → universe_registry.name (FI-sanning);
+            # company_profiles.description/industry ENDAST när registret
+            # saknar matchande rad (fritext-LIKE matchar annars fel ticker).
+            ticker = _map_issuer_to_ticker(trade["issuer"], conn)
         if not ticker:
             unmapped.append(trade)
             continue
@@ -578,6 +692,7 @@ def upsert_trades(trades: list[dict], conn) -> dict:
         t["ticker"] = ticker
         mapped.append(t)
 
+    _save_isin_symbol_cache(conn, cache)
     aggregated = aggregate_trades(mapped)
 
     inserted = 0
@@ -645,13 +760,31 @@ def main():
     path = result["path"]
     logger.info("Hämtade %d råa rader via %s", len(raw_trades), path)
 
-    # 0-rader: varning + empty_ok + ping (bevis på levande endpoint)
+    # 0-rader: skilj formatbyte från tomt fönster — HTML-ping med SAMMA
+    # datumfilter. Export 0 men HTML har rader → formatändring → hårdfel
+    # (tyst empty_ok skulle maskera den). Båda 0 → tomt fönster som idag.
     if not raw_trades:
         logger.warning(
             "FI-registret returnerade 0 rader för %s → %s (via %s). "
-            "Pingar söksidan utan filter för att bevisa levande endpoint.",
+            "Pingar HTML-sökvägen med samma datumfilter för att skilja "
+            "formatbyte från tomt fönster.",
             from_date, to_date, path,
         )
+        html_rows = fetch_html_search(from_date, to_date)
+        if html_rows:
+            logger.error(
+                "FI CSV-export gav 0 rader men HTML-sök gav %d rader för "
+                "%s → %s — formatändring (tyst 0-rader skulle maskera den).",
+                len(html_rows), from_date, to_date,
+            )
+            print(json.dumps({
+                "status": "error",
+                "reason": "format-ändring: export 0 men HTML-ping har rader",
+                "rows": 0,
+                "html_rows": len(html_rows),
+                "path": path,
+            }))
+            sys.exit(1)
         alive = ping_search_page()
         print(json.dumps({
             "status": "ok", "rows": 0, "empty_ok": True,
@@ -673,6 +806,10 @@ def main():
     if database_url:
         try:
             import psycopg2
+            # Migration 049-skydd: säkerställ att ON CONFLICT (COALESCE(isin,ticker),
+            # name, trade_date, type) har sitt unika index (idempotent med fetcherns).
+            from backend_worker.insider_fetcher import _ensure_reconcile_key
+            _ensure_reconcile_key(database_url)
             conn = psycopg2.connect(database_url)
             stats = upsert_trades(trades, conn)
             conn.close()
