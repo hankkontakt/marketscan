@@ -127,3 +127,50 @@ export function buildScanUrl(params: ScanParams): string {
   }
   return `/api/scan?${q.toString()}`;
 }
+
+// ─── Market Intel ────────────────────────────────────────────────────────────
+// Endpoints: GET /api/market-intel/shorts/{ticker}, /qmj/rank, /clusters/{ticker}.
+// Fältnamn matchar apps/api/routers/market_intel.py (ShortPositionOut,
+// QmjRankOut, InsiderClusterSignalOut).
+
+export interface ShortInfo {
+  scan_date: string;
+  total_short_pct: number | null;      // summa rapporterade nettopositioner (%)
+  is_new_discovery: boolean;           // första förekomst >0.5 % eller Δ≥+0.5 pp/90 d
+  delta_pp: number | null;
+}
+
+export interface QmjRankItem {
+  ticker: string;
+  alpha_rank: number | null;           // komposit 0-100, NULL om hårt filter
+  quality_z: number | null;            // 0-100 percentil inom storleksgrupp
+  momentum_z: number | null;
+  insider_z: number | null;
+  value_z: number | null;
+  payout_z: number | null;
+  as_of_date: string | null;           // datum från vilket annual-data är giltig
+  exclusion_reason: string | null;     // t.ex. "short_high(12.3%)" / "new_discovery"
+  warning_flags: string[];             // t.ex. ["sell_cluster", "illiquid"]
+}
+
+export interface ClusterInfo {
+  ticker: string;
+  cluster_score: number | null;
+  is_cluster: boolean;
+  exec_buy_90d: boolean;
+  unique_sellers_30d: number;          // unika säljare senaste 30 dagarna
+  total_sell_amount_30d: number | null;
+  updated_at: string | null;
+}
+
+export function marketIntelShorts(ticker: string): Promise<ShortInfo[]> {
+  return api<ShortInfo[]>(`/api/market-intel/shorts/${encodeURIComponent(ticker)}`);
+}
+
+export function marketIntelQmjRank(): Promise<QmjRankItem[]> {
+  return api<QmjRankItem[]>("/api/market-intel/qmj/rank");
+}
+
+export function marketIntelClusters(ticker: string): Promise<ClusterInfo> {
+  return api<ClusterInfo>(`/api/market-intel/clusters/${encodeURIComponent(ticker)}`);
+}

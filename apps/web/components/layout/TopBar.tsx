@@ -7,7 +7,7 @@ import {
   Search, Moon, Sun, User, LogOut, Settings, ChevronDown, TrendingUp,
   Briefcase, SlidersHorizontal, Globe, Star, CalendarDays, BarChart2,
   BookOpen, Shield, FlaskConical, Activity, Brain, Eye, ArrowLeftRight,
-  Menu, X, Compass,
+  Menu, X, Compass, ListChecks,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCommandPalette } from "@/hooks/useCommandPalette";
@@ -34,6 +34,7 @@ const PRIMARY_NAV = [
 const VERKTYG_ITEMS = [
   { href: "/jamfor",           label: "Jämför aktier",  icon: ArrowLeftRight, desc: "Analysera aktier sida vid sida" },
   { href: "/insider-radar",    label: "Insider Radar",   icon: Eye,            desc: "Insiderhandel och stora affärer" },
+  { href: "/kvalitetslista",   label: "Kvalitetslista",  icon: ListChecks,     desc: "Evidensbaserad kvalitetsscreening" },
   { href: "/signal-analytics", label: "Signalanalys",    icon: Activity,       desc: "Validera och backtesta signaler" },
   { href: "/strategi-lab",     label: "Strategi Lab",    icon: FlaskConical,   desc: "Bygg och optimera egna strategier" },
 ] as const;
@@ -52,6 +53,7 @@ const DRAWER_PRIMARY = [
 const DRAWER_VERKTYG = [
   { href: "/jamfor",           label: "Jämför aktier", icon: ArrowLeftRight },
   { href: "/insider-radar",    label: "Insider Radar",  icon: Eye },
+  { href: "/kvalitetslista",   label: "Kvalitetslista", icon: ListChecks },
   { href: "/signal-analytics", label: "Signalanalys",   icon: Activity },
   { href: "/strategi-lab",     label: "Strategi Lab",   icon: FlaskConical },
 ] as const;

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AlertTriangle, CheckCircle2, XCircle, Globe, Users, Building2, ChevronDown, ChevronUp } from "lucide-react";
 import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski, useSimilarStocks, useCompanyProfile, type SimilarStockItem, type CompanyProfile } from "@/hooks/useStock";
+import { useMarketIntelShorts, useMarketIntelQmjRank, useMarketIntelClusters } from "@/hooks/useMarketIntel";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
 import { VerdictCard } from "@/components/stock/VerdictCard";
 import { ExplainSection } from "@/components/stock/ExplainSection";
@@ -100,6 +101,9 @@ export function StockView({ ticker }: Props) {
                 <SignalBadgeInline signal={stock.entry_signal} />
                 <LevelSwitcher />
               </div>
+
+              {/* Market Intel-badges — villkorliga varningar */}
+              <MarketIntelBadges ticker={ticker} />
             </div>
 
             {/* VerdictCard below the header — intermediate only (beginner finds it in the AI tab) */}
@@ -171,7 +175,9 @@ export function StockView({ ticker }: Props) {
             <VerdictHeader stock={stock} />
 
             {/* Level switcher — slim row between header and tab bar */}
-            <div className="px-6 py-2 border-b bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+            <div className="px-6 py-2 border-b bg-[var(--color-bg-surface)] border-[var(--color-border)] flex items-center justify-between gap-4 flex-wrap">
+              {/* Market Intel-badges — villkorliga varningar */}
+              <MarketIntelBadges ticker={ticker} />
               <LevelSwitcher />
             </div>
 
@@ -264,6 +270,65 @@ function SignalBadgeInline({ signal }: { signal: string | null | undefined }) {
     <span className={cn("px-2.5 py-1 rounded-md text-xs font-medium", signalClass(signal))}>
       {signalLabel(signal)}
     </span>
+  );
+}
+
+// ─── Market Intel-badges ──────────────────────────────────────────────────────
+// Villkorliga varningar från market-intel-endpoints. Saknas data → inget badge
+// (aldrig "no data"-rummel). Endast tre möjliga: blankningsvarning,
+// säljkluster-varning och exclusion-reason från kvalitetslistan.
+
+function MarketIntelBadges({ ticker }: { ticker: string }) {
+  const { data: shorts } = useMarketIntelShorts(ticker);
+  const { data: clusters } = useMarketIntelClusters(ticker);
+  const { data: qmjRank } = useMarketIntelQmjRank();
+
+  const badges: { label: string; title?: string }[] = [];
+
+  // Blankningsvarning: senaste total_short_pct ≥ 8 % eller ny FI-disclosure
+  // (endpoint returnerar rader sorterade på scan_date DESC → rad 0 = senaste)
+  const latestShort = shorts?.[0];
+  if (latestShort && ((latestShort.total_short_pct ?? 0) >= 8 || latestShort.is_new_discovery)) {
+    badges.push({
+      label: "Blankningsvarning",
+      title: latestShort.is_new_discovery
+        ? "Ny blankningsposition registrerad hos FI"
+        : `Kort position: ${latestShort.total_short_pct?.toFixed(1)} %`,
+    });
+  }
+
+  // Säljkluster-varning: ≥ 3 unika säljare senaste 30 dagarna
+  if (clusters && clusters.unique_sellers_30d >= 3) {
+    badges.push({
+      label: "Säljkluster-varning",
+      title: `${clusters.unique_sellers_30d} unika säljare senaste 30 dagarna`,
+    });
+  }
+
+  // Exclusion-reason från kvalitetslistan (om aktien finns där)
+  const qmjEntry = qmjRank?.find((r) => r.ticker === ticker);
+  if (qmjEntry?.exclusion_reason) {
+    badges.push({
+      label: "Exkluderad från kvalitetslista",
+      title: qmjEntry.exclusion_reason,
+    });
+  }
+
+  if (badges.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {badges.map((b) => (
+        <span
+          key={b.label}
+          title={b.title}
+          className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-[var(--color-warn-soft)] text-[var(--color-warn)]"
+        >
+          <AlertTriangle size={10} strokeWidth={2} />
+          {b.label}
+        </span>
+      ))}
+    </div>
   );
 }
 
