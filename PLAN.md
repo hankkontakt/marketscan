@@ -37,6 +37,23 @@
 (90/180/365 dagar) allt eftersom score_history ackumuleras; universum-registret
 växer 29-100+ per natt; QMJ täcker +120 tickers per vecka.
 
+## UPPDATERING 2026-08-28 (andra halvan — nyhetskedjan live)
+
+- **Nyhetskedjan i produktion**: news.yml — Nasdaq-officiella (regelbäringar) +
+  GNews-temasweep (188 events, 44 ticker-matchade) + DeepSeek-klassificerare
+  (59 klassade, thinking OFF, JSON-mode). Kostnad: ~$0,001/körning.
+- **UNIVERSE 156 emittenter** (från 29) + Finnhub/yfinance ISIN-mappning (28 med
+  ticker idag; växer) + delisting 554 kontroller.
+- **QMJ med strata**: 114 rader skrivna, 0 fel — BOOZT.ST 75,9 topp-5-listade
+  (småbolag nu på riktigt), rank_mode within_stratum/global.
+- **Token-experiment (2026-08-28)**: mer tokens = INTE bättre.
+  A_minimal 5/8 (1291t) · B_few-shot 6/8 (2030t) ← VALD · C_kontext 4/8 (1519t —
+  bias!) · D_thinking 4/8 (3134t, 2.4× latens). Slutsats: few-shot-design > mer
+  tokens; thinking AV; bolagskontext AV (färgar fel — t.ex. "emission→positiv").
+- **Testgrind**: 26/26 unittest (stratum, norm/match, as-of, momentum, short-filter),
+  py_compile alla, prod-receipts bekräftade.
+- **Migrationer**: 045 (news_events) + 046 (stratum/rank_mode) applicerade.
+
 ## Beslutlogg (v1 → v2)
 
 | # | Korrigering | Orsak (bevisad/observerad) |
