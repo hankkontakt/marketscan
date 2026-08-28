@@ -300,13 +300,20 @@ def _backfill_names_and_sectors(cur) -> int:
     (cache-uppdaterad) — annars når aldrig yf.Lookup pga gammal cache-format.
     """
     # 1) Sektornull-rader → forcereferesh cachen (kostar ~2-4 min en gång)
+    # GH-runnern blockeras av Yahoo (query1-finance = 'possibly delisted'-fel);
+    # hoppa över färska (<7 d) försök så vi inte bränner yf-anrop dagligen.
     try:
         cur.execute("SELECT isin FROM universe_registry WHERE sector IS NULL AND status = 'listed'")
         missing = [r[0] for r in cur.fetchall() if r[0]]
     except Exception:
         missing = []
+    fresh_cache = _load_isin_symbol_cache()
     for isin in missing[:150]:
+        entry = fresh_cache.get(isin)
+        if entry and (date.today() - date.fromisoformat(entry.get("ts", "2000-01-01"))).days < 7:
+            continue  # nyligen försökt (sannolikt Yahoo-block från GH) — spara minuter
         lookup_isin_via_yfinance(isin, force_refresh=True)
+        fresh_cache = _load_isin_symbol_cache()
     # 2) Backfill ur (nu friskare) cachen
     cache = _load_isin_symbol_cache()
     filled = 0
