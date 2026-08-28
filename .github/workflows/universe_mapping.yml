@@ -1,5 +1,8 @@
 name: Universe Mapping
 
+permissions:
+  contents: read
+
 # Daglig synk av universumsregistret: FI-emittenter (sanning) + ISIN→ticker-mappning
 # + delisting-detektor (Yahoo-presence). Används av shorts/QMJ/insider-arbetare.
 

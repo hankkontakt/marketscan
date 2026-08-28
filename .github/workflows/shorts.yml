@@ -1,5 +1,8 @@
 name: FI Short Positions
 
+permissions:
+  contents: read
+
 # Daglig snapshot av FI:s blankningsregister (net short positions).
 # Riskfilter + ny-disclosure-varning. 0-rader-fetch → jobb failar (formatändring-larm).
 

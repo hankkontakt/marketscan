@@ -1,5 +1,8 @@
 name: QMJ Scores
 
+permissions:
+  contents: read
+
 # Veckovis QMJ-komposit: kvalitet/momentum/insider/värde/payout med punkt-i-tid-regel.
 # Batch-limit 120 tickers/natt för yfinance-rate-limit-respekt (cache: data/qmj_raw/).
 # Körs fredag natt; vid behov manuellt (workflow_dispatch: limit-tickers).

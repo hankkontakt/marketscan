@@ -1,5 +1,8 @@
 name: News Pipeline
 
+permissions:
+  contents: read
+
 # Nyhetskedjan: officiella Nasdaq-meddelanden (regelbäringar) → bred GNews/DDGS-
 # discovery (mention-surge) → DeepSeek-klassificering av resterande händelser.
 # Allt körs på GH Actions — inget lokalt. Cron 04:40 UTC (efter shorts 03:50).

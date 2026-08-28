@@ -69,15 +69,43 @@ def match_ticker(headline: str, registry: dict) -> Optional[str]:
     return best[1] if best else None
 
 
-def upsert_events(conn, rows: list[dict]) -> dict:
-    """Upsert normaliserade händelser. row: source, source_category, headline,
-    company_raw, ticker, published_at, message_url, mention_surge."""
+def normalize_url(source: str, url: str) -> str:
+    """Stabilisera URL: Google News-links har variabla query-parametrar —
+    använd scheme+host+path endast (artikel-ID ligger i path)."""
+    if not url:
+        return url
+    try:
+        from urllib.parse import urlsplit
+        p = urlsplit(url)
+        return f"{p.scheme}://{p.netloc}{p.path}"
+    except Exception:
+        return url
+
+
+def upsert_events(conn, rows: list[dict], dedup_hours: int = 36) -> dict:
+    """Upsert normaliserade händelser. row = {source, source_category, headline,
+    company_raw, ticker, published_at, message_url, mention_surge}.
+
+    DEDUP: nätdubbel (samma rubrik-ferst 50 tecken + samma ticker inom 36 h)
+    hoppas över — varje källa kan annars fylla på dubletter.
+    """
     if not rows:
         return {"written": 0}
     cur = conn.cursor()
-    written = 0
+    written = skipped = 0
     for r in rows:
         try:
+            if r.get("ticker") and dedup_hours > 0:
+                cur.execute("""
+                    SELECT 1 FROM news_events
+                    WHERE ticker = %s
+                      AND LOWER(LEFT(headline, 50)) = LOWER(LEFT(%s, 50))
+                      AND published_at > NOW() - INTERVAL '%s hours'
+                    LIMIT 1
+                """, (r["ticker"], r["headline"], str(dedup_hours)))
+                if cur.fetchone():
+                    skipped += 1
+                    continue
             cur.execute("""
                 INSERT INTO news_events (
                     event_id, source, source_category, headline, company_raw,
@@ -90,16 +118,17 @@ def upsert_events(conn, rows: list[dict]) -> dict:
                     published_at = EXCLUDED.published_at,
                     mention_surge = COALESCE(EXCLUDED.mention_surge, news_events.mention_surge)
             """, (
-                event_id(r["source"], r["message_url"]),
+                event_id(r["source"], normalize_url(r["source"], r["message_url"])),
                 r["source"], r.get("source_category"), r["headline"],
                 r.get("company_raw"), r.get("ticker"),
-                r.get("published_at"), r["message_url"], r.get("mention_surge"),
+                r.get("published_at"), normalize_url(r["source"], r["message_url"]),
+                r.get("mention_surge"),
             ))
             written += 1
         except Exception as e:
             logger.warning("Upsert failed %s: %s", r.get("message_url")[:60], e)
     conn.commit()
-    return {"written": written}
+    return {"written": written, "skipped_dupes": skipped}
 
 
 def parse_pubdate(s: str) -> Optional[str]:
@@ -115,6 +144,32 @@ def parse_pubdate(s: str) -> Optional[str]:
             return date.fromisoformat(s[:10]).isoformat() + "T00:00:00+00:00"
         except Exception:
             return None
+
+
+# ─── Injektionsskydd (deterministiskt — LLM litar vi INTE på för detta) ────────
+# Bevisat 2026-08-28: deepseek-v4-flash FÖLJER instruktioner i nyhetstexten
+# ("ignore previous instructions" → bearing=positive). Därför: misstänkt innehåll
+# klassificeras ALDRIG av LLM:en — det får neutral + låg förtroende + märkning.
+
+INJECTION_PATTERNS = [
+    r"\bignore\b", r"\bignore all previous\b", r"\bforget everything\b",
+    r"\bignore previous instructions\b", r"\bdisregard\b",
+    r"\bsystem\s*[:>]", r"\bassistant\s*[:>]", r"\buser\s*[:>]",
+    r"</?system>", r"<\s*system", r"<\s*assistant", r"<!--", r"<%",
+    r"\{\{\s*[a-z_]+\s*\}\}", r"\[\[", r"```", r"`json`", r"```json",
+    r"\btestfall\b", r"\btest case\b", r"\bcorrige", r"\bcorrect your answer\b",
+    r"\bbecome a\b", r"\byou are now\b", r"\bno longer need\b",
+    r"\bignore the previous\b", r"\btreat everything above\b",
+    r"\bhallucinat", r"\bberätta\s+(\bnu\b|\batt\b)", r"\bkommandon\b",
+]
+
+
+def is_suspicious(text: str) -> bool:
+    """True = innehållet bär injektionssignaturer → LLM ska INTE se det."""
+    if not text:
+        return False
+    t = (text or "").lower()
+    return any(__import__("re").search(p, t) for p in INJECTION_PATTERNS)
 
 
 def connect():

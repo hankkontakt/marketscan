@@ -251,7 +251,8 @@ def lookup_finnhub_isin(isin: str) -> Optional[str]:
 def lookup_isin_via_yfinance(isin: str, cache: dict | None = None) -> Optional[str]:
     """ISIN → Yahoo-ticker via yf.Lookup. Cachad (hit 60 d / miss 14 d). None vid miss.
 
-    OBS: symbolen ligger i DataFrame-INDEX (inte kolumn) — index-fix verifierad.
+    OBS: symbolen ligger i DataFrame-INDEX; shortName+industryName i kolumnerna
+    (verifierat 2026-08-28: 'BioGaia AB ser. B' + 'Healthcare').
     """
     cache = cache if cache is not None else _load_isin_symbol_cache()
     now = date.today()
@@ -261,7 +262,7 @@ def lookup_isin_via_yfinance(isin: str, cache: dict | None = None) -> Optional[s
         if (now - date.fromisoformat(entry.get("ts", "2000-01-01"))).days <= ttl:
             return entry.get("symbol")
 
-    symbol = None
+    symbol = name = sector = None
     try:
         import yfinance as yf
         df = yf.Lookup(isin).stock
@@ -272,12 +273,42 @@ def lookup_isin_via_yfinance(isin: str, cache: dict | None = None) -> Optional[s
                 if sym and _NORDIC_VENUE_RE.search(sym):
                     symbol = sym
                     break
+            if symbol:
+                row = df.loc[symbol]
+                if "shortName" in df.columns:
+                    name = str(row.get("shortName")) if row.get("shortName") is not None else None
+                if "industryName" in df.columns:
+                    sector = str(row.get("industryName")) if row.get("industryName") is not None else None
     except Exception:
         pass
 
-    cache[isin] = {"symbol": symbol, "ts": now.isoformat()}
+    cache[isin] = {"symbol": symbol, "name": name, "sector": sector,
+                   "ts": now.isoformat()}
     _save_isin_symbol_cache(cache)
     return symbol
+
+
+def _backfill_names_and_sectors(cur) -> int:
+    """Namn/sektor-backfill ur yf.Lookup-cachen (X-rader har ticker som 'namn').
+
+    Högvärdigt för namnmatch i nyhetskedjan + framtida sektorjämförelse.
+    """
+    cache = _load_isin_symbol_cache()
+    filled = 0
+    for isin, entry in cache.items():
+        if not entry.get("name"):
+            continue
+        try:
+            cur.execute("""
+                UPDATE universe_registry
+                SET name = %s, sector = COALESCE(sector, %s)
+                WHERE isin = %s
+                  AND (name IS NULL OR name ~ '^[A-Z0-9.\\-_]+$')
+            """, (str(entry["name"]), entry.get("sector"), isin))
+            filled += cur.rowcount or 0
+        except Exception:
+            continue
+    return filled
 
 
 def _connect():
@@ -473,8 +504,15 @@ def main():
 
     try:
         ups = upsert_registry(candidates)
+        # Namn/sektor-backfill (X-rader → riktiga bolagsnamn från yf.Lookup-cachen)
+        conn = _connect()
+        cur = conn.cursor()
+        backfilled = _backfill_names_and_sectors(cur)
+        conn.commit()
+        conn.close()
         det = run_delisting_detector()
-        result.update({"registry": ups, "delisting": det})
+        result.update({"registry": ups, "backfilled_names": backfilled,
+                       "delisting": det})
         print(json.dumps({"status": "ok", **result}))
     except Exception as e:
         logger.error("DB-steg misslyckades: %s", e)

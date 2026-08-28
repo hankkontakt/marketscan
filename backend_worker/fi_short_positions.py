@@ -219,6 +219,16 @@ def _map_to_ticker(cur, lei: str, isin: str | None, issuer_name: str):
                     return ticker
     except Exception:
         pass
+
+    # Nyckelfri yfinance-ISIN-lookup (samma kedja som universe_mapping)
+    try:
+        if isin:
+            from backend_worker.universe_mapping import lookup_isin_via_yfinance
+            symbol = lookup_isin_via_yfinance(isin)
+            if symbol:
+                return symbol
+    except Exception:
+        pass
     return None
 
 

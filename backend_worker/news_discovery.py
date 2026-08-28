@@ -71,7 +71,11 @@ def fetch_gnews(query: str, after_days: int = 2) -> list[dict]:
 
 
 def compute_surge(conn, ticker: str, now_hits: int) -> float | None:
-    """(antal omtalade 48h) / max(1, per-dag-snitt 30d) → surge-faktor (>1 = förhöjd)."""
+    """(antal omtalande 48h) / (per-dag-snitt 30d) → surge-faktor (>1 = förhöjd).
+
+    COLD-START-Guard: baslinjen måste ha >= 3 observationer, annars None
+    (annars blåser en enda nyhet upp surge till ~30x på en tom historik).
+    """
     if not ticker:
         return None
     try:
@@ -81,7 +85,9 @@ def compute_surge(conn, ticker: str, now_hits: int) -> float | None:
             WHERE ticker = %s AND published_at > NOW() - INTERVAL '%s days'
         """, (ticker, BASELINE_DAYS,))
         total_30d = cur.fetchone()[0]
-        baseline_per_day = max(total_30d, 1) / BASELINE_DAYS
+        if total_30d < 3:
+            return None
+        baseline_per_day = total_30d / BASELINE_DAYS
         return round(now_hits / baseline_per_day, 2)
     except Exception:
         return None

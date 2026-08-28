@@ -442,7 +442,9 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
             })
 
     items = []
-    for t, row in qmj.items():
+    all_tickers = set(qmj.keys()) | set(news_by_ticker.keys()) | set(shorts.keys())
+    for t in all_tickers:
+        row = qmj.get(t, {})
         s = shorts.get(t, {})
         c = clusters.get(t, {})
         nb = news_by_ticker.get(t, {"count": 0, "surge": None, "events": []})
