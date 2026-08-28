@@ -641,7 +641,7 @@ Alla `/(app)/*`-rutter skyddas av `middleware.ts` (Supabase JWT-check → redire
 
 | Provider | Modell | Användning |
 |---|---|---|
-| DeepSeek | `deepseek-chat` | All AI i API:et |
+| DeepSeek | `deepseek/deepseek-v4-flash` (via OpenRouter) | All AI i API:et |
 
 **Kräver:** `DEEPSEEK_API_KEY` i `.env` (projektroten). Är redan satt. Saknas → alla AI-anrop returnerar "(AI ej konfigurerad)".
 
@@ -916,7 +916,7 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 - Nybörjarvyn (default) fick samma tab-struktur som mellanläget (Översikt/Rapporter/AI-analys): prischart (befintlig PriceChart), synliga nyckeltal, bolagsprofil + BeginnerCTA i Översikt; VerdictCard + AI-förklaring ligger nu i AI-fliken — data före AI. `apps/web/app/(app)/aktie/[ticker]/StockView.tsx`
 - Ny `LevelSwitcher` (Enkelt/Mellan/Avancerat) direkt på aktiesidan för alla nivåer, sparar via befintlig `setLevel`. `apps/web/components/stock/LevelSwitcher.tsx`
 - VerdictCard + BeginnerCTA: emoji-betyg och hårdkodade färger ersatta med design-tokens/lucide-ikoner (mörkt-lägessäkert). `components/stock/VerdictCard.tsx`, `components/stock/BeginnerCTA.tsx`
-- AI-kostnadsanalys: `deepseek-chat` = ~$0.0004–0.0008/call, cachad per ticker/dag → ~1–3 USD/månad; följdfrågor ocachade. Design-doc: `docs/plan/2026-08-28-aktiesida-redesign.md`
+- AI-kostnadsanalys: `deepseek/deepseek-v4-flash` via OpenRouter ≈ $0.00003–0.00009/call, cachad per ticker/dag → ~0.5–1.5 USD/månad; följdfrågor ocachade. Design-doc: `docs/plan/2026-08-28-aktiesida-redesign.md`
 
 ### 2026-08-28 — stock-scanner gjord publik (zero-pay fix för Actions-spärr)
 

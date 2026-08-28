@@ -3,7 +3,7 @@ news_classifier.py — DeepSeek-klassificerare för okategoriserade nyhetshände
 
 Klarar bara de händelser som INTE fick regelbaserad bäring (Inside information,
 Company Announcement, Investor News, gnews-träffar). DeepSeek:
-  - base_url https://api.deepseek.com, modell deepseek-v4-flash
+  - base_url https://openrouter.ai/api/v1/chat/completions, modell deepseek/deepseek-v4-flash
   - thinking DISABLED (annars faktureras reasoning-tokens)  → extra_body thinking
   - JSON-mode, temperature 0, från GH-secret DEEPSEEK_API_KEY
 
@@ -28,8 +28,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
-MODEL = "deepseek-v4-flash"
+DEEPSEEK_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL = "deepseek/deepseek-v4-flash"
 
 SYSTEM_PROMPT = (
     "Du klassificerar svensk börsnyhet för ett screeningverktyg. "

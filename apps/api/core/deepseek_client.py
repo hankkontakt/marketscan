@@ -3,6 +3,19 @@ import httpx
 from apps.api.core.config import settings
 
 
+def _extract_content(message: dict) -> str:
+    """ÖppnaRouter-proxyvariation: vissa uppströms (t.ex. SiliconFlow) ignorerar
+    thinking:disabled och lägger svaret i reasoning-fälten med content=null."""
+    content = message.get("content")
+    if content:
+        return content
+    reasoning = message.get("reasoning")
+    if reasoning:
+        return reasoning
+    details = message.get("reasoning_details") or []
+    return "\n".join(d.get("text", "") for d in details if isinstance(d, dict))
+
+
 async def call_deepseek(
     system_prompt: str,
     user_message: str,
@@ -23,6 +36,7 @@ async def call_deepseek(
                 "model": settings.DEEPSEEK_MODEL,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
+                "thinking": {"type": "disabled"},
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},
@@ -31,7 +45,7 @@ async def call_deepseek(
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        return _extract_content(data["choices"][0]["message"])
 
 
 async def call_deepseek_chat(
@@ -62,6 +76,7 @@ async def call_deepseek_chat(
                 "model": settings.DEEPSEEK_MODEL,
                 "max_tokens": max_tokens,
                 "temperature": 0.3,
+                "thinking": {"type": "disabled"},
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     *augmented,
@@ -70,4 +85,4 @@ async def call_deepseek_chat(
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        return _extract_content(data["choices"][0]["message"])

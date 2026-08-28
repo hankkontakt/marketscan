@@ -33,8 +33,9 @@ GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_EMBED_MODEL = "models/embedding-001"
 GEMINI_FLASH_MODEL = "models/gemini-1.5-flash-latest"
 
-# DeepSeek endpoint
-DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+# DeepSeek endpoint (via OpenRouter; env-var-namn behålls för kompatibilitet)
+DEEPSEEK_BASE = os.environ.get("DEEPSEEK_BASE", "https://openrouter.ai/api/v1")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek/deepseek-v4-flash")
 
 # Cache-nyckel-prefix
 CACHE_PREFIX = "llm:"
@@ -159,8 +160,21 @@ def _call_gemini_complete(prompt: str, json_schema: Optional[dict] = None) -> Op
         return None
 
 
+def _extract_content(message: dict) -> str:
+    """OpenRouter-proxyvariation: vissa uppströms (t.ex. SiliconFlow) ignorerar
+    thinking:disabled och lägger svaret i reasoning-fälten med content=null."""
+    content = message.get("content")
+    if content:
+        return content
+    reasoning = message.get("reasoning")
+    if reasoning:
+        return reasoning
+    details = message.get("reasoning_details") or []
+    return "\n".join(d.get("text", "") for d in details if isinstance(d, dict))
+
+
 def _call_deepseek_complete(prompt: str, json_schema: Optional[dict] = None) -> Optional[dict]:
-    """Anropa DeepSeek v4-flash (betald)."""
+    """Anropa DeepSeek v4-flash via OpenRouter (betald)."""
     if not DEEPSEEK_API_KEY:
         logger.debug("DEEPSEEK_API_KEY not set")
         return None
@@ -176,10 +190,11 @@ def _call_deepseek_complete(prompt: str, json_schema: Optional[dict] = None) -> 
     ]
 
     body = {
-        "model": "deepseek-chat",
+        "model": DEEPSEEK_MODEL,
         "messages": messages,
         "temperature": 0.1,
         "max_tokens": 2048,
+        "thinking": {"type": "disabled"},
     }
 
     if json_schema:
@@ -200,7 +215,7 @@ def _call_deepseek_complete(prompt: str, json_schema: Optional[dict] = None) -> 
             return None
 
         data = resp.json()
-        text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        text = _extract_content(data.get("choices", [{}])[0].get("message", {}))
 
         _increment_budget("deepseek")
 

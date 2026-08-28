@@ -18,9 +18,10 @@ class Settings(BaseSettings):
     R2_BUCKET: str = "marketscan-data"
 
     # External APIs
+    # DeepSeek V4 Flash serveras via OpenRouter (env-var-namn behålls för kompatibilitet)
     DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"
-    DEEPSEEK_MODEL: str = "deepseek-chat"
+    DEEPSEEK_API_URL: str = "https://openrouter.ai/api/v1/chat/completions"
+    DEEPSEEK_MODEL: str = "deepseek/deepseek-v4-flash"
     FINNHUB_API_KEY: str = ""
 
     # App
