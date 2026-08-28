@@ -263,7 +263,8 @@ python scripts/smoke_test.py
 ## API-kontrakt (fastställt före våg 2 — worker skriver mot detta)
 
 - `RadarItemOut` ← lägg till: `sector: str|None`, `sector_value_z: float|None`,
-  `value_mode: str|None`, `earnings_sue: float|None`, `earnings_quarter: str|None`.
+  `value_mode: str|None`, `earnings_sue: float|None`, `earnings_announced: str|None`
+  (ISO-datum = announced_on; PK i earnings_surprises är (ticker, announced_on)).
 - `RadarResponse` ← lägg till: `signal_ics: list[FactorMetricOut]` (senaste per
   faktor, ≤5), `qmj_regime: RegimeOut|None`.
 - Ny endpoint: `GET /api/market-intel/qmj-regime` → `RegimeOut` =
@@ -296,3 +297,24 @@ python scripts/smoke_test.py
 - W3 (produktion): trigger qmj_regime.yml + earnings_surprise.yml +
   fi_insider.yml (reconcile-steg) → curl /market-intel/radar + /qmj-regime;
   ui-analys 1 spawn (radar-sidan).
+
+## ROND 4 — SLUTSTATUS (2026-08-28, efter produktionstest)
+
+| Punkt | Status | Produktionsbevis |
+|---|---|---|
+| F1 QMJ-regim | ✅ KLAR | qmj_regime.yml run ok: `premium_12m=0.003802, pct=0.3352, n_obs=361, regime=normal`; API 200 med hela kontraktet (curl-live) |
+| F2 Insider-integritet | ✅ KLAR | FI CSV-export fixad (`path: csv`, datumfilter-PING-verifierad); map_rate 95 % (291/306 nyckelbara via SEED→company_profiles→universe_registry→cache); aggregate/Revised/History-semantik; reconcile run ok: `FI 195 / Finnhub 44 / both 0 / mismatch 0 / coverage 32/526 / suspicious 0` (ärligt: Finnhub-täckning 6 %) |
+| F3 IC i radarn | ✅ KLAR | signal_ics-fält live (just nu `[]` = ärligt: factor_metrics tom efter Supabase-återskapandet; fylls av signal_analytics söndag) |
+| F4 Sektorrelativt värde | ⚠️ KODKLAR, DATA-LÅST | `sector_value_z`/`value_mode` i qmj-scan + API + UI; MEN: sektor-backfill kräver yf.Lookup — **Yahoo blockerar GH-runnern** (query1-finance 'possibly delisted'-fel, bevisat "backfilled_names: 1"). Fylls via lokal körning / IP Yahoo godkänner; force-loop hoppar färska missar (7 d). Ärligt: radarn visar inget sektorvärde förrän data finns |
+| F5 SHA-pinning | ✅ KLAR | 28 workflows 100 % pin: checkout 11bd7190 (v4.2.2), setup-python 8d9ed9ac (v5.5.0), setup-node 49933ea5 (v4.4.0), gitleaks e0c47f4f (v3.0.0; v2-dör 2026-09-16); permissions read-only ×28; dependabot github-actions LEVER (PR checkout 4.2.2→7.0.1 redan öppnad) |
+| F6 TS-SUE | ⚠️ KODKLAR, DELVIS DATA-LÅST | earnings_surprise.py + PIT-snapshot + tester 13/13; 2 första GH-runs cancände på 30-min-timeout → fixad (60 min + 20 s härd tidsgräns/daemon-tråd, empiriskt verifierad); GH-throttling från Yahoo gör steget långsamt — lokal 3-ticker-dry-run 9,77 s ✓. Fylls successivt veckovis / lokalt |
+
+**Rondens buggfynd (alla utöver planen):**
+1. `gh run rerun` kör GAMAL SHA → dispatch som normalt (läxa för all framtid).
+2. `insider_cluster.py` date-vs-str TypeError (rade 125/275) — fixad.
+3. Constraint-krock: insider_trades.yml + insider_fetcher återskapade `insider_trades_dedup_key` (uppväckte tyst dataförlust) — nu `_ensure_reconcile_key` idempotent ×3 ställen.
+4. SUE-job-timeout 30 min → 60 + 20 s-hårdgräns.
+5. dependabot-PR-CI röd på FÖREXISTERANDE skuld (ai_cache BLE001, web-lint, npm test) — ej orsaken av rondens ändringar.
+6. ui-analys: radarsidan auth-skyddad (redirect /login) — visuell QA kräver användarens konto; data-lagret verifierat 200.
+
+**Kvarstående / medvetna beslut:** sektor + SUE-data beroende av Yahoo-IP-tolerans (GH-runnern blockerad): koden är PIT-riktig och testad; data fylls när körningar träffar en IP som godkänns (lokal körning ger kvitto; GH-backfill förbättras om Yahoo regleras).
