@@ -918,6 +918,13 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 - VerdictCard + BeginnerCTA: emoji-betyg och hårdkodade färger ersatta med design-tokens/lucide-ikoner (mörkt-lägessäkert). `components/stock/VerdictCard.tsx`, `components/stock/BeginnerCTA.tsx`
 - AI-kostnadsanalys: `deepseek-chat` = ~$0.0004–0.0008/call, cachad per ticker/dag → ~1–3 USD/månad; följdfrågor ocachade. Design-doc: `docs/plan/2026-08-28-aktiesida-redesign.md`
 
+### 2026-08-28 — stock-scanner gjord publik (zero-pay fix för Actions-spärr)
+
+- ORSAK: `hankkontakt/stock-scanner` (privat) översteg 2 000 gratis Actions-minuter/mån → alla jobb spärrade ("recent account payments have failed...").
+- FIX: repot gjort publikt (publika repos = obegränsade Linux-minuter). Innan publicering: personlig data (holdings.csv, paper_trades, konton, e-postloggar, alerts/state, ai_cache, metrics, health mm.) + `reports/portfolio_report_*.csv` raderade ur git OCH hela historiken (git filter-repo, 1264 commits omskrivna), alla tillagda i `.gitignore` så framtida `git add -A` i workflows aldrig återcommittar dem; email-adresser ersatta med platshållare i streamlit_app.py/secrets.toml.example; 14 stale branches (dependabot/claude/master/fix-fillcolor) raderade så gammal historik inte är nåbar.
+- VERIFIKAT: keep_alive success (6s) + daily-scan in_progress samma dag; leak-check (`commits?path=data/holdings.csv`) = 0 träffar.
+- NOT: marketscan-pipelinen klonar nu ett publik repo (GH_CHECKOUT_TOKEN fungerar fortfarande men behövs ej).
+
 ### 2026-08-28 — "Endast 200 aktier"-roten + Supabase-omstart
 
 - `/api/scan` 500 (ResponseValidationError) vid limit>250: BITF/SQ hade `mews_flag=NULL` (COPY skrev explicit NULL som kringgick DEFAULT false) och `ScanRow` krävde strängt bool → tolererar nu NULL (`bool | None = False`); `_prepare_df` coerces bool-kolumner till False. DB-reparation: NULL→false (2× mews_flag, 418× ml_flag_uncertain).
