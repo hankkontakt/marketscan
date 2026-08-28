@@ -197,42 +197,6 @@ def get_triggered_alerts(
 
 # ─── Score History ────────────────────────────────────────────────────────────
 
-@router.get("/api/score-history/{ticker}")
-def get_score_history(
-    ticker: str,
-    days: int = Query(90, ge=7, le=730, description="Antal dagar bakåt"),
-    fields: str = Query(
-        "scan_date,score_total,score_value,score_momentum,score_quality,"
-        "score_growth,score_risk,score_dividend,entry_signal,trend_signal,price",
-        description="Kommaseparerade kolumner",
-    ),
-    sb=Depends(get_user_supabase),
-):
-    """
-    Score and signal history for a specific ticker.
-    Public — no auth required (score_history has public read RLS).
-    """
-    ticker_upper = ticker.upper()
-    # Validate requested fields
-    allowed = {
-        "scan_date", "score_total", "score_value", "score_momentum",
-        "score_quality", "score_growth", "score_risk", "score_dividend",
-        "entry_signal", "trend_signal", "piotroski_f", "price", "vol_20d",
-    }
-    requested = {f.strip() for f in fields.split(",") if f.strip()}
-    safe_fields = ",".join(requested & allowed) or "scan_date,score_total,entry_signal"
-
-    res = (
-        sb.table("score_history")
-        .select(safe_fields)
-        .eq("ticker", ticker_upper)
-        .gte("scan_date", f"(NOW() - INTERVAL '{days} days')::date")
-        .order("scan_date", desc=False)
-        .execute()
-    )
-    return res.data or []
-
-
 @router.get("/api/score-history/movers")
 def get_score_movers(
     days: int = Query(7, ge=1, le=30),
@@ -244,8 +208,11 @@ def get_score_movers(
     """
     Tickers with largest score changes over the past N days.
     Public endpoint — no auth required.
+
+    NOTE: route ORDER matters — this endpoint MUST be declared before
+    /api/score-history/{ticker}, otherwise Starlette matches "movers" as
+    {ticker} and this handler is never reached (URL shadowing).
     """
-    # Use raw SQL via Supabase RPC for the CTE query, or approximate with two queries
     # Current scores from scan_results
     curr_res = (
         sb.table("scan_results")
@@ -257,7 +224,7 @@ def get_score_movers(
     # Previous scores from score_history
     # Compute cutoff date in Python — PostgREST treats the filter value as a
     # literal string, so SQL expressions like "(NOW() - INTERVAL '7 days')::date"
-    # would never match anything.
+    # would never match anything (and crash with 22007 when cast to date).
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     prev_res = (
         sb.table("score_history")
@@ -298,6 +265,46 @@ def get_score_movers(
     return movers[:limit]
 
 
+@router.get("/api/score-history/{ticker}")
+def get_score_history(
+    ticker: str,
+    days: int = Query(90, ge=7, le=730, description="Antal dagar bakåt"),
+    fields: str = Query(
+        "scan_date,score_total,score_value,score_momentum,score_quality,"
+        "score_growth,score_risk,score_dividend,entry_signal,trend_signal,price",
+        description="Kommaseparerade kolumner",
+    ),
+    sb=Depends(get_user_supabase),
+):
+    """
+    Score and signal history for a specific ticker.
+    Public — no auth required (score_history has public read RLS).
+    """
+    ticker_upper = ticker.upper()
+    # Validate requested fields
+    allowed = {
+        "scan_date", "score_total", "score_value", "score_momentum",
+        "score_quality", "score_growth", "score_risk", "score_dividend",
+        "entry_signal", "trend_signal", "piotroski_f", "price", "vol_20d",
+    }
+    requested = {f.strip() for f in fields.split(",") if f.strip()}
+    safe_fields = ",".join(requested & allowed) or "scan_date,score_total,entry_signal"
+
+    # Compute cutoff date in Python — PostgREST treats the filter value as a
+    # literal string, so SQL expressions like "(NOW() - INTERVAL '7 days')::date"
+    # would never match anything (and crash with 22007 when cast to date).
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    res = (
+        sb.table("score_history")
+        .select(safe_fields)
+        .eq("ticker", ticker_upper)
+        .gte("scan_date", cutoff)
+        .order("scan_date", desc=False)
+        .execute()
+    )
+    return res.data or []
+
+
 # ─── Signal Transitions ───────────────────────────────────────────────────────
 
 @router.get("/api/signal-transitions/{ticker}")
@@ -307,11 +314,15 @@ def get_signal_transitions(
     sb=Depends(get_user_supabase),
 ):
     """Signal transition history for a specific ticker. Public endpoint."""
+    # Compute cutoff date in Python — PostgREST treats the filter value as a
+    # literal string, so SQL expressions like "(NOW() - INTERVAL '7 days')::date"
+    # would never match anything (and crash with 22007 when cast to date).
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
     res = (
         sb.table("signal_transitions")
         .select("transition_date, field, from_value, to_value, score_total_at, price_at")
         .eq("ticker", ticker.upper())
-        .gte("transition_date", f"(NOW() - INTERVAL '{days} days')::date")
+        .gte("transition_date", cutoff)
         .order("transition_date", desc=True)
         .execute()
     )
