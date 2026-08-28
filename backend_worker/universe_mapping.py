@@ -336,6 +336,8 @@ def run_delisting_detector() -> dict:
             since = updated_at or (date.today() - timedelta(days=VERIFY_TO_DELISTED_DAYS + 1))
             if isinstance(since, str):
                 since = date.fromisoformat(since[:10])
+            elif hasattr(since, "date"):          # TIMESTAMPTZ → datetime
+                since = since.date()
             if (date.today() - since).days >= VERIFY_TO_DELISTED_DAYS:
                 cur.execute(
                     "UPDATE universe_registry SET status='delisted', delisted_date=%s WHERE isin=%s",
