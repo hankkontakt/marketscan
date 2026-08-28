@@ -1,0 +1,39 @@
+name: QMJ Factor Regime
+
+permissions:
+  contents: read
+
+# Månadsvis QMJ-faktorregim (AQR Quality Minus Junk, nordisk komposit SWE/DNK/FIN/NOR).
+# R12-premie → OOS-expanderande percentil → Stark/Normal/Svag. Historisk kontext,
+# ej prognos. AQR uppdaterar med ~2 månaders lag → körs den 8:e varje månad.
+
+on:
+  schedule:
+    - cron: "10 4 8 * *"    # 8:e varje månad 04:10 UTC
+  workflow_dispatch:
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "."
+
+jobs:
+  qmj-regime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend_worker/requirements.txt
+
+      - name: Compute QMJ factor regime
+        run: python -m backend_worker.factor_regime
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

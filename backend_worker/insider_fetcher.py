@@ -4,7 +4,8 @@ insider_fetcher.py — Fetch insider trading data via Finnhub and store in insid
 Finnhub /stock/insider-transactions endpoint returns insider trades for a given
 symbol. We iterate over all tickers in scan_results and upsert new trades.
 
-Deduplication: trades are matched on (ticker, name, trade_date, type, shares).
+Deduplication: upsert key is the unique index insider_trades_reconcile_key
+(migration 049) on (COALESCE(isin, ticker), name, trade_date, type).
 Only new rows are inserted — existing ones are left unchanged.
 
 Usage:
@@ -224,34 +225,29 @@ def fetch_and_store(
             pass
 
 
-def _add_unique_constraint(dsn: str) -> None:
+def _ensure_reconcile_key(dsn: str) -> None:
     """
-    Add a unique constraint on (ticker, name, trade_date, type) so ON CONFLICT DO NOTHING
-    works correctly. Idempotent — does nothing if the constraint already exists.
+    Ensure the unique index insider_trades_reconcile_key exists (migration 049):
+    ON insider_trades (COALESCE(isin, ticker), name, trade_date, type).
+
+    Idempotent (CREATE UNIQUE INDEX IF NOT EXISTS) — this is the upsert key for
+    ON CONFLICT DO NOTHING. The old insider_trades_dedup_key constraint (027)
+    was dropped by migration 049 and must NOT be recreated: it re-triggers the
+    data-loss bug (duplicates/revisions collide on the old key).
     """
     try:
         import psycopg2
         conn = psycopg2.connect(dsn)
         cur = conn.cursor()
         cur.execute("""
-            DO $$
-            BEGIN
-              IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'insider_trades_dedup_key'
-              ) THEN
-                ALTER TABLE insider_trades
-                  ADD CONSTRAINT insider_trades_dedup_key
-                  UNIQUE (ticker, name, trade_date, type);
-              END IF;
-            END
-            $$;
+            CREATE UNIQUE INDEX IF NOT EXISTS insider_trades_reconcile_key
+                ON insider_trades (COALESCE(isin, ticker), name, trade_date, type);
         """)
         conn.commit()
         conn.close()
-        logger.info("Unique constraint on insider_trades ensured")
+        logger.info("Unique index insider_trades_reconcile_key ensured")
     except Exception as exc:
-        logger.warning("Could not add unique constraint (may already exist): %s", exc)
+        logger.warning("Could not ensure unique index (may already exist): %s", exc)
 
 
 if __name__ == "__main__":
@@ -271,8 +267,8 @@ if __name__ == "__main__":
     if not dsn:
         raise SystemExit("DATABASE_URL environment variable not set")
 
-    # Ensure dedup constraint exists
-    _add_unique_constraint(dsn)
+    # Ensure reconcile key (unique index, migration 049) exists
+    _ensure_reconcile_key(dsn)
 
     ticker_list = [args.ticker.upper()] if args.ticker else None
     n = fetch_and_store(dsn, ticker_list, lookback_days=args.days, delay=args.delay)

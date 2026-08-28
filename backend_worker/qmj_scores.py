@@ -27,7 +27,7 @@ import logging
 import math
 import os
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -129,6 +129,33 @@ def rank_pct(values: dict) -> dict:
         return round(100.0 * (lo + 0.5 * eq) / n, 2)
 
     return {k: pct(v) for k, v in items.items()}
+
+
+def compute_sector_value(value_rows: list, min_n: int = 15) -> dict:
+    """Sektorrelativ värdepercentil per ticker (ren, testbar; ingen DB).
+
+    Input: lista av dict {ticker, sector, value_metric} — value_metric är samma
+    värdekomposit som value_z (mean av ev_ebitda/fcf_yield-percentiler).
+    Output: {ticker: percentil 0-100} — percentil av value_metric INOM sektorn
+    (rank_pct, högt=bättre). Kräver sektor känd OCH ≥ min_n tickers med giltig
+    value_metric i samma sektor; annars None. Ticker utan giltig value_metric
+    (None/NaN) → None och räknas inte i grupp-n.
+    """
+    out: dict = {r.get("ticker"): None for r in value_rows if r.get("ticker") is not None}
+    by_sector: dict[str, dict] = {}
+    for r in value_rows:
+        t = r.get("ticker")
+        sector = r.get("sector")
+        vm = r.get("value_metric")
+        if t is None or not sector or vm is None or not math.isfinite(float(vm)):
+            continue
+        by_sector.setdefault(sector, {})[t] = float(vm)
+    for sector, vals in by_sector.items():
+        if len(vals) < min_n:
+            continue
+        for t, pct in rank_pct(vals).items():
+            out[t] = pct
+    return out
 
 
 def composite(q=None, m=None, v=None, p=None, i=None) -> float:
@@ -470,6 +497,23 @@ def main():
 
     logger.info("Klart: %d/%d tickers med data (%d fel)", len(metrics), len(tickers), errors)
 
+    # Sektorkarta (universe_registry) för sektorrelativ värdepercentil.
+    # Många rader saknar sektor idag (backfill pågår) → fallback global, ok.
+    sector_map: dict = {}
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT isin, ticker, sector FROM universe_registry")
+            for _isin, ticker, sector in cur.fetchall():
+                if ticker:
+                    sector_map[ticker] = sector
+        except Exception as e:
+            logger.warning("Sektorläsning misslyckades: %s (kör global)", e)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
     if args.dry_run:
         preview = sorted(metrics.items(), key=lambda kv: (kv[1].get("data_quality", "") != "ok",))[:3]
         print(json.dumps({t: {k: v for k, v in m.items() if k != "ticker"} for t, m in dict(preview).items()},
@@ -550,6 +594,7 @@ def main():
     today = date.today()
     rows = []
     now = datetime.now()
+    value_rows = []
     for t, m in metrics.items():
         fy_end = None
         if m.get("fy_end"):
@@ -574,6 +619,7 @@ def main():
         mz = z_final[t].get("momentum_vol_scaled")
         v = np.mean([z_final[t].get(k) for k in ("ev_ebitda", "fcf_yield") if z_final[t].get(k) is not None]) if any(
             z_final[t].get(k) is not None for k in ("ev_ebitda", "fcf_yield")) else None
+        value_rows.append({"ticker": t, "sector": sector_map.get(t), "value_metric": v})
         p = np.mean([z_final[t].get(k) for k in ("issuance",) if z_final[t].get(k) is not None]) if z_final[t].get("issuance") is not None else None
         iz = insider_z_raw.get(t, 50.0)
 
@@ -612,6 +658,13 @@ def main():
             }, default=str),
         })
 
+    # Sektorrelativ värdepercentil (visningsfält; kompositen behåller global value_z)
+    sector_value = compute_sector_value(value_rows)
+    for r in rows:
+        sv = sector_value.get(r["ticker"])
+        r["sector_value_z"] = round(float(sv), 2) if sv is not None else None
+        r["value_mode"] = "sector" if sv is not None else "global"
+
     cur = conn.cursor()
     written = 0
     for r in rows:
@@ -621,8 +674,9 @@ def main():
                 INSERT INTO qmj_scores (
                     ticker, scan_date, as_of_date, rebalance_flag, stratum, rank_mode,
                     quality_z, momentum_z, value_z, payout_z, insider_z,
-                    alpha_rank, exclusion_reason, warning_flags, data_quality, metrics_json
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
+                    alpha_rank, exclusion_reason, warning_flags, data_quality, metrics_json,
+                    sector_value_z, value_mode
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s)
                 ON CONFLICT (ticker, scan_date) DO UPDATE SET
                     as_of_date = EXCLUDED.as_of_date,
                     rebalance_flag = EXCLUDED.rebalance_flag,
@@ -637,12 +691,14 @@ def main():
                     exclusion_reason = EXCLUDED.exclusion_reason,
                     warning_flags = EXCLUDED.warning_flags,
                     data_quality = EXCLUDED.data_quality,
-                    metrics_json = EXCLUDED.metrics_json
+                    metrics_json = EXCLUDED.metrics_json,
+                    sector_value_z = EXCLUDED.sector_value_z,
+                    value_mode = EXCLUDED.value_mode
             """, (r["ticker"], r["scan_date"], r["as_of_date"], r["rebalance_flag"],
                   r.get("stratum"), r.get("rank_mode"),
                   r["quality_z"], r["momentum_z"], r["value_z"], r["payout_z"], r["insider_z"],
                   r["alpha_rank"], r["exclusion_reason"], r["warning_flags"], r["data_quality"],
-                  r["metrics_json"]))
+                  r["metrics_json"], r["sector_value_z"], r["value_mode"]))
             cur.execute("RELEASE SAVEPOINT qmj_row")
             written += 1
         except Exception as e:
