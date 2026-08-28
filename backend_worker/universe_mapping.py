@@ -280,6 +280,11 @@ def lookup_isin_via_yfinance(isin: str, cache: dict | None = None) -> Optional[s
     return symbol
 
 
+def _connect():
+    import psycopg2
+    return psycopg2.connect(os.environ["DATABASE_URL"])
+
+
 def _map_isin_to_ticker(cur, isin: str) -> Optional[str]:
     if not isin:
         return None
