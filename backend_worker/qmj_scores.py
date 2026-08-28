@@ -679,7 +679,7 @@ def main():
             "momentum_z": round(float(mz), 2) if mz is not None else None,
             "value_z": round(float(v), 2) if v is not None else None,
             "payout_z": round(float(p), 2) if p is not None else None,
-            "insider_z": round(float(iz), 2),
+            "insider_z": round(float(iz), 2) if iz is not None else None,
             "alpha_rank": rank,
             "exclusion_reason": ex,
             "warning_flags": json.dumps(flags),

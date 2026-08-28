@@ -74,13 +74,15 @@ def count_hits(conn, ticker: str) -> tuple[int, int]:
     """(total_30d, now_hits) — träffar i 30-dagars-baslinjen resp. senaste
     SURGE_WINDOW_HOURS (en query, FILTER-aggregat)."""
     cur = conn.cursor()
+    # PSYCOPG2-FÄLLA: 'INTERVAL %s' med quote-jag inuti (''30' days') ger
+    # syntax error på psycopg2 2.9.x — skicka hela intervallet som parameter UTAN innertäcktecken.
     cur.execute("""
         SELECT
-            COUNT(*) FILTER (WHERE published_at > NOW() - INTERVAL '%s days'),
-            COUNT(*) FILTER (WHERE published_at > NOW() - INTERVAL '%s hours')
+            COUNT(*) FILTER (WHERE published_at > NOW() - INTERVAL %s),
+            COUNT(*) FILTER (WHERE published_at > NOW() - INTERVAL %s)
         FROM news_events
         WHERE ticker = %s
-    """, (str(BASELINE_DAYS), str(SURGE_WINDOW_HOURS), ticker))
+    """, (f"{BASELINE_DAYS} days", f"{SURGE_WINDOW_HOURS} hours", ticker))
     row = cur.fetchone()
     return (row[0] or 0, row[1] or 0)
 

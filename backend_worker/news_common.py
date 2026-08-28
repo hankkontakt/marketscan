@@ -119,9 +119,9 @@ def upsert_events(conn, rows: list[dict], dedup_hours: int = 36) -> dict:
                     SELECT 1 FROM news_events
                     WHERE ticker = %s
                       AND LOWER(LEFT(headline, 50)) = LOWER(LEFT(%s, 50))
-                      AND published_at > NOW() - INTERVAL '%s hours'
+                      AND published_at > NOW() - INTERVAL %s
                     LIMIT 1
-                """, (r["ticker"], r["headline"], str(dedup_hours)))
+                """, (r["ticker"], r["headline"], f"{dedup_hours} hours"))
                 if cur.fetchone():
                     skipped += 1
                     continue
