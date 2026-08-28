@@ -413,12 +413,17 @@ def main():
         cur.execute("""
             SELECT ticker FROM universe_registry
             WHERE ticker IS NOT NULL AND status IN ('listed', 'verify')
+              AND (ticker LIKE '%.ST' OR ticker LIKE '%.OL' OR ticker LIKE '%.HE' OR ticker LIKE '%.CO')
             ORDER BY ticker LIMIT %s
         """, (args.limit_tickers,))
         tickers = [r[0] for r in cur.fetchall()]
         if not tickers:
-            cur.execute("SELECT DISTINCT ticker FROM scan_results WHERE ticker IS NOT NULL LIMIT %s",
-                        (args.limit_tickers,))
+            cur.execute("""
+                SELECT DISTINCT ticker FROM scan_results
+                WHERE ticker IS NOT NULL
+                  AND (ticker LIKE '%.ST' OR ticker LIKE '%.OL' OR ticker LIKE '%.HE' OR ticker LIKE '%.CO')
+                LIMIT %s
+            """, (args.limit_tickers,))
             tickers = [r[0] for r in cur.fetchall()]
 
     metrics: dict[str, dict] = {}
@@ -549,12 +554,13 @@ def main():
     written = 0
     for r in rows:
         try:
+            cur.execute("SAVEPOINT qmj_row")
             cur.execute("""
                 INSERT INTO qmj_scores (
                     ticker, scan_date, as_of_date, rebalance_flag,
                     quality_z, momentum_z, value_z, payout_z, insider_z,
                     alpha_rank, exclusion_reason, warning_flags, data_quality, metrics_json
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
                 ON CONFLICT (ticker, scan_date) DO UPDATE SET
                     as_of_date = EXCLUDED.as_of_date,
                     rebalance_flag = EXCLUDED.rebalance_flag,
@@ -572,8 +578,13 @@ def main():
                   r["quality_z"], r["momentum_z"], r["value_z"], r["payout_z"], r["insider_z"],
                   r["alpha_rank"], r["exclusion_reason"], r["warning_flags"], r["data_quality"],
                   r["metrics_json"]))
+            cur.execute("RELEASE SAVEPOINT qmj_row")
             written += 1
         except Exception as e:
+            try:
+                cur.execute("ROLLBACK TO SAVEPOINT qmj_row")
+            except Exception:
+                pass
             logger.warning("Upsert failed %s: %s", r["ticker"], e)
     conn.commit()
     conn.close()

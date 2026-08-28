@@ -221,15 +221,19 @@ def _map_isin_to_ticker(cur, isin: str) -> Optional[str]:
         return None
 
 
+# Nordic venue-suffixer — universumet är nordiska småbolag, inte finviz/US-skrapet
+_NORDIC_SUFFIX_SQL = "(ticker LIKE '%.ST' OR ticker LIKE '%.OL' OR ticker LIKE '%.HE' OR ticker LIKE '%.CO')"
+
+
 def seed_from_existing(cur) -> list[dict]:
-    """Seed-registerrader ur befintliga källor (company_profiles.isin + alla kända tickers).
+    """Seed-registerrader ur befintliga källor — ENBART nordiska venue-suffix.
 
     Tickers utan ISIN får syntetisk nyckel 'TXT:<ticker>' (ingen riktig ISIN
     existerar för den raden; dokumenteras i source='ticker_only').
     """
     rows: list[dict] = []
     try:
-        cur.execute("SELECT ticker, isin FROM company_profiles WHERE isin IS NOT NULL AND isin <> ''")
+        cur.execute("SELECT ticker, isin FROM company_profiles WHERE isin IS NOT NULL AND isin <> '' AND " + _NORDIC_SUFFIX_SQL)
         for ticker, isin in cur.fetchall():
             if isin and not isin.upper().startswith(("TXT:", "X-")):
                 rows.append({"isin": isin.upper(), "ticker": ticker,
@@ -238,7 +242,7 @@ def seed_from_existing(cur) -> list[dict]:
         pass
 
     try:
-        cur.execute("SELECT DISTINCT ticker FROM scan_results WHERE ticker IS NOT NULL")
+        cur.execute("SELECT DISTINCT ticker FROM scan_results WHERE ticker IS NOT NULL AND " + _NORDIC_SUFFIX_SQL)
         for (ticker,) in cur.fetchall():
             if ticker and not ticker.startswith("X-"):
                 rows.append({"isin": f"X-{ticker.upper()}", "ticker": ticker,
@@ -247,7 +251,7 @@ def seed_from_existing(cur) -> list[dict]:
         pass
 
     try:
-        cur.execute("SELECT DISTINCT ticker FROM smallcap_results WHERE ticker IS NOT NULL")
+        cur.execute("SELECT DISTINCT ticker FROM smallcap_results WHERE ticker IS NOT NULL AND " + _NORDIC_SUFFIX_SQL)
         for (ticker,) in cur.fetchall():
             if ticker and not ticker.startswith("X-"):
                 rows.append({"isin": f"X-{ticker.upper()}", "ticker": ticker,
