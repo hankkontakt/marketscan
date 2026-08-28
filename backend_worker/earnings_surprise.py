@@ -55,6 +55,9 @@ FETCH_SLEEP_MIN = 1.2          # sekunder — yfinance rate-limitar
 FETCH_SLEEP_MAX = 2.0
 FETCH_RETRIES = 1              # 1 retry utöver första försöket
 RETRY_SLEEP = 2.0
+FETCH_TIMEOUT_SECONDS = 20     # hård gräns per yfinance-anrop — ett hängande
+                               # Yahoo-anrop får ALDRIG blockera steget
+                               # (worst case 156 × 20 s ≈ 52 min < job-timeout)
 
 SUE_MAX_PRIOR = 8              # upp till 8 tidigare kvartal i std-fönstret
 SUE_MIN_PRIOR = 4              # kräv minst 4 giltiga tidigare kvartal
@@ -184,16 +187,65 @@ def process_earnings_frame(df: pd.DataFrame, ticker: str, now: datetime) -> dict
 
 # ─── Hämtning ─────────────────────────────────────────────────────────────────
 
-def fetch_earnings_dates(ticker: str) -> pd.DataFrame:
-    """Hämta earnings_dates med 1 retry. Rate-limiting sköts av anroparen."""
+def _fetch_earnings_dates_once(ticker: str) -> pd.DataFrame:
+    """Ett yfinance-anrop (körs i daemon-tråd av fetch_earnings_dates)."""
     import yfinance as yf
+    df = yf.Ticker(ticker).earnings_dates
+    if df is None:
+        raise ValueError("earnings_dates returnerade None")
+    return df
+
+
+def _run_with_hard_timeout(fn, timeout: float):
+    """Kör `fn` i en daemon-tråd med hård tidsgräns.
+
+    Daemon-tråd (inte ThreadPoolExecutor): CPython joinar icke-daemon-trådar
+    vid interpreter shutdown, så en hängande ThreadPoolExecutor-tråd skulle
+    blockera process-exit i slutet av steget (verifierat lokalt). En daemon-
+    tråd dör med processen — hänget kan aldrig förlänga steget.
+    """
+    import queue
+    import threading
+
+    result_q: queue.Queue = queue.Queue(maxsize=1)
+
+    def _worker():
+        try:
+            result_q.put(("ok", fn()))
+        except BaseException as e:  # noqa: BLE001 — fånga ALLT i tråden
+            result_q.put(("err", e))
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    try:
+        status, payload = result_q.get(timeout=timeout)
+    except queue.Empty:
+        raise TimeoutError(f"timeout efter {timeout:g}s") from None
+    if status == "err":
+        raise payload
+    return payload
+
+
+def fetch_earnings_dates(ticker: str) -> pd.DataFrame:
+    """Hämta earnings_dates med 1 retry. Rate-limiting sköts av anroparen.
+
+    Hård tidsgräns per anrop (FETCH_TIMEOUT_SECONDS): ett hängande Yahoo-anrop
+    får aldrig blockera steget. Vid timeout skippas tickern DIREKT (ingen
+    retry — worst case 156 × 20 s ≈ 52 min < job-timeout 60 min); en senare
+    körning omhämtar skippade tickers. Övriga fel får 1 retry som tidigare.
+    """
     last_err: Exception | None = None
     for attempt in range(FETCH_RETRIES + 1):
         try:
-            df = yf.Ticker(ticker).earnings_dates
-            if df is None:
-                raise ValueError("earnings_dates returnerade None")
-            return df
+            return _run_with_hard_timeout(
+                lambda: _fetch_earnings_dates_once(ticker),
+                FETCH_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            logger.warning("%s: fetch TIMEOUT efter %ds — skippar ticker "
+                           "(omhämtas vid nästa körning)",
+                           ticker, FETCH_TIMEOUT_SECONDS)
+            raise
         except Exception as e:
             last_err = e
             logger.warning("%s: fetch-försök %d/%d misslyckades: %s",
