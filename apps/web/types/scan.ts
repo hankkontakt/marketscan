@@ -4,6 +4,12 @@ export interface ScanRow {
   segment: "large_cap" | "mid_cap" | "small_cap" | "micro_cap";
   sector: string | null;
   country: string;
+  market: string | null;
+  alpha_rank: number | null;
+  quality_z: number | null;
+  momentum_z: number | null;
+  value_z: number | null;
+  stratum: string | null;
 
   score_total: number | null;
   score_value: number | null;
