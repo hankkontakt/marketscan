@@ -107,27 +107,33 @@ def fetch_emittent_candidates() -> list[dict]:
     empty_pages = 0
 
     for page in range(1, MAX_PAGES + 1):
-        try:
-            resp = requests.get(
-                FI_SEARCH_URL,
-                params={
-                    "SearchFunctionType": "Insyn",
-                    "FromDate": from_date,
-                    "ToDate": date.today().isoformat(),
-                    "Page": page,
-                    "PageSize": PAGE_SIZE,
-                },
-                headers=FI_HEADERS, timeout=40,
-            )
-        except requests.RequestException as e:
-            logger.warning("FI-anrop misslyckades (page %d): %s", page, e)
-            time.sleep(PAGE_DELAY)
-            continue
+        rows: list[dict] = []
+        for attempt in range(3):   # marknadssök kastar ofta connectionen — backoff-retry
+            try:
+                resp = requests.get(
+                    FI_SEARCH_URL,
+                    params={
+                        "SearchFunctionType": "Insyn",
+                        "FromDate": from_date,
+                        "ToDate": date.today().isoformat(),
+                        "Page": page,
+                        "PageSize": PAGE_SIZE,
+                    },
+                    headers=FI_HEADERS, timeout=40,
+                )
+                rows = _parse_insyn_table(resp.text)
+                break
+            except requests.RequestException as e:
+                logger.warning("FI-anrop misslyckades (page %d, försök %d): %s", page, attempt + 1, e)
+                time.sleep(backoff := 3 * (attempt + 1))
+            except Exception as e:
+                logger.warning("FI-parse fel (page %d): %s", page, e)
+                time.sleep(backoff := 3 * (attempt + 1))
 
-        rows = _parse_insyn_table(resp.text)
         if not rows:
             empty_pages += 1
-            if empty_pages >= 2:
+            if empty_pages >= 5:
+                logger.warning("5 tomma sidor i rad — avbryter paginering (delvis täckning OK)")
                 break
             time.sleep(PAGE_DELAY)
             continue

@@ -220,7 +220,7 @@ def _norm_name(name: str) -> str:
     return re.sub(r"\s+", " ", n).strip()
 
 
-def upsert_positions(rows: list[dict]) -> dict:
+def upsert_positions(rows: list[dict], baseline_ok: bool = True) -> dict:
     conn = _connect()
     cur = conn.cursor()
 
@@ -245,7 +245,10 @@ def upsert_positions(rows: list[dict]) -> dict:
                     and (date.today() - prev_date).days <= 90):
                 is_new = True
         else:
-            is_new = r["total_short_pct"] >= 0.5
+            # Ny LEI sedan vi började spåra (efter baslinje) → äkta "ny disclosure".
+            # Baslinjen (första körningen någonsin) flaggas ALDRIG som ny —
+            # den kontrolleras av worker_state-markören i main().
+            is_new = bool(baseline_ok) and r["total_short_pct"] >= 0.5
 
         ticker = _map_to_ticker(cur, r["lei"], r.get("isin"), r["issuer_name"])
         if ticker:
@@ -285,6 +288,31 @@ def upsert_positions(rows: list[dict]) -> dict:
     return {"written": inserted, "new_discoveries": new_discoveries, "tickers_mapped": mapped}
 
 
+def _has_prior_baseline() -> bool:
+    """True om worker_state redan har en 'short_positions_last_ok'-markör från FÖREGÅENDE körning.
+
+    Första körningen någonsin = baslinje → inga av dess rader är 'new discoveries'.
+    """
+    try:
+        conn = _connect()
+        cur = conn.cursor()
+        cur.execute("SELECT updated_at FROM worker_state WHERE key = %s", (WORKER_STATE_KEY,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return False
+        ts = row[0]
+        if isinstance(ts, str):
+            ts = date.fromisoformat(ts[:10])
+        elif hasattr(ts, "date"):          # TIMESTAMPTZ → datetime
+            ts = ts.date()
+        # Markören skrevs idag (samma körning eller manuell återkörning) → baslinje
+        first_run_today = ts >= date.today()
+        return not first_run_today
+    except Exception:
+        return True   # DB oåtkomlig → optimistisk (vi vill inte blockera allt)
+
+
 def main():
     parser = argparse.ArgumentParser(description="FI net short position snapshot")
     parser.add_argument("--dry-run", action="store_true")
@@ -321,7 +349,7 @@ def main():
         return
 
     try:
-        stats = upsert_positions(rows)
+        stats = upsert_positions(rows, baseline_ok=_has_prior_baseline())
         print(json.dumps({"status": "ok", **stats}))
     except Exception as e:
         logger.error("DB-steg misslyckades: %s", e)
