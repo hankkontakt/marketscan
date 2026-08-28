@@ -1,5 +1,8 @@
 name: Signal Analytics — weekly transition statistics
 
+permissions:
+  contents: read
+
 on:
   # Every Sunday at 04:00 UTC — after a week of transitions have accumulated
   schedule:
@@ -13,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout marketscan
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55 # v5.5.0
         with:
           python-version: "3.11"
           cache: pip

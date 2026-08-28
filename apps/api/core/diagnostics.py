@@ -28,6 +28,10 @@ USER_TABLES = [
     "fund_holdings", "user_ticker_requests", "portfolio_snapshots",
     "user_feedback",
     "tracking_events",
+    # Publikt läsbara market-intel-tabeller (RLS public read; radarn läser dem).
+    "universe_registry", "short_positions", "factor_metrics", "qmj_scores",
+    "news_events", "insider_cluster_signals", "factor_regime",
+    "earnings_surprises",
 ]
 
 # Tables meant to be publicly readable (no RLS by design).
@@ -52,6 +56,13 @@ MIGRATION_MARKERS = {
     "034_notification_prefs": "notification_prefs",
     "035_user_feedback": "user_feedback",
     "036_tracking_events": "tracking_events",
+    "040_universe_registry": "universe_registry",
+    "041_short_positions": "short_positions",
+    "042_factor_metrics": "factor_metrics",
+    "043_qmj_scores": "qmj_scores",
+    "045_news_events": "news_events",
+    "048_factor_regime": "factor_regime",
+    "051_earnings_surprises": "earnings_surprises",
 }
 
 # Env vars that must be present for core features to work, with the feature

@@ -177,7 +177,8 @@ export function marketIntelClusters(ticker: string): Promise<ClusterInfo> {
 
 // ─── Kandidatradar ────────────────────────────────────────────────────────────
 // Endpoint: GET /api/market-intel/radar?theme=<tema|tom>&sort=activity|rank&limit=40.
-// Fältnamn matchar kontraktet i apps/api/routers/market_intel.py (RadarItemOut).
+// Fältnamn matchar kontraktet i apps/api/routers/market_intel.py (RadarItemOut,
+// FactorMetricOut, QmjRegimeOut).
 
 export type RadarBearing = "positive" | "negative" | "neutral" | "conditional" | null;
 
@@ -187,6 +188,33 @@ export interface RadarEvent {
   confidence: number | null;
   published_at: string | null;
   message_url: string | null;
+}
+
+// IC-mätning per scan-faktor (FactorMetricOut) — ärlighetsmätning av
+// rankningssystemets historik, inte en garanti.
+export interface SignalIc {
+  factor: string;
+  horizon_days: number;
+  computed_date: string;
+  n: number;
+  rank_ic: number | null;
+  decile_spread: number | null;
+  decile_spread_net: number | null;
+  win_rate: number | null;
+}
+
+// QMJ-faktorregim (QmjRegimeOut) — historisk kontext, ingen prognos.
+export interface QmjRegime {
+  computed_date: string | null;
+  data_through: string | null;
+  premium_12m: number | null;
+  percentile: number | null;
+  n_obs: number | null;
+  regime: string | null;
+  reason: string | null;
+  countries: string[];
+  europe_12m: number | null;
+  global_12m: number | null;
 }
 
 export interface RadarItem {
@@ -208,11 +236,20 @@ export interface RadarItem {
   mention_surge: number | null;
   top_events: RadarEvent[];
   warnings: string[];
+  // Rond 4 (API-kontrakt): sektorrelativt värde + kvartalsöverraskning (SUE).
+  // Valfria/nullable — radarn är bakåtkompatibel med äldre API-svar.
+  sector?: string | null;
+  sector_value_z?: number | null;
+  value_mode?: string | null;
+  earnings_sue?: number | null;
+  earnings_announced?: string | null;
 }
 
 export interface RadarResponse {
   total: number;
   items: RadarItem[];
+  signal_ics: SignalIc[] | null;
+  qmj_regime: QmjRegime | null;
 }
 
 export function marketIntelRadar(

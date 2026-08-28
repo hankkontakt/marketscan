@@ -229,3 +229,70 @@ python scripts/smoke_test.py
   (repo-mönster) — följ `scripts/verify-migrationer.cjs`-flödet.
 - Varje task-rapport: exakt rapportkontrakt (Task Report / Verification
   Receipts / Grep Sweep / Downstream Context / Blockers).
+
+---
+
+# ROND 4 — sex förbättringar (research-baserad, 2026-08-28)
+
+> Research utförd av evidensflottan: `docs/.opencode/audit/qmj-regim-norden-2026-08-28.md`
+> + `docs/.opencode/audit/insider-reconciliation-2026-08-28.md`.
+> **Tre researchbeslut:** (1) AQR QMJ Monthly har separata landskolumner
+> SE/DK/FI/NO (gratis, verifierad xlsx); (2) Nasdaqs insider-tabell är
+> AVPLATTFORMAD → FI insynsregister är sanningskälla — "reconciliation" blir
+> FI-primär + Finnhub-korskälla + kvalitetsgrind; (3) yfinance earnings_dates
+> ger EPS-konsensus/utfall/överraskning + PIT-timestamp verifierat live 3/3.
+
+| Task | Innehåll | Fil(er) | Ägare våg |
+|---|---|---|---|
+| F1 | QMJ-regim: `factor_regime.py` (AQR xlsx → nordisk komposit → R12 → OOS-percentil ≥240 mån → Stark/Normal/Svag/otillräcklig) + migration 048 + `qmj_regime.yml` (mån 8:e 04:10) | ny | W1.1 |
+| F2 | Insider-integritet: CSV-export primär (LEI/Status/Trading venue), fix datumfilter (Publiceringsdatum.From/To + button=export), **fix upsert-nyckel** (COALESCE(isin,ticker),name,datum,typ + volym-aggregering; Revised→UPDATE, History→skip) + `insider_reconcile.py` (FI↔Finnhub, coverage-first) + migration 049 | bef + ny | W1.2 |
+| F3 | IC per signal i radarn: RadarResponse får `signal_ics` (senaste per faktor ur factor_metrics 90d) — **INGEN retention-ändring** (score_tracker 730d är ensam ägare av städning) | market_intel | W2.1 |
+| F4 | Sektorrelativt värde: `qmj_scores.py` beräknar `sector_value_z` (inom-sektor n≥15, annars NULL) + `value_mode`; **kompositen behåller global value_z** (jämförbarhet över tid) + migration 050 | qmj_scores | W1.3 |
+| F5 | SHA-pinning ×27 workflows (checkout 11bd7190, setup-python 8d9ed9ac, setup-node 49933ea5, **gitleaks v3.0.0 = e0c47f4f** — v2-linjen dör 2026-09-16) + `permissions: contents: read` på resten + dependabot.yml (github-actions) | .github/workflows | W2.2 |
+| F6 | TS-SUE: `earnings_surprise.py` (yfinance earnings_dates → SUE z, std ≤8 kvartal, kräv ≥4, PIT-guard future) + **PIT-snapshot** (veckovis est. för kommande kvartal → estimate_source snapshot/retro) + migration 051 + `earnings_surprise.yml` (mån 04:10) | ny | W1.4 |
+
+## Kontrakt-korrigeringar från reviewer (alla lockade)
+
+- **F1-kolumner (live-verifierade):** header-rad ≈19 med 'DATE' i kol A; **31 kolumner** (24 ISO-koder + Global/Global Ex USA/Europe/North America/Pacific + 'None'); **nordiska serier startar 07/31/1995**; första-värde-row hittas dynamiskt per kolumn (NaN före). Sanity = NAMNGIVNA kolumner finns + ≥3 nordiska icke-NaN → WARNING inte crash. Kräv n≥240 (≈370 obs finns). Ingen French-fallback (metodmix); fallback = 'last known good + staleness' i worker_state.
+- **F2:** FI CSV-export = primärkälla. Upsert: aggregera (COALESCE(isin,ticker), name, trade_date, type) → SUM(shares, amount); ON CONFLICT DO UPDATE (Revised-rad ersätter originalet); Status='History' → skip. 0-rader = varning + exit 0 (endpointPING separat). Finnhub: mät ticker-täckning först; flagga finnhub_only ENDAST vid påvisad täckning; rapportera coverage 0/N ärligt.
+- **F4:** sektorpercentil kräver n≥15 i sektorn (repo-regeln n<20→universumrank), annars sector_value_z=NULL. value_mode ∈ sector|global. Komposit (10 %-vikt) = GLOBAL value_z oförändrad (IC-jämförbarhet); sector_value_z exponeras separat.
+- **F6:** yfinance har INGET analytikerantal → ärlig varningstext ("konsensus kan bygga på få analytiker"). PIT-framåt = veckovis snapshot (captured_at < announce_at → använd snapshot-estimatet, estimate_source='snapshot'; annars 'retro' + flagga).
+- **F7 (radar-union):** SUE **anrikar befintliga items** (LEFT JOIN) — earnings-only-tickers är INTE i all_tickers-unionen (skulle ge 5-6 None-fält + blåsa upp total).
+- **F8 (cron):** qmj_regime 04:10 mån 8:e; earnings_surprise 04:10 måndag + FETCH_SLEEP 1,2-2 s + disk-cache (inget i 03-04-trängseln).
+
+## API-kontrakt (fastställt före våg 2 — worker skriver mot detta)
+
+- `RadarItemOut` ← lägg till: `sector: str|None`, `sector_value_z: float|None`,
+  `value_mode: str|None`, `earnings_sue: float|None`, `earnings_quarter: str|None`.
+- `RadarResponse` ← lägg till: `signal_ics: list[FactorMetricOut]` (senaste per
+  faktor, ≤5), `qmj_regime: RegimeOut|None`.
+- Ny endpoint: `GET /api/market-intel/qmj-regime` → `RegimeOut` =
+  `{computed_date, data_through, premium_12m, percentile, n_obs, regime,
+  countries:list[str], europe_12m, global_12m}`. regime ∈ stark|normal|svag.
+- SUE i radarn: senaste publicerade (announce_at < now), `earnings_quarter`
+  = quarter_end ISO.
+
+## Regim-regler (evidens: AQR-pappret + Asness et al. 2017)
+
+- Nordisk komposit = medel av SE/DK/FI/NO-månads-QMJ (kräv ≥3 giltiga).
+- R12 = 12-mån rullande; percentil OOS-expanderande; n≥240 → annars "otillräcklig".
+- Buckets: pct ≥0,80 stark; ≤0,20 svag; annars normal. UI-etikett:
+  "QMJ-premiens historiska kontext" + disclaimer (ingen prognos; USD; long-short).
+
+## SUE-regler
+
+- surprise% från Yahoo; SUE_t = surprise_t / std(surprises t-8..t-1); kräv ≥4
+  tidigare, std>0; clip till ±3. Annonsering framåt i tiden → skip (PIT-guard).
+- UI-etikett: "kvartalsöverraskning" — aldrig prediktion; n visas i ärlighetsrad.
+
+## Verifiering per våg
+
+- W1: py_compile alla ändrade/nya, `python -m pytest backend_worker/tests -q`
+  (nya testfiler: test_factor_regime, test_sector_value, test_earnings_surprise,
+  test_insider_reconcile — pure functions, ingen DB).
+- Migrationsvakt-granskning 048–051 → applikation via `supabase db push`.
+- W2: `npx tsc --noEmit` (web), py_compile API, `PYTHONPATH=. python -c
+  "from apps.api.main import app; print(len(app.routes))"`.
+- W3 (produktion): trigger qmj_regime.yml + earnings_surprise.yml +
+  fi_insider.yml (reconcile-steg) → curl /market-intel/radar + /qmj-regime;
+  ui-analys 1 spawn (radar-sidan).

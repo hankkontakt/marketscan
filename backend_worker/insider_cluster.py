@@ -17,7 +17,6 @@ import logging
 import os
 import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -43,8 +42,10 @@ def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
         DataFrame med kolumner: ticker, unique_buyers_30d, total_buy_amount_30d,
         cluster_score, is_cluster, exec_buy_90d
     """
-    cutoff_30d = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
     cutoff_90d = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    # PIT-jämförelse i DataFrame: pandas levererar datetime.date från psycopg2 —
+    # en str-cutoff ger TypeError ('>=' date vs str). Jämför mot Timestamp.
+    cutoff_30d_ts = pd.Timestamp(datetime.now() - timedelta(days=lookback_days))
 
     # Alla köp senaste 90 dagar (för routine-filter + exec-detektion)
     query_90d = f"""
@@ -122,7 +123,7 @@ def calculate_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
         logger.info("Filtrerade bort %d routine-trades", n_routine)
 
     # Separera 30d och 90d efter filtrering
-    buys_30d = opportunistic_buys[opportunistic_buys["trade_date"] >= cutoff_30d].copy()
+    buys_30d = opportunistic_buys[pd.to_datetime(opportunistic_buys["trade_date"]) >= cutoff_30d_ts].copy()
     buys_90d_filtered = opportunistic_buys.copy()
 
     # Market cap från scan_results
@@ -214,8 +215,8 @@ def calculate_sell_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
     förklaringskraft än köpkluster. Används som varningsflagga (inte rank-ändring)
     eftersom säljare kan vara ombalansering/skatt — övertro = falska larm.
     """
-    cutoff_30d = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
     cutoff_90d = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    cutoff_30d_ts = pd.Timestamp(datetime.now() - timedelta(days=lookback_days))
 
     sells_90d = pd.read_sql(f"""
         SELECT ticker, name, role, shares, price, amount, trade_date
@@ -269,7 +270,7 @@ def calculate_sell_clusters(conn, lookback_days: int = 30) -> pd.DataFrame:
     )
     opportunistic = sells_90d[~routine_mask].copy()
 
-    sells_30d = opportunistic[opportunistic["trade_date"] >= cutoff_30d].copy()
+    sells_30d = opportunistic[pd.to_datetime(opportunistic["trade_date"]) >= cutoff_30d_ts].copy()
     if sells_30d.empty:
         return pd.DataFrame()
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Radar, AlertCircle, ExternalLink } from "lucide-react";
 import { useMarketIntelRadar } from "@/hooks/useMarketIntel";
-import type { RadarItem, RadarEvent } from "@/lib/api";
+import type { RadarItem, RadarEvent, SignalIc, QmjRegime } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // ─── Konstanter ───────────────────────────────────────────────────────────────
@@ -33,6 +33,13 @@ const BEARING_META: Record<string, { label: string; className: string }> = {
   neutral: { label: "Neutral", className: "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]" },
 };
 
+const REGIME_META: Record<string, { label: string; className: string }> = {
+  stark: { label: "Stark", className: "bg-[var(--color-up-soft)] text-[var(--color-up)]" },
+  svag: { label: "Svag", className: "bg-[var(--color-down-soft)] text-[var(--color-down)]" },
+  normal: { label: "Normal", className: "bg-[var(--color-warn-soft)] text-[var(--color-warn)]" },
+  otillracklig: { label: "Otillräcklig", className: "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]" },
+};
+
 type SortMode = "activity" | "rank";
 
 // ─── Hjälpfunktioner ──────────────────────────────────────────────────────────
@@ -43,6 +50,12 @@ function formatZ(value: number | null): string {
 
 function formatShortPct(value: number | null): string {
   return value != null ? `${value.toFixed(1)} %` : "–";
+}
+
+// Kvartalsöverraskning (SUE): alltid tecken + 1 decimal, t.ex. "+1.4" / "-0.3".
+function formatSue(value: number | null | undefined): string {
+  if (value == null) return "–";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}`;
 }
 
 // ─── Varningschips ────────────────────────────────────────────────────────────
@@ -103,6 +116,63 @@ function EventList({ events }: { events: RadarEvent[] }) {
   );
 }
 
+// ─── QMJ-regim ────────────────────────────────────────────────────────────────
+
+function RegimeBox({ regime }: { regime: QmjRegime | null }) {
+  if (!regime) return null;
+  const meta = REGIME_META[regime.regime ?? ""] ?? REGIME_META.otillracklig;
+  const premium =
+    regime.premium_12m != null ? `${(regime.premium_12m * 100).toFixed(1)} %` : "–";
+  const percentile =
+    regime.percentile != null ? `${(regime.percentile * 100).toFixed(0)}:e` : "–";
+  return (
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 text-xs space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="font-medium text-[var(--color-text-secondary)]">
+          QMJ-premiens historiska kontext
+        </span>
+        <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded", meta.className)}>
+          {meta.label}
+        </span>
+      </div>
+      <p className="text-[var(--color-text-muted)]">
+        12m-premie {premium} · {percentile} percentilen (n={regime.n_obs ?? "–"}) · data t.o.m.{" "}
+        {regime.data_through ?? "–"}
+      </p>
+      <p className="text-[10px] text-[var(--color-text-muted)]">
+        Historisk statistik (AQR QMJ, USD, long-short) — ingen prognos.
+      </p>
+    </div>
+  );
+}
+
+// ─── Ärlighetssektion ─────────────────────────────────────────────────────────
+
+function SignalHonesty({ signalIcs }: { signalIcs: SignalIc[] | null }) {
+  const ics = signalIcs ?? [];
+  return (
+    <div className="border-t border-[var(--color-border)] pt-2 space-y-1.5">
+      <p className="font-medium text-[var(--color-text-secondary)]">Signalernas ärlighet</p>
+      {ics.length > 0 ? (
+        <ul className="space-y-0.5">
+          {ics.slice(0, 5).map((ic) => (
+            <li key={ic.factor}>
+              {ic.factor}: IC {ic.rank_ic != null ? ic.rank_ic.toFixed(3) : "–"} (n={ic.n},{" "}
+              {ic.horizon_days}d)
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>Inga mätningar än (n&lt;20) — ärlighet vet vi inte än.</p>
+      )}
+      <p className="text-[10px]">
+        IC mäter rankningssystemets historik (scan-faktorer) — en ärlighetsmätning, inte en
+        garanti. n&lt;20 = för få observationer: &apos;ej mätt&apos;.
+      </p>
+    </div>
+  );
+}
+
 // ─── Tabellrad ────────────────────────────────────────────────────────────────
 
 function RadarRow({ item }: { item: RadarItem }) {
@@ -140,6 +210,11 @@ function RadarRow({ item }: { item: RadarItem }) {
                 {item.name}
               </div>
             )}
+            {item.sector && (
+              <div className="text-[10px] text-[var(--color-text-muted)] truncate max-w-[130px]">
+                {item.sector}
+              </div>
+            )}
             <WarningChips warnings={item.warnings} />
           </div>
         </div>
@@ -158,7 +233,14 @@ function RadarRow({ item }: { item: RadarItem }) {
 
       {/* Kvalitet-z */}
       <td className="px-4 py-3 text-right hidden lg:table-cell">
-        <span className="text-sm tabular-nums text-[var(--color-text-secondary)]">
+        <span
+          className="text-sm tabular-nums text-[var(--color-text-secondary)]"
+          title={
+            item.sector_value_z != null
+              ? `Värde (sektor): ${item.sector_value_z.toFixed(1)} (${item.value_mode ?? "sector"})`
+              : undefined
+          }
+        >
           {formatZ(item.quality_z)}
         </span>
       </td>
@@ -174,6 +256,16 @@ function RadarRow({ item }: { item: RadarItem }) {
       <td className="px-4 py-3 text-right hidden lg:table-cell">
         <span className="text-sm tabular-nums text-[var(--color-text-secondary)]">
           {formatZ(item.insider_z)}
+        </span>
+      </td>
+
+      {/* Rapport (SUE) */}
+      <td className="px-4 py-3 text-right hidden lg:table-cell">
+        <span
+          className="text-sm tabular-nums text-[var(--color-text-secondary)]"
+          title="Kvartalsöverraskning (SUE) — mått, ej prognos"
+        >
+          {formatSue(item.earnings_sue)}
         </span>
       </td>
 
@@ -229,6 +321,8 @@ export function RadarView() {
   const { data, isLoading, error } = useMarketIntelRadar(theme || undefined, sort, 40);
   const items = data?.items ?? [];
   const total = data?.total ?? items.length;
+  const signalIcs = data?.signal_ics ?? null;
+  const qmjRegime = data?.qmj_regime ?? null;
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -240,6 +334,9 @@ export function RadarView() {
           Bolag med sammanvägda signaler — kvalitet, momentum, insiders, blankning och nyhetsflöde
         </p>
       </div>
+
+      {/* QMJ-regim — historisk kontext, ingen prognos */}
+      <RegimeBox regime={qmjRegime} />
 
       {/* Info box */}
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 text-xs text-[var(--color-text-muted)] space-y-2">
@@ -254,6 +351,7 @@ export function RadarView() {
           Grön kant = stark sammanvägd signal. Gul kant = medelstark. Nedtonad rad = bolaget
           är exkluderat av ett hårt filter (håll muspekaren över raden för orsak).
         </p>
+        <SignalHonesty signalIcs={signalIcs} />
       </div>
 
       {/* Filters */}
@@ -332,6 +430,7 @@ export function RadarView() {
                 <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)] hidden lg:table-cell">Kvalitet-z</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)] hidden lg:table-cell">Momentum-z</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)] hidden lg:table-cell">Insider-z</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)] hidden lg:table-cell">Rapport</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)] hidden sm:table-cell">Blankning %</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)] hidden sm:table-cell">Nyheter 48h</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)] hidden xl:table-cell">Senaste händelser</th>

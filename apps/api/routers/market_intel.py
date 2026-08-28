@@ -6,8 +6,11 @@ Exponerar data från backend_worker-skrivna tabeller (read-only, RLS public read
 
   GET /api/market-intel/shorts/{ticker}      — senaste short_positions-raderna (30 d)
   GET /api/market-intel/qmj/rank             — top-50 QMJ-rank senaste scan_date
+  GET /api/market-intel/qmj/{ticker}         — senaste QMJ-raden för ticker
   GET /api/market-intel/clusters/{ticker}    — insider_cluster_signals-rad
   GET /api/market-intel/factor-metrics       — senaste 90 dagarna factor_metrics
+  GET /api/market-intel/qmj-regime           — senaste QMJ-regimen (factor_regime)
+  GET /api/market-intel/radar                — kandidatradarn (signaler per bolag)
 
 Alla endpoints: anon-klient (get_supabase) — RLS tillåter public read på tabellerna
 (migrationer 029/041/042/043). Endpoints VARABAR data, inga beslut.
@@ -66,6 +69,23 @@ class FactorMetricOut(BaseModel):
     decile_spread: float | None = None
     decile_spread_net: float | None = None
     win_rate: float | None = None
+
+
+class QmjRegimeOut(BaseModel):
+    """QMJ-regim (AQR QMJ Monthly, nordisk komposit) — historisk kontext, ej prognos.
+
+    Läses från factor_regime (migration 048, skrivs av factor_regime.py).
+    """
+    computed_date: str
+    data_through: str | None = None
+    premium_12m: float | None = None
+    percentile: float | None = None
+    n_obs: int | None = None
+    regime: str | None = None
+    reason: str | None = None
+    countries: list[str] = []
+    europe_12m: float | None = None
+    global_12m: float | None = None
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -294,6 +314,33 @@ def get_factor_metrics(sb=Depends(get_supabase)):
     ]
 
 
+@router.get("/qmj-regime", response_model=QmjRegimeOut | None)
+def get_qmj_regime(sb=Depends(get_supabase)):
+    """Senaste QMJ-regimen (AQR QMJ Monthly, nordisk komposit).
+
+    Historisk kontext (trailing 12m-premie, OOS-percentil) — aldrig en prognos.
+    Läser från factor_regime (migration 048, skrivs av factor_regime.py).
+    Returnerar null om tabellen är tom.
+    """
+    try:
+        res = (
+            sb.table("factor_regime")
+            .select("*")
+            .order("computed_date", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("factor_regime query failed: %s", e)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"Kunde inte läsa factor_regime: {e}")
+
+    rows = res.data or []
+    if not rows:
+        return None
+    return _build_qmj_regime(rows[0])
+
+
 # ─── Radar: signaler samlade per bolag (kandidatradarn) ────────────────────────
 
 class RadarEventOut(BaseModel):
@@ -315,6 +362,11 @@ class RadarItemOut(BaseModel):
     payout_z: float | None = None
     insider_z: float | None = None
     exclusion_reason: str | None = None
+    sector: str | None = None
+    sector_value_z: float | None = None
+    value_mode: str | None = None
+    earnings_sue: float | None = None
+    earnings_announced: str | None = None
     short_pct: float | None = None
     new_disclosure: bool = False
     cluster_score: float | None = None
@@ -328,10 +380,35 @@ class RadarItemOut(BaseModel):
 class RadarResponse(BaseModel):
     total: int
     items: list[RadarItemOut]
+    signal_ics: list[FactorMetricOut] = []
+    qmj_regime: QmjRegimeOut | None = None
 
 
 RADAR_THEMES = {"ipo", "order", "vinstvarning", "ledning", "regulatorik",
                 "sector-ai", "sector-forsvar"}
+
+# Kanonisk visningsordning för signal-IC (F3) — UI:n visar faktorerna i denna ordning.
+FACTOR_ORDER = ["score_total", "score_quality", "score_momentum",
+                "score_growth", "score_value"]
+
+
+def _build_qmj_regime(r: dict) -> QmjRegimeOut:
+    """Bygg QmjRegimeOut från en factor_regime-rad (dict.get-skyddad).
+
+    Tabellen kan vara tom/ny — alla fält faller tillbaka till None/defaults.
+    """
+    return QmjRegimeOut(
+        computed_date=r.get("computed_date", ""),
+        data_through=r.get("data_through"),
+        premium_12m=float(r["premium_12m"]) if r.get("premium_12m") is not None else None,
+        percentile=float(r["percentile"]) if r.get("percentile") is not None else None,
+        n_obs=int(r["n_obs"]) if r.get("n_obs") is not None else None,
+        regime=r.get("regime"),
+        reason=r.get("reason"),
+        countries=list(r.get("countries") or []),
+        europe_12m=float(r["europe_12m"]) if r.get("europe_12m") is not None else None,
+        global_12m=float(r["global_12m"]) if r.get("global_12m") is not None else None,
+    )
 
 
 @router.get("/radar", response_model=RadarResponse)
@@ -368,7 +445,7 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
             res = (
                 sb.table("qmj_scores")
                 .select("ticker,stratum,alpha_rank,quality_z,momentum_z,value_z,"
-                        "payout_z,insider_z,exclusion_reason")
+                        "payout_z,insider_z,exclusion_reason,sector_value_z,value_mode")
                 .eq("scan_date", scan_date)
                 .execute()
             )
@@ -412,15 +489,96 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
 
         res_names = (
             sb.table("universe_registry")
-            .select("ticker,name")
+            .select("ticker,name,sector")
             .eq("status", "listed")
             .execute()
         )
-        names = {r["ticker"]: r["name"] for r in (res_names.data or [])}
+        registry = {r["ticker"]: r for r in (res_names.data or [])}
+        names = {t: r.get("name") for t, r in registry.items()}
     except Exception as e:
         logger.warning("radar query failed: %s", e)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             f"Kunde inte läsa radardata: {e}")
+
+    # Earnings-överraskning (F6/F7): anrikar EXISTERANDE items — lägger ALDRIG
+    # till nya tickers i unionen (earnings-only-tickers är brus). Senaste
+    # publicerade raden per ticker (announce_at < now, sue IS NOT NULL).
+    # Egna try/except: tabellen kan vara ny/tom — radarn får inte 500:a.
+    earnings: dict[str, dict] = {}
+    try:
+        res_earnings = (
+            sb.table("earnings_surprises")
+            .select("ticker,announced_on,sue")
+            .lt("announce_at", _dt.datetime.now(_dt.timezone.utc).isoformat())
+            .not_.is_("sue", "null")
+            .order("ticker")
+            .order("announced_on", desc=True)
+            .execute()
+        )
+        for r in (res_earnings.data or []):
+            t = r.get("ticker")
+            if not t or t in earnings:
+                continue
+            earnings[t] = r
+    except Exception as e:
+        logger.warning("earnings_surprises query failed (radar): %s", e)
+
+    # IC per signal (F3): senaste factor_metrics-raden per faktor (90 d).
+    # Alla faktorer behålls (låg n → UI visar 'ej mätt'), kanonisk ordning.
+    signal_ics: list[FactorMetricOut] = []
+    try:
+        res_ics = (
+            sb.table("factor_metrics")
+            .select("factor,horizon_days,computed_date,n,rank_ic,decile_spread,"
+                    "decile_spread_net,win_rate")
+            .gt("computed_date", (date.today() - timedelta(days=90)).isoformat())
+            .order("factor")
+            .order("computed_date", desc=True)
+            .execute()
+        )
+        seen_factors: set[str] = set()
+        latest_by_factor: list[dict] = []
+        for r in (res_ics.data or []):
+            f = r.get("factor")
+            if not f or f in seen_factors:
+                continue
+            seen_factors.add(f)
+            latest_by_factor.append(r)
+        latest_by_factor.sort(
+            key=lambda r: FACTOR_ORDER.index(r["factor"])
+            if r.get("factor") in FACTOR_ORDER else len(FACTOR_ORDER)
+        )
+        signal_ics = [
+            FactorMetricOut(
+                factor=r["factor"],
+                horizon_days=int(r.get("horizon_days", 0)),
+                computed_date=r.get("computed_date", ""),
+                n=int(r.get("n", 0)),
+                rank_ic=float(r["rank_ic"]) if r.get("rank_ic") is not None else None,
+                decile_spread=float(r["decile_spread"]) if r.get("decile_spread") is not None else None,
+                decile_spread_net=float(r["decile_spread_net"]) if r.get("decile_spread_net") is not None else None,
+                win_rate=float(r["win_rate"]) if r.get("win_rate") is not None else None,
+            )
+            for r in latest_by_factor
+        ]
+    except Exception as e:
+        logger.warning("factor_metrics IC query failed (radar): %s", e)
+
+    # QMJ-regim (F1): senaste factor_regime-raden (historisk kontext, ej prognos).
+    qmj_regime: QmjRegimeOut | None = None
+    try:
+        res_regime = (
+            sb.table("factor_regime")
+            .select("*")
+            .order("computed_date", desc=True)
+            .limit(1)
+            .execute()
+        )
+        regime_rows = res_regime.data or []
+        if regime_rows:
+            qmj_regime = _build_qmj_regime(regime_rows[0])
+    except Exception as e:
+        logger.warning("factor_regime query failed (radar): %s", e)
 
     news_by_ticker: dict[str, dict] = {}
     for r in news_rows:
@@ -447,6 +605,8 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
         row = qmj.get(t, {})
         s = shorts.get(t, {})
         c = clusters.get(t, {})
+        reg = registry.get(t, {})
+        e = earnings.get(t, {})
         nb = news_by_ticker.get(t, {"count": 0, "surge": None, "events": []})
         warnings = []
         if row.get("exclusion_reason"):
@@ -462,6 +622,7 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
         items.append(RadarItemOut(
             ticker=t,
             name=names.get(t),
+            sector=reg.get("sector"),
             stratum=row.get("stratum"),
             alpha_rank=float(row["alpha_rank"]) if row.get("alpha_rank") is not None else None,
             quality_z=float(row["quality_z"]) if row.get("quality_z") is not None else None,
@@ -470,6 +631,10 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
             payout_z=float(row["payout_z"]) if row.get("payout_z") is not None else None,
             insider_z=float(row["insider_z"]) if row.get("insider_z") is not None else None,
             exclusion_reason=row.get("exclusion_reason"),
+            sector_value_z=float(row["sector_value_z"]) if row.get("sector_value_z") is not None else None,
+            value_mode=row.get("value_mode"),
+            earnings_sue=float(e["sue"]) if e.get("sue") is not None else None,
+            earnings_announced=e.get("announced_on"),
             short_pct=short_pct,
             new_disclosure=bool(s.get("is_new_discovery", False)),
             cluster_score=float(c["cluster_score"]) if c.get("cluster_score") is not None else None,
@@ -488,4 +653,5 @@ def get_radar(theme: str | None = None, sort: str = "activity", limit: int = 40,
         items.sort(key=lambda i: (i.news_48h, i.mention_surge or 0), reverse=True)
 
     items = items[: max(1, min(limit, 100))]
-    return RadarResponse(total=len(items), items=items)
+    return RadarResponse(total=len(items), items=items,
+                         signal_ics=signal_ics, qmj_regime=qmj_regime)
