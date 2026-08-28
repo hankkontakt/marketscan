@@ -248,7 +248,7 @@ def lookup_finnhub_isin(isin: str) -> Optional[str]:
         return None
 
 
-def lookup_isin_via_yfinance(isin: str, cache: dict | None = None) -> Optional[str]:
+def lookup_isin_via_yfinance(isin: str, cache: dict | None = None, force_refresh: bool = False) -> Optional[str]:
     """ISIN → Yahoo-ticker via yf.Lookup. Cachad (hit 60 d / miss 14 d). None vid miss.
 
     OBS: symbolen ligger i DataFrame-INDEX; shortName+industryName i kolumnerna
@@ -257,7 +257,7 @@ def lookup_isin_via_yfinance(isin: str, cache: dict | None = None) -> Optional[s
     cache = cache if cache is not None else _load_isin_symbol_cache()
     now = date.today()
     entry = cache.get(isin)
-    if entry:
+    if entry and not force_refresh:
         # Gammalt format (utan 'name') är ofullständigt för backfill — behandla som miss.
         if not entry.get("name"):
             entry = None
@@ -296,7 +296,18 @@ def _backfill_names_and_sectors(cur) -> int:
     """Namn/sektor-backfill ur yf.Lookup-cachen (X-rader har ticker som 'namn').
 
     Högvärdigt för namnmatch i nyhetskedjan + framtida sektorjämförelse.
+    FORCERE FRESH: rader med sector IS NULL lyfts direkt via yf.Lookup
+    (cache-uppdaterad) — annars når aldrig yf.Lookup pga gammal cache-format.
     """
+    # 1) Sektornull-rader → forcereferesh cachen (kostar ~2-4 min en gång)
+    try:
+        cur.execute("SELECT isin FROM universe_registry WHERE sector IS NULL AND status = 'listed'")
+        missing = [r[0] for r in cur.fetchall() if r[0]]
+    except Exception:
+        missing = []
+    for isin in missing[:150]:
+        lookup_isin_via_yfinance(isin, force_refresh=True)
+    # 2) Backfill ur (nu friskare) cachen
     cache = _load_isin_symbol_cache()
     filled = 0
     for isin, entry in cache.items():
