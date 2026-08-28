@@ -54,6 +54,14 @@ DETAIL_DELAY = 1.2             # sekunder — fi.se rate-limitar
 MAX_DAILY_ROWS = 2000
 WORKER_STATE_KEY = "short_positions_last_ok"
 
+# Seed-mappning för de MEST blankade emittenterna (riskfiltret behöver dessa NU;
+# långsiktigt fylls mappningen av universe_registry/company_profiles).
+_SEED_LEI_TICKER: dict[str, str] = {
+    "5493008X1XZR4R5R0P66": "DYNVO.ST",   # Dynavox Group (9,7 % short, 2026-08-26)
+    "549300BUD7ZPFPKM6856": "SMART.ST",   # Smart Eye (6,4 %)
+    "254900UBKNY2EJ588J53": "SIVE.ST",    # Sivers Semiconductors (3,6 %)
+}
+
 
 # ─── Hämtning ─────────────────────────────────────────────────────────────────
 
@@ -180,8 +188,10 @@ def _connect():
 
 
 def _map_to_ticker(cur, lei: str, isin: str | None, issuer_name: str):
-    """LEI→ticker (via registry.lei), ISIN→ticker (registry/company_profiles),
+    """LEI→ticker (via registry.lei/seed), ISIN→ticker (registry/company_profiles),
     namn-fallback (normaliserad match). """
+    if lei in _SEED_LEI_TICKER:
+        return _SEED_LEI_TICKER[lei]
     try:
         cur.execute("SELECT ticker FROM universe_registry WHERE lei = %s", (lei,))
         row = cur.fetchone()
