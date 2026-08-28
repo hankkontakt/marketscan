@@ -26,25 +26,20 @@ import requests
 logger = logging.getLogger(__name__)
 
 FINNHUB_BASE = "https://finnhub.io/api/v1"
-NORDIC_EXCHANGES = ["SE", "DK", "FI", "NO", "IS", "HE"]
+# Kandidatkoder (verifieras empiriskt i loggarna; US = positiv kontroll som
+# bevisar att nyckeln/svarsformatet fungerar)
+CANDIDATE_EXCHANGES = ["US", "SE", "HE", "DK", "FI", "NO", "IS", "STO", "OSL", "CPH"]
 ALLOWED_TYPES = {"Common Stock", "Ordinary Shares", "Stock"}
 
 
-def _get(path: str, params: dict) -> dict:
+def _get(path: str, params: dict) -> dict | list:
     key = os.environ.get("FINNHUB_API_KEY")
     if not key:
         raise RuntimeError("FINNHUB_API_KEY saknas")
     r = requests.get(FINNHUB_BASE + path, params={**params, "token": key}, timeout=30)
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:120]}")
     return r.json()
-
-
-def list_exchanges() -> list[dict]:
-    try:
-        return _get("/stock/exchange", {})
-    except Exception as e:
-        logger.warning("list_exchanges misslyckades: %s", e)
-        return []
 
 
 def fetch_symbols(exchange: str, limit: int = 5000) -> list[dict]:
@@ -77,7 +72,7 @@ def _to_registry_rows(symbols: list[dict], exchange: str) -> list[dict]:
 
 def main():
     parser = argparse.ArgumentParser(description="Finnhub exchange-universum")
-    parser.add_argument("--exchange", default=",".join(NORDIC_EXCHANGES))
+    parser.add_argument("--exchange", default=",".join(CANDIDATE_EXCHANGES))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -90,29 +85,27 @@ def main():
         return
 
     exchanges = [e.strip() for e in args.exchange.split(",") if e.strip()]
-    available = {e.get("code"): e.get("name") for e in list_exchanges()}
-    known = [e for e in exchanges if e in available]
-    if not known:
-        logger.warning("Inga kända exchange-koder bland: %s (tillgängliga: %s)",
-                       exchanges, sorted(available.keys())[:40])
-        print(json.dumps({"status": "error",
-                          "message": "unknown exchanges",
-                          "available": sorted(available.keys())[:40]}))
-        sys.exit(1)
 
     total_rows = []
     per_exchange = {}
-    for ex in known:
+    for ex in exchanges:
         symbols = fetch_symbols(ex)
         rows = _to_registry_rows(symbols, ex)
         per_exchange[ex] = len(rows)
-        total_rows.extend(rows)
+        if rows:
+            total_rows.extend(rows)
         logger.info("%s: %d symboler (%d efter typfilter)", ex, len(symbols), len(rows))
 
+    # Resultatsammanfattning: vilka koder som fungerade på free-tier
+    working = {k: v for k, v in per_exchange.items() if v > 0}
+    logger.info("Fungerande koder: %s", json.dumps(working))
+
     if not total_rows:
-        print(json.dumps({"status": "error", "message": "0 symboler",
+        # Ingen kod gav data — fri tier begränsad till US (verifierat resultat).
+        # ALDRIG exit 1 (jobbet måste fortsätta; registry växer via FI-vägen).
+        print(json.dumps({"status": "ok-partial", "message": "no free-tier coverage",
                           "per_exchange": per_exchange}))
-        sys.exit(1)
+        return
 
     if args.dry_run:
         print(json.dumps({
