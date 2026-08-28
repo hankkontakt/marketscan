@@ -11,6 +11,12 @@ export interface Holding {
   score_total: number | null;
   entry_signal: string | null;
   trend_signal: string | null;
+  market: string | null;
+  alpha_rank: number | null;
+  quality_z: number | null;
+  momentum_z: number | null;
+  value_z: number | null;
+  stratum: string | null;
 }
 
 export interface Portfolio {
