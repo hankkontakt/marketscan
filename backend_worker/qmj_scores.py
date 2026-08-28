@@ -113,15 +113,19 @@ def rank_pct(values: dict) -> dict:
 
 
 def composite(q=None, m=None, v=None, p=None, i=None) -> float:
-    """Viktad komposit (percentiler 0-100, neutral=50)."""
-    return round(
+    """Viktad komposit (percentiler 0-100, neutral=50).
+
+    VIKTIGT: float()-cast — np.float64 (från np.mean/round) skickas av
+    psycopg2 som generisk repr → SQL 'np.float64(...)' → schema-fel.
+    """
+    value = (
         WEIGHTS["quality"] * (q if q is not None else 50)
         + WEIGHTS["momentum"] * (m if m is not None else 50)
         + WEIGHTS["value"] * (v if v is not None else 50)
         + WEIGHTS["payout"] * (p if p is not None else 50)
-        + WEIGHTS["insider"] * (i if i is not None else 50),
-        2,
+        + WEIGHTS["insider"] * (i if i is not None else 50)
     )
+    return round(float(value), 2)
 
 
 def short_exclusion(total_short_pct: Optional[float], new_disc_within_90d: bool) -> Optional[str]:
@@ -486,6 +490,12 @@ def main():
                 s["new"] = True
     except Exception as e:
         logger.warning("Insider/short-läsning misslyckades: %s (kör utan)", e)
+        # Ett misslyckat READ aborterar transaktionen → rulla tillbaka så att
+        # efterföljande upserts inte dör med "current transaction is aborted".
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
     insider_z_raw = rank_pct({t: v for t, v in insider_score.items()})
 
@@ -527,8 +537,10 @@ def main():
             flags.append("sell_cluster")
 
         rank = None if ex else composite(q, mz, v, p, iz)
-        if rank is not None and isinstance(rank, float) and not math.isfinite(rank):
-            rank = None
+        if rank is not None:
+            rank = float(rank)
+            if not math.isfinite(rank):
+                rank = None
 
         rows.append({
             "ticker": t, "scan_date": today.isoformat(),
