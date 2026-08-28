@@ -16,7 +16,7 @@ import type { ScanParams } from "@/lib/api";
 const DEFAULT_FILTERS: ScanParams = {
   segments: ["large_cap", "mid_cap"],
   score_min: 0,
-  limit: 200,
+  limit: 500,
 };
 
 interface SavedScreen { id: string; name: string; filter_json: Record<string, unknown>; }

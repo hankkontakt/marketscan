@@ -39,13 +39,13 @@ export interface ScanRow {
   beta: number | null;
   vol_20d: number | null;
 
-  low_liquidity: boolean;
-  has_holding: boolean;
+  low_liquidity: boolean | null;
+  has_holding: boolean | null;
   scan_date: string | null;
 
   // MEWS (#3)
   mews_score: number | null;
-  mews_flag: boolean;
+  mews_flag: boolean | null;
   mews_fcf_yield: number | null;
   mews_small_size: number | null;
   mews_low_ps: number | null;

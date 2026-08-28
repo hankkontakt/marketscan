@@ -43,13 +43,18 @@ class ScanRow(BaseModel):
     beta: float | None = None
     vol_20d: float | None = None
 
-    low_liquidity: bool = False
-    has_holding: bool = False
+    # BOOL_NOT_OPTIONAL_GOTCHA: columns are NULL-able in DB and the COPY loader
+    # writes explicit NULL when the source parquet had NaN (bypasses the column
+    # DEFAULT false).  Pydantic rejects None for a strict `bool`, which made the
+    # whole /scan endpoint 500 (ResponseValidationError) once such a row landed.
+    # Tolerate None (treated as falsy by all consumers).
+    low_liquidity: bool | None = False
+    has_holding: bool | None = False
     scan_date: str | None = None
 
     # MEWS (#3)
     mews_score: float | None = None
-    mews_flag: bool = False
+    mews_flag: bool | None = False
     mews_fcf_yield: float | None = None
     mews_small_size: float | None = None
     mews_low_ps: float | None = None

@@ -142,6 +142,13 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = None
 
+    # Boolean columns: source parquet may hold NaN/None (e.g. a ticker that was
+    # never MEWS-evaluated). na_rep="" in COPY would write an explicit NULL that
+    # bypasses the column DEFAULT false and later breaks API schema validation
+    # (ResponseValidationError on /api/scan) — coerce to False instead.
+    for bool_col in ("low_liquidity", "has_holding", "mews_flag", "ml_flag_uncertain"):
+        df[bool_col] = df[bool_col].fillna(False).astype(bool)
+
     return df[SCAN_COLUMNS]
 
 

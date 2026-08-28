@@ -28,7 +28,7 @@ def get_scan(
     search: str | None = None,
     mews_flag: bool | None = None,
     sort_by: str = Query(default="score_total", pattern="^(score_total|mews_score)$"),
-    limit: int = Query(default=200, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=500),
     sb=Depends(get_supabase),
 ):
     q = (
