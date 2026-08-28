@@ -24,6 +24,12 @@ Upsert-semantik (migration 049, insider_trades_reconcile_key):
     insider_trades_reconcile_key-indexet (annars: 'no unique or exclusion
     constraint matching the ON CONFLICT specification').
 
+ISIN→ticker-mappningskedja (billigast först, ingen extern kostnad per rad):
+  SEED_TICKERS → company_profiles.isin → universe_registry.isin →
+  isin_symbol_cache.json (READ-ONLY) → None. Finnhub/yfinance anropas ALDRIG
+  per transaktion (för dyrt på ~300 rader). insider_trades.ticker är NOT NULL
+  (migration 015) → endast MAPPADE rader skrivs; unmapped loggas + arkiveras.
+
 0-rader: varning + {"status":"ok","rows":0,"empty_ok":true} + ping söksidan
 utan filter (bevis på levande endpoint). Hårdfel ENDAST vid exceptions.
 
@@ -48,6 +54,8 @@ from typing import Optional
 
 import requests
 
+from backend_worker.universe_mapping import SEED_TICKERS
+
 logger = logging.getLogger(__name__)
 
 # FI:s publika sök-URL:er (verifierade live 2026-08-28)
@@ -61,6 +69,9 @@ FI_HEADERS = {
 }
 
 RAW_ARCHIVE_DIR = Path(__file__).resolve().parent.parent / "data" / "fi_raw"
+# Nyligen-cachad ISIN→ticker-mappning (skrivs av universe_mapping.py).
+# Läses här READ-ONLY som sista steg i mappningskedjan — misslyckas tyst.
+ISIN_SYMBOL_CACHE_PATH = RAW_ARCHIVE_DIR / "isin_symbol_cache.json"
 _RETRY_ATTEMPTS = 3          # retry+backoff (repo-mönster, se universe_mapping)
 _RETRY_BACKOFF = 3           # sekunder × försöksnummer
 _PAGE_DELAY = 0.4            # sekunder mellan HTML-fallback-sidor (rate limiting)
@@ -449,17 +460,75 @@ def aggregate_trades(trades: list[dict]) -> list[dict]:
 
 # ─── DB ───────────────────────────────────────────────────────────────────────
 
-def _map_isin_to_ticker(isin: str, conn) -> Optional[str]:
-    """Mappa ISIN till ticker via company_profiles-tabellen."""
+def _load_isin_symbol_cache() -> dict:
+    """Läs isin_symbol_cache.json (READ-ONLY, skrivs av universe_mapping) → dict.
+
+    Saknad/korrupt fil → {} (misslyckas tyst — kostsamma externa uppslag görs
+    aldrig här).
+    """
+    try:
+        if ISIN_SYMBOL_CACHE_PATH.exists():
+            return json.loads(ISIN_SYMBOL_CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def extract_map_isin(isin, seed_map, profiles_set, registry_set, cache) -> Optional[str]:
+    """Ren ISIN→ticker-ledningskedja — testbar utan DB/externa anrop.
+
+    Kedja (billigast först):
+      1. seed_map (SEED_TICKERS — manuell seed, universe_mapping.py)
+      2. profiles_set (company_profiles.isin → ticker, befintlig källa)
+      3. registry_set (universe_registry.isin → ticker, FI-sanning)
+      4. cache (isin_symbol_cache.json-innehåll, READ-ONLY)
+    → None om inget ovan. Kostar ALDRIG Finnhub/yfinance per transaktion.
+    """
     if not isin:
         return None
+    isin = isin.upper()
+    if isin in seed_map:
+        return seed_map[isin]
+    if isin in profiles_set:
+        return profiles_set[isin]
+    if isin in registry_set:
+        return registry_set[isin]
+    if cache:
+        entry = cache.get(isin)
+        if entry and entry.get("symbol"):
+            return entry["symbol"]
+    return None
+
+
+def _map_isin_to_ticker(isin: str, conn) -> Optional[str]:
+    """Mappa ISIN → ticker via ledningskedjan (billigast först).
+
+    DB-uppslag (company_profiles → universe_registry, ticker ej NULL/blank)
+    + cache-fil → ren extract_map_isin-kedja. Kostar ALDRIG Finnhub/yfinance
+    per transaktion.
+    """
+    if not isin:
+        return None
+    isin = isin.upper()
+    profiles: dict[str, str] = {}
+    registry: dict[str, str] = {}
     try:
         cur = conn.cursor()
+        # 2. company_profiles.isin (befintlig källa)
         cur.execute("SELECT ticker FROM company_profiles WHERE isin = %s", (isin,))
         row = cur.fetchone()
-        return row[0] if row else None
+        if row and row[0]:
+            profiles[isin] = row[0]
+        # 3. universe_registry.isin (FI-sanning — ISIN är PK, migration 040)
+        cur.execute("SELECT ticker FROM universe_registry WHERE isin = %s", (isin,))
+        row = cur.fetchone()
+        if row and row[0]:
+            registry[isin] = row[0]
     except Exception:
-        return None
+        pass
+    # 4. Nyligen-cachad mappning (universe_mapping skriver isin_symbol_cache.json)
+    return extract_map_isin(isin, SEED_TICKERS, profiles, registry,
+                            _load_isin_symbol_cache())
 
 
 def save_raw_archive(trades: list[dict], archive_date: str):
@@ -473,14 +542,16 @@ def save_raw_archive(trades: list[dict], archive_date: str):
 def upsert_trades(trades: list[dict], conn) -> dict:
     """Upsert till insider_trades (migration-049-semantik).
 
-    Mappar ISIN→ticker via company_profiles (unmapped → loggas, skippas),
-    aggregerar per (COALESCE(isin, ticker), name, trade_date, type), och
-    upsertar med ON CONFLICT på insider_trades_reconcile_key-indexet.
-    Revised-rader överskriver (DO UPDATE); History skippas i normalize.
+    Mappar ISIN→ticker via ledningskedjan (seed → company_profiles →
+    universe_registry → cache; unmapped → loggas, skippas — ticker är NOT
+    NULL i insider_trades), aggregerar per (COALESCE(isin, ticker), name,
+    trade_date, type), och upsertar med ON CONFLICT på
+    insider_trades_reconcile_key-indexet. Revised-rader överskriver
+    (DO UPDATE); History skippas i normalize.
     """
     if not trades:
         logger.warning("Inga trades att upsert — 0-rader!")
-        return {"inserted": 0, "unmapped": 0, "aggregated": 0}
+        return {"inserted": 0, "unmapped": 0, "aggregated": 0, "mapped": 0}
 
     cur = conn.cursor()
     unmapped: list[dict] = []
@@ -541,7 +612,8 @@ def upsert_trades(trades: list[dict], conn) -> dict:
 
     logger.info("Upserted %d/%d trades (%d unmapped, %d aggregerade)",
                 inserted, len(trades), len(unmapped), len(aggregated))
-    return {"inserted": inserted, "unmapped": len(unmapped), "aggregated": len(aggregated)}
+    return {"inserted": inserted, "unmapped": len(unmapped),
+            "aggregated": len(aggregated), "mapped": len(mapped)}
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -584,6 +656,7 @@ def main():
         print(json.dumps({
             "status": "ok", "rows": 0, "empty_ok": True,
             "path": path, "endpoint_alive": alive,
+            "tickers_mapped": 0, "map_rate": 0.0,
         }))
         return
 
@@ -609,7 +682,7 @@ def main():
             sys.exit(1)
     else:
         logger.warning("DATABASE_URL not set — skipping DB upsert")
-        stats = {"inserted": 0, "unmapped": 0, "aggregated": 0}
+        stats = {"inserted": 0, "unmapped": 0, "aggregated": 0, "mapped": 0}
 
     result_out = {
         "status": "ok",
@@ -618,6 +691,8 @@ def main():
         "path": path,
         "rows_fetched": len(raw_trades),
         "trades_normalized": len(trades),
+        "tickers_mapped": stats["mapped"],
+        "map_rate": round(stats["mapped"] / len(trades), 3) if trades else 0.0,
         "trades_inserted": stats["inserted"],
         "unmapped": stats["unmapped"],
         "aggregated": stats["aggregated"],

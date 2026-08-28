@@ -54,3 +54,11 @@ jobs:
           python -m backend_worker.insider_cluster
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # ── Steg 3: FI↔Finnhub-rekonciliering (kvalitetsgrind, coverage-first) ──
+      - name: Reconcile FI vs Finnhub
+        run: |
+          python -m backend_worker.insider_reconcile
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
