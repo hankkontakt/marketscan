@@ -1,69 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { TrendingUp, Shield, AlertTriangle, ChevronDown, ChevronUp, Star, Loader2 } from "lucide-react";
+import { TrendingUp, Shield, AlertTriangle, ChevronDown, ChevronUp, Star, Loader2, HelpCircle, CheckCircle2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { buildVerdict, type StockVerdict, type VerdictReason } from "@/lib/plainLanguage";
 import type { ScanRow } from "@/types/scan";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { FeedbackWidget } from "@/components/ui/FeedbackWidget";
 import { cn } from "@/lib/utils";
-import { formatPrice, formatPctChange, changeClass } from "@/lib/format";
+import { formatPrice, formatPctChange, changeClass, signalClass, signalLabel } from "@/lib/format";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { trackEvent, EVENT } from "@/lib/tracking";
 
-// ── Quality styling (Tailwind classes for dark mode) ──────────────────────────
+// ── Quality styling (design tokens — matches rest of app, dark-mode safe) ────
 
-function qualityClasses(qualityLabel: string) {
-  const map: Record<string, string> = {
-    exceptionell: "bg-green-50 border-green-300 dark:bg-green-950/30 dark:border-green-800",
-    stark: "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800/50",
-    bra: "bg-[var(--color-bg-surface)] border-[var(--color-border)]",
-    okej: "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800/50",
-    svag: "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800/50",
-  };
-  return map[qualityLabel] || map.bra;
+function QualityIcon({ label }: { label: string }) {
+  switch (label) {
+    case "exceptionell":
+      return <Star size={20} className="text-[var(--color-up)]" strokeWidth={1.5} />;
+    case "stark":
+      return <TrendingUp size={20} className="text-[var(--color-up)]" strokeWidth={1.5} />;
+    case "bra":
+      return <CheckCircle2 size={20} className="text-[var(--color-text-secondary)]" strokeWidth={1.5} />;
+    case "okej":
+      return <HelpCircle size={20} className="text-[var(--color-warn)]" strokeWidth={1.5} />;
+    default:
+      return <AlertTriangle size={20} className="text-[var(--color-down)]" strokeWidth={1.5} />;
+  }
 }
-
-const QUALITY_EMOJI: Record<string, string> = {
-  exceptionell: "🌟",
-  stark: "✅",
-  bra: "👍",
-  okej: "🤔",
-  svag: "⚠️",
-};
-
-const QUALITY_TEXT_COLOR: Record<string, string> = {
-  exceptionell: "text-green-800 dark:text-green-300",
-  stark: "text-green-800 dark:text-green-300",
-  bra: "text-slate-600 dark:text-slate-400",
-  okej: "text-amber-800 dark:text-amber-300",
-  svag: "text-red-800 dark:text-red-300",
-};
 
 // ── SignalBadge helper ──────────────────────────────────────────────────────
 
-const SIGNAL_LABELS: Record<string, string> = {
-  STARK:      "Starkt köpläge",
-  OK:         "Bra läge",
-  VÄNTA:      "Avvakta",
-  EJ_AKTUELL: "Ej aktuellt",
-};
-
-const SIGNAL_COLORS: Record<string, string> = {
-  STARK:      "bg-green-100 text-green-800",
-  OK:         "bg-blue-100 text-blue-800",
-  VÄNTA:      "bg-amber-100 text-amber-800",
-  EJ_AKTUELL: "bg-gray-100 text-gray-600",
-};
-
 function SignalBadge({ signal }: { signal: string | null | undefined }) {
-  const label = SIGNAL_LABELS[signal ?? ""] ?? signal ?? "—";
-  const color = SIGNAL_COLORS[signal ?? ""] ?? SIGNAL_COLORS["EJ_AKTUELL"];
   return (
-    <span className={cn("inline-block px-2.5 py-1 rounded-md text-xs font-medium", color)}>
-      {label}
+    <span className={cn("inline-block px-2.5 py-1 rounded-md text-xs font-medium", signalClass(signal))}>
+      {signalLabel(signal)}
     </span>
   );
 }
@@ -73,11 +45,11 @@ function SignalBadge({ signal }: { signal: string | null | undefined }) {
 function ReasonIcon({ icon }: { icon: VerdictReason["icon"] }) {
   switch (icon) {
     case "check":
-      return <TrendingUp size={16} className="shrink-0 text-green-600" />;
+      return <TrendingUp size={16} className="shrink-0 text-[var(--color-up)]" />;
     case "warning":
-      return <AlertTriangle size={16} className="shrink-0 text-amber-600" />;
+      return <AlertTriangle size={16} className="shrink-0 text-[var(--color-warn)]" />;
     case "info":
-      return <Shield size={16} className="shrink-0 text-blue-600" />;
+      return <Shield size={16} className="shrink-0 text-[var(--color-accent)]" />;
   }
 }
 
@@ -131,7 +103,7 @@ const NUMBER_CARDS = (stock: ScanRow): NumberCardDef[] => [
 
 function NumberCard({ label, value, unit, tooltip }: NumberCardDef) {
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3">
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-3">
       <div className="flex items-center gap-1 mb-1">
         <span className="text-[11px] text-[var(--color-text-muted)]">{label}</span>
         <InfoTooltip text={tooltip} side="top" />
@@ -199,12 +171,9 @@ interface Props {
 export function VerdictCard({ stock }: Props) {
   const [showNumbers, setShowNumbers] = useState(false);
   const verdict = buildVerdict(stock);
-  const qc = qualityClasses(verdict.qualityLabel);
-  const emoji = QUALITY_EMOJI[verdict.qualityLabel] ?? "👍";
-  const textColor = QUALITY_TEXT_COLOR[verdict.qualityLabel] ?? "text-slate-600 dark:text-slate-400";
 
   return (
-    <div className={cn("rounded-xl border p-5 space-y-5", qc)}>
+    <div className="rounded-xl border p-5 space-y-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
       {/* Header: name + ticker / price + change */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -232,12 +201,12 @@ export function VerdictCard({ stock }: Props) {
       {/* Signal badge */}
       <SignalBadge signal={stock.entry_signal} />
 
-      {/* Emoji + quality sentence */}
+      {/* Icon + quality sentence */}
       <div className="flex items-start gap-3">
-        <span className="text-2xl shrink-0 block" style={{ lineHeight: 1 }}>
-          {emoji}
+        <span className="shrink-0 mt-0.5">
+          <QualityIcon label={verdict.qualityLabel} />
         </span>
-        <p className={cn("text-sm leading-relaxed", textColor)}>
+        <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
           {verdict.qualitySentence}
         </p>
       </div>
@@ -247,7 +216,7 @@ export function VerdictCard({ stock }: Props) {
         {verdict.reasons.map((reason, i) => (
           <div
             key={i}
-            className="rounded-lg border p-3 bg-white border-[var(--color-border)]"
+            className="rounded-lg border p-3 bg-[var(--color-bg-elevated)] border-[var(--color-border)]"
           >
             <div className="flex items-center gap-1.5 mb-1">
               <ReasonIcon icon={reason.icon} />
@@ -263,14 +232,14 @@ export function VerdictCard({ stock }: Props) {
       </div>
 
       {/* Risk */}
-      <div className="rounded-lg border p-3 bg-amber-50 border-amber-200">
+      <div className="rounded-lg border p-3 bg-[var(--color-warn-soft)] border-[var(--color-warn-soft)]">
         <div className="flex items-center gap-1.5 mb-1">
-          <AlertTriangle size={15} className="shrink-0 text-amber-700" />
+          <AlertTriangle size={15} className="shrink-0 text-[var(--color-warn)]" />
           <span className="text-xs font-semibold text-[var(--color-text-primary)]">
             {verdict.risk.title}
           </span>
         </div>
-        <p className="text-[11px] text-amber-800 leading-relaxed">
+        <p className="text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
           {verdict.risk.detail}
         </p>
       </div>

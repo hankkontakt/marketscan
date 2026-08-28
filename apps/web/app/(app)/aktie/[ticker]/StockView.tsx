@@ -9,11 +9,12 @@ import { VerdictCard } from "@/components/stock/VerdictCard";
 import { ExplainSection } from "@/components/stock/ExplainSection";
 import { MicroLesson } from "@/components/ui/MicroLesson";
 import { BeginnerCTA } from "@/components/stock/BeginnerCTA";
+import { LevelSwitcher } from "@/components/stock/LevelSwitcher";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
 import { EarningsMemoCard } from "@/components/stock/EarningsMemoCard";
 import { trackEvent, EVENT } from "@/lib/tracking";
-import { useExperience, BeginnerOnly, NonExpertOnly, ExpertOnly } from "@/components/providers/ExperienceProvider";
+import { useExperience, NonExpertOnly, ExpertOnly } from "@/components/providers/ExperienceProvider";
 import dynamic from "next/dynamic";
 
 const AnalysCommittee = dynamic(async () => {
@@ -25,6 +26,7 @@ const AnalysCommittee = dynamic(async () => {
 import { cn } from "@/lib/utils";
 import {
   formatPrice, formatNumber, formatPct, formatPctChange, formatMarketCap, scoreColorClass, formatScore, changeClass,
+  signalClass, signalLabel,
 } from "@/lib/format";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -64,96 +66,101 @@ export function StockView({ ticker }: Props) {
 
   return (
     <>
-      {/* ── Beginner: VerdictCard + explain + CTA only ─────────────── */}
-      <BeginnerOnly>
-        <div className="max-w-2xl mx-auto space-y-6 py-4">
-          <VerdictCard stock={stock} />
-          <ExplainSection ticker={stock.ticker} stock={stock} />
-          <BeginnerCTA ticker={stock.ticker} />
-        </div>
-      </BeginnerOnly>
-
-      {/* ── Non-expert (beginner + intermediate): simplified view ──── */}
+      {/* ── Non-expert (beginner + intermediate): data-first view ───── */}
       <NonExpertOnly>
-        {/* Only render the intermediate+beginner content when actually intermediate */}
-        {level === "intermediate" && (
-          <div className="-mx-8 -mt-6">
-            <div className="sticky top-0 z-30">
-              {/* Simple headline instead of full VerdictHeader */}
-              <div className="border-b px-6 py-4 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg font-bold text-[var(--color-text-primary)]">
-                        {stock.name}
-                      </span>
-                      <span className="font-mono text-sm text-[var(--color-text-secondary)]">
-                        {stock.ticker}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <span className="font-mono tabular text-2xl font-bold text-[var(--color-text-primary)]">
-                      {formatPrice(stock.price)}
+        <div className="-mx-8 -mt-6">
+          <div className="sticky top-0 z-30">
+            {/* Simple headline instead of full VerdictHeader */}
+            <div className="border-b px-6 py-4 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-bold text-[var(--color-text-primary)]">
+                      {stock.name}
                     </span>
-                    {stock.change_pct != null && (
-                      <div className={cn("font-mono tabular text-sm font-medium", changeClass(stock.change_pct))}>
-                        {formatPctChange(stock.change_pct)} idag
-                      </div>
-                    )}
+                    <span className="font-mono text-sm text-[var(--color-text-secondary)]">
+                      {stock.ticker}
+                    </span>
                   </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <span className="font-mono tabular text-2xl font-bold text-[var(--color-text-primary)]">
+                    {formatPrice(stock.price)}
+                  </span>
+                  {stock.change_pct != null && (
+                    <div className={cn("font-mono tabular text-sm font-medium", changeClass(stock.change_pct))}>
+                      {formatPctChange(stock.change_pct)} idag
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* VerdictCard below the header */}
+              {/* Signal badge + level switcher row */}
+              <div className="mt-3 flex items-center justify-between gap-4 flex-wrap">
+                <SignalBadgeInline signal={stock.entry_signal} />
+                <LevelSwitcher />
+              </div>
+            </div>
+
+            {/* VerdictCard below the header — intermediate only (beginner finds it in the AI tab) */}
+            {level === "intermediate" && (
               <div className="px-6 py-4 bg-[var(--color-bg-surface)]">
                 <VerdictCard stock={stock} />
               </div>
+            )}
 
-              {/* Simplified tabs */}
-              <Tabs.Root defaultValue="oversikt" className="bg-[var(--color-bg-surface)]">
-                <Tabs.List className="flex border-b px-6 border-[var(--color-border)]" aria-label="Flikar">
-                  <Tabs.Trigger
-                    value="oversikt"
-                    className={cn(
-                      "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                      "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                      "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-                    )}
-                  >
-                    Översikt
-                  </Tabs.Trigger>
-                  <Tabs.Trigger
-                    value="rapporter"
-                    className={cn(
-                      "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                      "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                      "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-                    )}
-                  >
-                    Rapporter
-                  </Tabs.Trigger>
-                  <Tabs.Trigger
-                    value="ai"
-                    className={cn(
-                      "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
-                      "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
-                      "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
-                    )}
-                  >
-                    AI-analys
-                  </Tabs.Trigger>
-                </Tabs.List>
+            {/* Simplified tabs */}
+            <Tabs.Root defaultValue="oversikt" className="bg-[var(--color-bg-surface)]">
+              <Tabs.List className="flex border-b px-6 border-[var(--color-border)]" aria-label="Flikar">
+                <Tabs.Trigger
+                  value="oversikt"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  Översikt
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="rapporter"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  Rapporter
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="ai"
+                  className={cn(
+                    "px-4 py-3 text-sm border-b-2 transition-colors -mb-px data-[state=inactive]:border-transparent",
+                    "data-[state=active]:border-[var(--color-accent)] data-[state=active]:text-[var(--color-accent)]",
+                    "data-[state=inactive]:text-[var(--color-text-muted)] data-[state=inactive]:hover:text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  AI-analys
+                </Tabs.Trigger>
+              </Tabs.List>
 
-                <div className="px-6 py-6">
-                  <Tabs.Content value="oversikt"><OverviewTab stock={stock} /></Tabs.Content>
-                  <Tabs.Content value="rapporter"><RapporterTab ticker={ticker} stock={stock} /></Tabs.Content>
-                  <Tabs.Content value="ai"><AITab stock={stock} /></Tabs.Content>
-                </div>
-              </Tabs.Root>
-            </div>
+              <div className="px-6 py-6">
+                <Tabs.Content value="oversikt"><OverviewTab stock={stock} showBeginnerCTA={level === "beginner"} /></Tabs.Content>
+                <Tabs.Content value="rapporter"><RapporterTab ticker={ticker} stock={stock} /></Tabs.Content>
+                <Tabs.Content value="ai">
+                  {level === "beginner" ? (
+                    <div className="space-y-5">
+                      <VerdictCard stock={stock} />
+                      <ExplainSection ticker={stock.ticker} stock={stock} />
+                    </div>
+                  ) : (
+                    <AITab stock={stock} />
+                  )}
+                </Tabs.Content>
+              </div>
+            </Tabs.Root>
           </div>
-        )}
+        </div>
       </NonExpertOnly>
 
       {/* ── Expert: current StockView EXACTLY as-is ────────────────── */}
@@ -162,6 +169,11 @@ export function StockView({ ticker }: Props) {
           {/* Sticky header block: VerdictHeader + tab bar as ONE sticky unit */}
           <div className="sticky top-0 z-30">
             <VerdictHeader stock={stock} />
+
+            {/* Level switcher — slim row between header and tab bar */}
+            <div className="px-6 py-2 border-b bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+              <LevelSwitcher />
+            </div>
 
             {/* Tab bar with Radix Tabs */}
             <Tabs.Root defaultValue="oversikt" className="bg-[var(--color-bg-surface)]">
@@ -246,7 +258,16 @@ export function StockView({ ticker }: Props) {
 
 // ─── Översikt ────────────────────────────────────────────────────────────────
 
-function OverviewTab({ stock }: { stock: ScanRow }) {
+function SignalBadgeInline({ signal }: { signal: string | null | undefined }) {
+  if (!signal) return null;
+  return (
+    <span className={cn("px-2.5 py-1 rounded-md text-xs font-medium", signalClass(signal))}>
+      {signalLabel(signal)}
+    </span>
+  );
+}
+
+function OverviewTab({ stock, showBeginnerCTA = false }: { stock: ScanRow; showBeginnerCTA?: boolean }) {
   const { data: priceData, isLoading } = usePriceHistory(stock.ticker);
   const { data: profile } = useCompanyProfile(stock.ticker);
 
@@ -360,6 +381,13 @@ function OverviewTab({ stock }: { stock: ScanRow }) {
       {profile && (
         <div className="xl:col-span-3">
           <CompanyProfileCard profile={profile} currentPrice={stock.price} />
+        </div>
+      )}
+
+      {/* Beginner CTA — soft close of the overview, only in beginner mode */}
+      {showBeginnerCTA && (
+        <div className="xl:col-span-3">
+          <BeginnerCTA ticker={stock.ticker} />
         </div>
       )}
 

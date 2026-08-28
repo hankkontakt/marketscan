@@ -17,26 +17,20 @@ export function BeginnerCTA({ ticker }: { ticker: string }) {
     onError: () => toast.error("Logga in för att bevaka aktier"),
   });
   return (
-    <div
-      className="rounded-xl border p-6 text-center space-y-4"
-      style={{
-        backgroundColor: "#f0fdf4",
-        borderColor: "#bbf7d0",
-      }}
-    >
+    <div className="rounded-xl border p-6 text-center space-y-4 bg-[var(--color-up-soft)] border-[var(--color-up-soft)]">
       <div className="flex items-center justify-center gap-2">
-        <span className="text-xl">🎯</span>
-        <h3 className="text-sm font-bold text-green-800">
+        <Star size={18} className="text-[var(--color-up)]" strokeWidth={1.5} />
+        <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
           Vill du följa den här aktien?
         </h3>
       </div>
 
-      <p className="text-xs text-green-700 leading-relaxed max-w-sm mx-auto">
+      <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-sm mx-auto">
         Lägg den i din bevakningslista och följ hur omdömet utvecklas under
         de kommande 30 dagarna.
       </p>
 
-      <p className="text-xs text-green-600 leading-relaxed">
+      <p className="text-xs text-[var(--color-up)] leading-relaxed">
         Inga köp, ingen risk — bara lärande.
       </p>
 
@@ -44,7 +38,7 @@ export function BeginnerCTA({ ticker }: { ticker: string }) {
         onClick={() => addWatch.mutate()}
         disabled={addWatch.isPending}
         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium
-                   bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
+                   bg-[var(--color-up)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
       >
         {addWatch.isPending ? (
           <Loader2 size={14} className="animate-spin" />
