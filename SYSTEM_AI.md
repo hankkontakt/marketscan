@@ -911,6 +911,13 @@ python -m uvicorn apps.api.main:app --reload --port 8000 --log-level debug
 
 > Nyaste överst. Format: `YYYY-MM-DD — beskrivning (fil)`.
 
+### 2026-08-28 — Aktiesida: datadriven nybörjarvvy + nivåväxlare på sidan
+
+- Nybörjarvyn (default) fick samma tab-struktur som mellanläget (Översikt/Rapporter/AI-analys): prischart (befintlig PriceChart), synliga nyckeltal, bolagsprofil + BeginnerCTA i Översikt; VerdictCard + AI-förklaring ligger nu i AI-fliken — data före AI. `apps/web/app/(app)/aktie/[ticker]/StockView.tsx`
+- Ny `LevelSwitcher` (Enkelt/Mellan/Avancerat) direkt på aktiesidan för alla nivåer, sparar via befintlig `setLevel`. `apps/web/components/stock/LevelSwitcher.tsx`
+- VerdictCard + BeginnerCTA: emoji-betyg och hårdkodade färger ersatta med design-tokens/lucide-ikoner (mörkt-lägessäkert). `components/stock/VerdictCard.tsx`, `components/stock/BeginnerCTA.tsx`
+- AI-kostnadsanalys: `deepseek-chat` = ~$0.0004–0.0008/call, cachad per ticker/dag → ~1–3 USD/månad; följdfrågor ocachade. Design-doc: `docs/plan/2026-08-28-aktiesida-redesign.md`
+
 ### 2026-08-28 — "Endast 200 aktier"-roten + Supabase-omstart
 
 - `/api/scan` 500 (ResponseValidationError) vid limit>250: BITF/SQ hade `mews_flag=NULL` (COPY skrev explicit NULL som kringgick DEFAULT false) och `ScanRow` krävde strängt bool → tolererar nu NULL (`bool | None = False`); `_prepare_df` coerces bool-kolumner till False. DB-reparation: NULL→false (2× mews_flag, 418× ml_flag_uncertain).
