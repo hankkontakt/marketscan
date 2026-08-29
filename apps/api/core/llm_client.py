@@ -31,6 +31,8 @@ LLM_DAILY_PAID_CAP = int(os.environ.get("LLM_DAILY_PAID_CAP", "500"))
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_EMBED_MODEL = "models/text-embedding-005"
 GEMINI_FLASH_MODEL = "models/gemini-3-flash-preview"
+# Fallback-kedja om en modell saknar fri-tier/avviker på kontot:
+GEMINI_FLASH_FALLBACKS = ["models/gemini-3.1-flash-lite", "models/gemini-3.6-flash", "models/gemini-2.5-flash"]
 
 # DeepSeek endpoint (via OpenRouter; env-var-namn behålls för kompatibilitet)
 DEEPSEEK_BASE = os.environ.get("DEEPSEEK_BASE", "https://openrouter.ai/api/v1")
@@ -109,53 +111,59 @@ def _increment_budget(model: str):
 
 
 def _call_gemini_complete(prompt: str, json_schema: Optional[dict] = None) -> Optional[dict]:
-    """Anropa Gemini Flash-Lite (free tier)."""
+    """Anropa Gemini (free tier). Kör igenom GEMINI_FLASH_MODEL + fallback-kedja —
+    en modell som saknar fri-tier/avviker på kontot ska inte knäcka AI:et."""
     if not GEMINI_API_KEY:
-        logger.debug("GEMINI_API_KEY not set")
+        logger.info("GEMINI_API_KEY not set")
         return None
 
-    url = f"{GEMINI_BASE}/{GEMINI_FLASH_MODEL}:generateContent?key={GEMINI_API_KEY}"
-
-    body = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.1,
-            "maxOutputTokens": 2048,
-        },
-    }
-
-    if json_schema:
-        body["generationConfig"]["response_mime_type"] = "application/json"
-        body["generationConfig"]["response_schema"] = json_schema
-
-    try:
-        resp = httpx.post(url, json=body, timeout=60)
-        if resp.status_code == 429:
-            logger.warning("Gemini rate limited (429) — faller tillbaka")
-            return None
-        if resp.status_code != 200:
-            logger.warning("Gemini error %d: %s", resp.status_code, resp.text[:200])
-            return None
-
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return None
-
-        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    models = [GEMINI_FLASH_MODEL, *GEMINI_FLASH_FALLBACKS]
+    last_err = ""
+    for model in models:
+        url = f"{GEMINI_BASE}/{model}:generateContent?key={GEMINI_API_KEY}"
+        body = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": 2048,
+            },
+        }
         if json_schema:
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                logger.warning("Gemini JSON parse failed, raw: %s", text[:200])
-                return {"raw": text}
-        return {"text": text}
-
-    except httpx.TimeoutException:
-        logger.warning("Gemini timeout")
-        return None
-    except Exception as e:
-        logger.warning("Gemini call failed: %s", e)
+            body["generationConfig"]["response_mime_type"] = "application/json"
+            body["generationConfig"]["response_schema"] = json_schema
+        try:
+            resp = httpx.post(url, json=body, timeout=60)
+            if resp.status_code == 429:
+                last_err = f"{model}: 429 rate limited"
+                continue
+            if resp.status_code != 200:
+                last_err = f"{model}: {resp.status_code} {resp.text[:120]}"
+                continue
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                last_err = f"{model}: inga candidates"
+                continue
+            text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            if json_schema:
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError:
+                    return {"raw": text}
+            if not text:
+                last_err = f"{model}: tom text"
+                continue
+            if model != GEMINI_FLASH_MODEL:
+                logger.info("Gemini-fallback använde %s", model)
+            return {"text": text}
+        except httpx.TimeoutException:
+            last_err = f"{model}: timeout"
+            continue
+        except Exception as e:
+            last_err = f"{model}: {e}"
+            continue
+    logger.info("Gemini misslyckades med alla modeller: %s", last_err)
+    return None
         return None
 
 
