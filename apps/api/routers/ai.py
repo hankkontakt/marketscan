@@ -737,14 +737,33 @@ def _build_stock_context(ticker: str, data: dict) -> str:
 
 
 async def _call_ai(system_prompt: str, user_message: str, max_tokens: int = 500) -> str:
-    """Call AI provider — currently DeepSeek."""
+    """AI-provider: DeepSeek (OpenRouter) först; vid fel → Gemini free tier (ärligt
+    fallback, aldrig 500). Om båda misslyckas → tydligt meddelande till användaren."""
     from apps.api.core.deepseek_client import call_deepseek
-
-    return await call_deepseek(system_prompt, user_message, max_tokens=max_tokens, temperature=0.3)
+    try:
+        result = await call_deepseek(system_prompt, user_message, max_tokens=max_tokens, temperature=0.3)
+        if result and not result.startswith("(AI ej konfigurerad)"):
+            return result
+    except Exception as e:
+        logger.warning("DeepSeek-vägen misslyckades (%s) — faller till Gemini", e)
+    from apps.api.core.llm_client import _call_gemini_complete
+    gem = _call_gemini_complete(f"{system_prompt}\n\n{user_message}")
+    if gem and gem.get("text"):
+        return str(gem["text"])
+    return "(AI-tjänsterna är tillfälligt otillgängliga — försök igen om någon minut.)"
 
 
 async def _call_ai_chat(system_prompt: str, context: str, messages: list[dict]) -> str:
-    """Call AI provider with chat history — currently DeepSeek."""
+    """Call AI provider with chat history — DeepSeek, samma ärliga Gemini-fallback som _call_ai."""
     from apps.api.core.deepseek_client import call_deepseek_chat
-
-    return await call_deepseek_chat(system_prompt, context, messages, max_tokens=600)
+    try:
+        result = await call_deepseek_chat(system_prompt, context, messages, max_tokens=600)
+        if result and not result.startswith("(AI ej konfigurerad)"):
+            return result
+    except Exception as e:
+        logger.warning("DeepSeek-chat misslyckades (%s) — faller till Gemini", e)
+    from apps.api.core.llm_client import _call_gemini_complete
+    gem = _call_gemini_complete(f"{system_prompt}\n\n{context}\n\n{messages}")
+    if gem and gem.get("text"):
+        return str(gem["text"])
+    return "(AI-tjänsterna är tillfälligt otillgängliga — försök igen om någon minut.)"
