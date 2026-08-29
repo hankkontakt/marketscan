@@ -164,7 +164,6 @@ def _call_gemini_complete(prompt: str, json_schema: Optional[dict] = None) -> Op
             continue
     logger.info("Gemini misslyckades med alla modeller: %s", last_err)
     return None
-        return None
 
 
 def _extract_content(message: dict) -> str:
