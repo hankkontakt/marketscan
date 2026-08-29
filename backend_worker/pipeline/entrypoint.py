@@ -272,9 +272,24 @@ def supplement_user_requested_tickers(dsn: str) -> None:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def run(mode: str) -> None:
+def run(mode: str, tickers: list[str] | None = None) -> None:
     from backend_worker.db_loader import load_scan, log_pipeline_run
     from backend_worker.r2_uploader import upload_score_snapshot
+
+    # targeted: delegera till run_targeted (force_refresh) i stock-scanner —
+    # används när workflowen kör mode=targeted&tickers=... (refresh av enskilda)
+    if mode == "targeted":
+        if not tickers:
+            raise SystemExit("mode=targeted kräver --tickers (komma-separerade)")
+        from core.daily_pipeline import run_targeted
+        result = run_targeted(tickers)
+        if not result:
+            logger.error("run_targeted returnerade ingen data för %s", tickers)
+            raise SystemExit(1)
+        dsn = os.environ["DATABASE_URL"]
+        load_scan(result, dsn, replace=False)
+        logger.info("targeted klart: %s rader laddade", len(result))
+        return
 
     dsn = os.environ["DATABASE_URL"]
     log_pipeline_run(mode, "running", dsn=dsn)
@@ -361,6 +376,8 @@ def run(mode: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", default="morning",
-                        choices=["morning", "evening", "weekly", "manual", "smallcap"])
+                        choices=["morning", "evening", "weekly", "manual", "smallcap", "targeted"])
+    parser.add_argument("--tickers", default="", help="Komma-separerade tickers (mode=targeted)")
     args = parser.parse_args()
-    run(args.mode)
+    tickers = [t.strip() for t in args.tickers.split(",") if t.strip()] if args.tickers else None
+    run(args.mode, tickers)
