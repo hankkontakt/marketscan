@@ -52,7 +52,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.15  # Pinnad: nyare ruff-versioner utökar DEFAULT-rules (BLE/I001/UP/DTZ/SIM) — regeluppgradering är en separat uppgift
       - name: Run ruff
         run: ruff check apps/api/ backend_worker/ --output-format=github
 
