@@ -69,9 +69,9 @@ jobs:
 
     steps:
       # ── Setup ────────────────────────────────────────────────────────────
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2   # marketscan i repo-roten
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2   # marketscan i repo-roten
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2   # stock-scanner (core/, scripts/) för scan
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2   # stock-scanner (core/, scripts/) för scan
         with:
           repository: hankkontakt/stock-scanner
           token: ${{ secrets.GH_CHECKOUT_TOKEN }}
