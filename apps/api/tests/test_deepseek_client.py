@@ -13,9 +13,12 @@ class TestResolveEndpoint(unittest.TestCase):
         self.assertIn("api.deepseek.com", url)
         self.assertEqual(model, "deepseek-v4-flash")
 
-    def test_empty_key_falls_back_to_openrouter(self):
-        url, _ = _resolve_endpoint("")
-        self.assertIn("openrouter.ai", url)
+    def test_empty_key_not_reached_upstream(self):
+        # Tom nyckel hanteras av call_deepseek-guarden före _resolve_endpoint;
+        # resolverns kontrakt: allt som inte är OpenRouter-nyckel = DeepSeek-plattformen.
+        url, model = _resolve_endpoint("")
+        self.assertIn("api.deepseek.com", url)
+        self.assertEqual(model, "deepseek-v4-flash")
 
 
 if __name__ == "__main__":
