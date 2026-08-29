@@ -291,8 +291,9 @@ def run_alert_engine(dsn: str) -> dict[str, int]:
         }
 
         # ── Load active alert rules ────────────────────────────────────────────
+        # FIX 2026-08-29: profiles har ingen email-kolumn (001/012) — läs från auth.users.
         cur.execute("""
-            SELECT r.*, p.email, p.email_opt_in
+            SELECT r.*, u.email, COALESCE(p.email_opt_in, false) AS email_opt_in
             FROM alert_rules r
             JOIN auth.users u ON u.id = r.user_id
             LEFT JOIN profiles p ON p.id = r.user_id
