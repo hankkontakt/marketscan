@@ -301,8 +301,6 @@ def _finnhub_sector_fill(cur, limit: int = 160) -> int:
         except Exception:
             continue
     return filled
-    except Exception:
-        return None
 
 
 def lookup_isin_via_yfinance(isin: str, cache: dict | None = None, force_refresh: bool = False) -> Optional[str]:
