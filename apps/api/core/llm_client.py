@@ -27,10 +27,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 LLM_DAILY_PAID_CAP = int(os.environ.get("LLM_DAILY_PAID_CAP", "500"))
 
-# Gemini endpoints (free tier)
+# Gemini endpoints (free tier) — OBS: 1.5-modellerna är RÖTADE i Gemini API (2026: Gemini 3.x).
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-GEMINI_EMBED_MODEL = "models/embedding-001"
-GEMINI_FLASH_MODEL = "models/gemini-1.5-flash-latest"
+GEMINI_EMBED_MODEL = "models/text-embedding-005"
+GEMINI_FLASH_MODEL = "models/gemini-3-flash-preview"
 
 # DeepSeek endpoint (via OpenRouter; env-var-namn behålls för kompatibilitet)
 DEEPSEEK_BASE = os.environ.get("DEEPSEEK_BASE", "https://openrouter.ai/api/v1")
