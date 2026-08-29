@@ -4,14 +4,7 @@ Persistent AI response cache using the Supabase ai_cache table.
 import logging
 from datetime import datetime, timedelta, timezone
 
-from httpx import HTTPError as HttpxHTTPError  # Supabase-klientfel (BLE001: smala undantag)
-
 logger = logging.getLogger(__name__)
-
-
-def _is_cached_error(exc: BaseException) -> bool:
-    """Vilka fel är värdelösa för anroparen? (bara login/ordlista/decode)."""
-    return isinstance(exc, (HttpxHTTPError, KeyError, ValueError, TypeError))
 
 
 def get_cached(key: str, sb, max_age_hours: int = 24):
@@ -51,7 +44,7 @@ def get_cached(key: str, sb, max_age_hours: int = 24):
                 sb.table("ai_cache").delete().eq("cache_key", key).execute()
             else:
                 return row["response_data"]
-    except (HttpxHTTPError, KeyError, ValueError, TypeError) as e:
+    except Exception as e:  # noqa: BLE001 — cache ÄR best-effort: får ALDRIG krascha anroparen
         logger.warning("ai_cache.get_cached failed for key=%s: %s", key, e)
     return None
 
@@ -79,7 +72,7 @@ def set_cache(key: str, content, sb) -> None:
         ).execute()
         # Housekeeping: remove entries older than 7 days
         sb.rpc("clean_ai_cache").execute()
-    except (HttpxHTTPError, KeyError, ValueError, TypeError) as e:
+    except Exception as e:  # noqa: BLE001 — cache ÄR best-effort: får ALDRIG krascha anroparen
         logger.warning("ai_cache.set_cache failed for key=%s: %s", key, e)
 
 
@@ -87,5 +80,5 @@ def clear_cache(sb) -> None:
     """Delete every row from the ai_cache table."""
     try:
         sb.table("ai_cache").delete().neq("cache_key", "").execute()
-    except (HttpxHTTPError, KeyError, ValueError, TypeError) as e:
+    except Exception as e:  # noqa: BLE001 — cache ÄR best-effort: får ALDRIG krascha anroparen
         logger.warning("ai_cache.clear_cache failed: %s", e)
