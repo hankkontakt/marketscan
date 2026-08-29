@@ -193,6 +193,18 @@ def compute_sector_value(value_rows: list, min_n: int = 15) -> dict:
     return out
 
 
+def _build_metrics_json(m: dict) -> str:
+    """Sanerad metrics_json: icke-ändliga floats → null (Postgres avvisar NaN/Infinity-tokens)."""
+    chosen = {k: m.get(k) for k in ("roe", "roa", "gmar", "cfoa", "leverage",
+                                    "ndebt_ebitda", "ev_ebitda", "fcf_yield",
+                                    "momentum_raw", "mcap_local") if m.get(k) is not None}
+    chosen = {k: (None if isinstance(v, float) and not math.isfinite(float(v)) else v)
+              for k, v in chosen.items()}
+    if m.get("fy_end"):
+        chosen["as_of"] = m["fy_end"]
+    return json.dumps(chosen, default=str, allow_nan=False)
+
+
 def composite(q=None, m=None, v=None, p=None, i=None) -> float:
     """Viktad komposit (percentiler 0-100, neutral=50).
 
@@ -751,11 +763,7 @@ def main():
             "exclusion_reason": ex,
             "warning_flags": json.dumps(flags),
             "data_quality": dq,
-            "metrics_json": json.dumps({
-                k: m.get(k) for k in ("roe", "roa", "gmar", "cfoa", "leverage",
-                                      "ndebt_ebitda", "ev_ebitda", "fcf_yield",
-                                      "momentum_raw", "mcap_local") if m.get(k) is not None
-            } | ({"as_of": m["fy_end"]} if m.get("fy_end") else {}), default=str),
+            "metrics_json": _build_metrics_json(m),
         })
 
     # Sektorrelativ värdepercentil (visningsfält; kompositen behåller global value_z)
