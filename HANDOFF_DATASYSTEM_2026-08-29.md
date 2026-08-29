@@ -79,10 +79,22 @@ python -m backend_worker.universe_mapping ; python -m backend_worker.earnings_su
 | Dependabot-PR ×3 | 🔄 REBASED | checkout v7.0.1 / setup-python v7 / setup-node v7 — CI fixad: `fetch-depth:0` (gitleaks), ai_cache smala except, **ruff pinnad 0.15.15** (nyare ruff utökar default-rules och failar hela befintlig kodbotten) + **Vercel Preview-envs tillagda** (NEXT_PUBLIC_SUPABASE_*/API_URL — de saknades → samtliga preview-builds failade på /login-prerender) |
 | **Web-deployen (det stora)** | ✅ LÖST | Rotorsaker: (1) GitHub-integrationen triggade inte prod-deploys — web-projektet deployas manuellt; (2) `vercel deploy` från CLI byggde ur **build-cache** ("Restored build cache") — löste med `vercel deploy --prod --force` (cacheless, /radar i routetabellen); (3) alias `marketscan.vercel.app` sattes manuellt: `vercel alias set web-b28qgj54x-… marketscan.vercel.app`. **/radar LIVE-verifierad i riktig webbläsare: RegimeBox (Normal 0,4 %/34e/361), Signalernas ärlighet, Rapport-kolumnen, 229 bolag, topp-rank BOOZT/MSAB-B/INVE-A/INVE-B/RVRC**; portfölj: 3 innehav med riktiga namn; smarta larm-epigon: + Ny regel + tom-läge. |
 
-**Lektioner (viktiga för framtiden):**
-1. **`vercel deploy` utan `--force` = cache-restaurering** — serverbuild föräldras. Prod: `vercel deploy --prod --force` (från apps/web).
+**Lektioner (viktiga för framtiden):**1. **`vercel deploy` utan `--force` = cache-restaurering** — serverbuild föräldras. Prod: `vercel deploy --prod --force` (från apps/web).
 2. **`vercel link`/`pull` kan skriva TOM bevärde .env-filer** — kolla värden innan build.
 3. **Supabase-SSR-cookie kan inte manuell-testas med raw Cookie** — använd riktig webbläsare för auth-flöden.
 4. **CI ruff 2026 = bredare defaults** — pinnad i pr-ci.yml; regeluppgradering = eget pass (BLE/UP/SIM/DTZ/I001 över ~15 filer).
 5. **`gh run rerun` kör gamla SHA:n** (redan noterat); använd `gh workflow run`.
 6. **Yahoo blockerar GH-runnern** (query1-finance + throttling) — yf.Lookup/earnings_dates data fylls via lokala körningar; Finnhub fri-tier täcker EJ svenska småbolag.
+
+---
+## AI-DIAGNOS (2026-08-29, STÄNGD som kod — kräver NYCKELÄTGÄRD av ägaren)
+
+**Faktabaserad kedja (vercel logs --json):** DeepSeek-vägen (OPENROUTER) svarade 401 — DEEPSEEK_API_KEY i Vercel (marketscan-api) är INTE giltig på openrouter.ai. Gemini-kedjan (llm_complete/daily-coach) ger tomt (sannolikt nyckelfri-område/kvot-uttömd).
+
+**Kod-fixar levererade (allt på master):**
+1. deepseek_client: auto-routing — 'sk-or-…' → OpenRouter; 'sk-…' → https://api.deepseek.com direkt (täckte dag-1-läckan: användaren roterade till DeepSeek-platformsnyckel men koden pekade på OpenRouter → 401).
+2. llm_client: Gemini-modeller uppdaterade (1.5 rötade 2026 → gemini-3-flash-preview + fallback-kedja 3.1-flash-lite/3.6-flash/2.5-flash + embedding-005).
+3. ai.py: _call_ai/_call_ai_chat — ärlig Gemini-fallback + läsbart meddelande i stället för 500/503.
+4. ai_cache: cache best-effort (får aldrig krascha AI:t).
+
+**VTG-ÄTGÄRD (bara ägaren kan):** Vercel → marketscan-api → Settings → Environment Variables → DEEPSEEK_API_KEY: sätt EN GILTIG nyckel — OpenRouter (börjar 'sk-or-') ELLER DeepSeek-plattformen ('sk-', fungerar nu via auto-routing). Kolla också GEMINI_API_KEY (Google AI Studio) + fri-tier-kvot. Test efter ändringen: /api/ai/daily-coach med JWT (se portfolj-AI).
