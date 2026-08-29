@@ -63,3 +63,26 @@ gh workflow run "News Pipeline" ; gh workflow run "FI Short Positions" ; gh work
 # lokal sektor-/SUE-fyllnad (Windows, hemma-IP):
 python -m backend_worker.universe_mapping ; python -m backend_worker.earnings_surprise
 ```
+
+---
+
+# DAG-2-tillägg (fortsättning samma dygn — samtliga punkter stängda)
+
+| Punkt | Status | Kvitto |
+|---|---|---|
+| P1 qmj/rank 2 rader | ✅ STÄNGD | Rotorsak: QMJ-insert misslyckades för 155/172 med `invalid input syntax for type json` (NaN/Infinity-tokens från np.float64-data) → `_build_metrics_json` (sanering + allow_nan=False) → prod: **162 rader, 151 rankade; qmj/rank → 50 rader (BOOZT 73.48)** |
+| SUE-data från GH | ✅ LÖST | `CHUNK_SIZE=60` + worker_state-cursor + timeout 90 → **chunk-1: 60 tickers → 1183 rader, 59 snapshots, cursor=60**; framtida måndagskörningar ackumulerar |
+| Smart-alert-UI | ✅ BYGGT | "Smarta larm"-sektion i /bevakningar (regellista, + Ny regel-formulär mot riktiga AlertRuleIn-fält, pausa/toggla, ta bort, 5 senaste utlösningar) — live-verifierad med riktig inloggning |
+| Survivorship-bias | ✅ FIXAD | `_forward_return_at_flagged` (terminalpris-fallback; utträdda bolag räknas i IC) + **decile-off-by-one (`np.digitize` +1) — factor_metrics skrevs ALDRIG p.g.a. denna; nu söndagskörningar fyller** |
+| Smart Alerts nattkrash | ✅ FIXAD | `profiles.email` finns ej → `u.email` från auth.users; nattkörning success |
+| finnhub-sector | ⚠️ KOD KLAR | `_finnhub_sector_fill` (profile2.industry) — fri-tier har INGEN SE-täckning (0 träffar, bevisat); fyller icke-SE marknader; SE-sektor fylls av yf.Lookup vid godkänd IP (lokal körning) |
+| Dependabot-PR ×3 | 🔄 REBASED | checkout v7.0.1 / setup-python v7 / setup-node v7 — CI fixad: `fetch-depth:0` (gitleaks), ai_cache smala except, **ruff pinnad 0.15.15** (nyare ruff utökar default-rules och failar hela befintlig kodbotten) + **Vercel Preview-envs tillagda** (NEXT_PUBLIC_SUPABASE_*/API_URL — de saknades → samtliga preview-builds failade på /login-prerender) |
+| **Web-deployen (det stora)** | ✅ LÖST | Rotorsaker: (1) GitHub-integrationen triggade inte prod-deploys — web-projektet deployas manuellt; (2) `vercel deploy` från CLI byggde ur **build-cache** ("Restored build cache") — löste med `vercel deploy --prod --force` (cacheless, /radar i routetabellen); (3) alias `marketscan.vercel.app` sattes manuellt: `vercel alias set web-b28qgj54x-… marketscan.vercel.app`. **/radar LIVE-verifierad i riktig webbläsare: RegimeBox (Normal 0,4 %/34e/361), Signalernas ärlighet, Rapport-kolumnen, 229 bolag, topp-rank BOOZT/MSAB-B/INVE-A/INVE-B/RVRC**; portfölj: 3 innehav med riktiga namn; smarta larm-epigon: + Ny regel + tom-läge. |
+
+**Lektioner (viktiga för framtiden):**
+1. **`vercel deploy` utan `--force` = cache-restaurering** — serverbuild föräldras. Prod: `vercel deploy --prod --force` (från apps/web).
+2. **`vercel link`/`pull` kan skriva TOM bevärde .env-filer** — kolla värden innan build.
+3. **Supabase-SSR-cookie kan inte manuell-testas med raw Cookie** — använd riktig webbläsare för auth-flöden.
+4. **CI ruff 2026 = bredare defaults** — pinnad i pr-ci.yml; regeluppgradering = eget pass (BLE/UP/SIM/DTZ/I001 över ~15 filer).
+5. **`gh run rerun` kör gamla SHA:n** (redan noterat); använd `gh workflow run`.
+6. **Yahoo blockerar GH-runnern** (query1-finance + throttling) — yf.Lookup/earnings_dates data fylls via lokala körningar; Finnhub fri-tier täcker EJ svenska småbolag.
