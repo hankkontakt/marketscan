@@ -27,12 +27,12 @@ jobs:
       # ── Checkout ──────────────────────────────────────────────────────────────
 
       - name: Checkout marketscan
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: marketscan
 
       - name: Checkout stock-scanner
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: hankkontakt/stock-scanner
           token: ${{ secrets.GH_CHECKOUT_TOKEN }}
