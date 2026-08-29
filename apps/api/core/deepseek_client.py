@@ -16,6 +16,16 @@ def _extract_content(message: dict) -> str:
     return "\n".join(d.get("text", "") for d in details if isinstance(d, dict))
 
 
+def _resolve_endpoint(key: str) -> tuple[str, str]:
+    """Auto-routing: OpenRouter-nycklar ('sk-or-...') → openrouter.ai (model med
+    leverantörsprefix); äkta DeepSeek-nycklar ('sk-...') → api.deepseek.com direkt
+    (dag-1-läckan i Vercel-env: 'DEEPSEEK_API_KEY' byttes mot DeepSeek-platform-
+    nyckel men URL:en pekade på OpenRouter → 401). Pure och testbar."""
+    if key.startswith("sk-or-"):
+        return settings.DEEPSEEK_API_URL, settings.DEEPSEEK_MODEL
+    return "https://api.deepseek.com/v1/chat/completions", "deepseek-v4-flash"
+
+
 async def call_deepseek(
     system_prompt: str,
     user_message: str,
@@ -25,15 +35,16 @@ async def call_deepseek(
     if not settings.DEEPSEEK_API_KEY:
         return "(AI ej konfigurerad)"
 
+    url, model_name = _resolve_endpoint(settings.DEEPSEEK_API_KEY)
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            settings.DEEPSEEK_API_URL,
+            url,
             headers={
                 "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": settings.DEEPSEEK_MODEL,
+                "model": model_name,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "thinking": {"type": "disabled"},
@@ -58,6 +69,7 @@ async def call_deepseek_chat(
     if not settings.DEEPSEEK_API_KEY:
         return "(AI ej konfigurerad)"
 
+    url, model_name = _resolve_endpoint(settings.DEEPSEEK_API_KEY)
     augmented = []
     for i, m in enumerate(messages):
         if i == 0 and m["role"] == "user":
@@ -67,13 +79,13 @@ async def call_deepseek_chat(
 
     async with httpx.AsyncClient(timeout=45) as client:
         resp = await client.post(
-            settings.DEEPSEEK_API_URL,
+            url,
             headers={
                 "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": settings.DEEPSEEK_MODEL,
+                "model": model_name,
                 "max_tokens": max_tokens,
                 "temperature": 0.3,
                 "thinking": {"type": "disabled"},
