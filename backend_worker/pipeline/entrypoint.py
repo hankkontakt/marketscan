@@ -282,13 +282,30 @@ def run(mode: str, tickers: list[str] | None = None) -> None:
         if not tickers:
             raise SystemExit("mode=targeted kräver --tickers (komma-separerade)")
         from core.daily_pipeline import run_targeted
-        result = run_targeted(tickers)
-        if not result:
-            logger.error("run_targeted returnerade ingen data för %s", tickers)
+        n_ok = run_targeted(tickers)
+        if not n_ok:
+            logger.error("run_targeted uppdaterade 0 tickers: %s", tickers)
             raise SystemExit(1)
+        # run_targeted returnerar antal uppdaterade (int); ladda parquet som
+        # den skrev — REPORT_DIR finns i core.daily_pipeline (stock-scanner/reports)
+        from core.daily_pipeline import REPORT_DIR
+        parquet_files = sorted(REPORT_DIR.glob("scored_universe_*.parquet"), reverse=True)
+        fallback = parquet_files[:1]
+        if not fallback:
+            csv_files = sorted(REPORT_DIR.glob("scored_universe_*.csv"), reverse=True)
+            fallback = csv_files[:1]
+        if not fallback:
+            logger.warning("targeted: ingen scored_universe-fil i %s — hoppar över load", REPORT_DIR)
+            return
+        try:
+            import pandas as pd
+            result = pd.read_parquet(parquet_files[0])
+        except Exception as pex:
+            logger.warning("targeted: parquet-läsning misslyckades (%s) — skippar load", pex)
+            return
         dsn = os.environ["DATABASE_URL"]
         load_scan(result, dsn, replace=False)
-        logger.info("targeted klart: %s rader laddade", len(result))
+        logger.info("targeted klart: %s tickers uppdaterade, %s rader laddade", n_ok, len(result))
         return
 
     dsn = os.environ["DATABASE_URL"]
