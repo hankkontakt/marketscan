@@ -28,9 +28,17 @@ SUE-formel (per publicerat kvartal):
     surprise på %-skala (std i samma skala — z är skalenlig).
     std = population std (statistics.pstdev) över fönstret.
 
+Chunkad körning (sedan 2026-08-29): Yahoo throttlar GH-runnern — en full
+156-ticker-körning överskrider 60-min-job-timeout (två körningar CANCELLED).
+Varje körning bearbetar max CHUNK_SIZE (60) tickers; worker_state-nyckeln
+'earnings_surprise_cursor' pekar på nästa chunk, så successiva veckor
+ackumulerar tills hela universumet är täckt (sedan wrap). --force/--full =
+fullkörning (ignorerar cursorn, manuellt).
+
 Användning:
     python -m backend_worker.earnings_surprise --dry-run   # beräkna, skriv inte
-    python -m backend_worker.earnings_surprise             # skriv till DB
+    python -m backend_worker.earnings_surprise             # skriv till DB (chunk)
+    python -m backend_worker.earnings_surprise --full      # fullkörning (ignorerar cursor)
 """
 from __future__ import annotations
 
@@ -57,13 +65,19 @@ FETCH_RETRIES = 1              # 1 retry utöver första försöket
 RETRY_SLEEP = 2.0
 FETCH_TIMEOUT_SECONDS = 20     # hård gräns per yfinance-anrop — ett hängande
                                # Yahoo-anrop får ALDRIG blockera steget
-                               # (worst case 156 × 20 s ≈ 52 min < job-timeout)
+                               # (worst case 60 × 20 s = 20 min < job-timeout 90 min)
+
+CHUNK_SIZE = 60                # max tickers per körning — Yahoo throttlar GH-
+                               # runnern; en full 156-ticker-körning överskrider
+                               # 60-min-job-timeout. Chunkade körningar
+                               # ackumulerar över successiva veckor via cursorn.
 
 SUE_MAX_PRIOR = 8              # upp till 8 tidigare kvartal i std-fönstret
 SUE_MIN_PRIOR = 4              # kräv minst 4 giltiga tidigare kvartal
 SUE_CLIP = 3.0                 # z clip ±3
 
 WORKER_STATE_KEY = "earnings_surprise_last_run"
+CURSOR_STATE_KEY = "earnings_surprise_cursor"   # {"next_index": int, "updated_at": iso}
 RECENT_RUN_HOURS = 23          # logga-notis om senaste körning var < 23 h sedan
 
 # Fallback-universum för --dry-run utan DATABASE_URL (lokal smoke-test).
@@ -71,6 +85,23 @@ DRY_RUN_FALLBACK_UNIVERSE = ["MYCR.ST", "SIVE.ST", "BOOZT.ST"]
 
 
 # ─── Pure funktioner ──────────────────────────────────────────────────────────
+
+def pick_chunk(tickers: list[str], cursor: int, chunk: int) -> tuple[list[str], int]:
+    """Välj nästa chunk ur universum + nästa cursor (pure funktion).
+
+    Returnerar (tickers[cursor:cursor+chunk], next_cursor). next_cursor =
+    cursor+chunk om det finns fler tickers kvar, annars 0 (wrap — nästa
+    körning börjar om från början). Tomt universum → ([], 0). Negativ cursor
+    klampas till 0 (korrupt worker_state ska aldrig processa fel tickers).
+    """
+    if not tickers:
+        return [], 0
+    cursor = max(0, cursor)
+    end = cursor + chunk
+    if end >= len(tickers):
+        return tickers[cursor:], 0
+    return tickers[cursor:end], end
+
 
 def compute_sue(prior_surprises: list[float]) -> float | None:
     """SUE-z för ett kvartal (pure funktion).
@@ -295,10 +326,12 @@ def _connect():
 
 
 def load_universe(cur) -> list[str]:
-    """Universum: listade tickers ur registret."""
+    """Universum: listade tickers ur registret (sorterat — chunk-cursorn
+    kräver stabil ordning mellan körningar)."""
     cur.execute(
         "SELECT ticker FROM universe_registry "
-        "WHERE status = 'listed' AND ticker IS NOT NULL"
+        "WHERE status = 'listed' AND ticker IS NOT NULL "
+        "ORDER BY ticker"
     )
     return [row[0] for row in cur.fetchall()]
 
@@ -309,6 +342,9 @@ def upsert_earnings_surprises(conn, published: list[dict], snapshots: list[dict]
     Retro-rader överskriver ALDRIG en giltig snapshot-rad. Skyddet ligger i
     python (SELECT + select_estimate_source) OCH i SQL: CASE-guard på
     eps_estimate samt WHERE eps_actual IS NULL för snapshot-uppdateringar.
+
+    COMMIT sköts av anroparen — samma transaktion som worker_state-cursorn,
+    så cursorn avancerar bara om datan faktiskt skrivs.
     """
     cur = conn.cursor()
     written = snapshot_written = 0
@@ -368,7 +404,6 @@ def upsert_earnings_surprises(conn, published: list[dict], snapshots: list[dict]
         ))
         snapshot_written += 1
 
-    conn.commit()
     return {"rows": written, "snapshots": snapshot_written}
 
 
@@ -393,6 +428,10 @@ def _last_run_age_hours() -> float | None:
 
 
 def _write_worker_state(conn, stats: dict) -> None:
+    """Upsert earnings_surprise_last_run till worker_state.
+
+    COMMIT sköts av anroparen — samma transaktion som upsert + cursor.
+    """
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO worker_state (key, value, updated_at)
@@ -405,7 +444,47 @@ def _write_worker_state(conn, stats: dict) -> None:
         "snapshots": stats.get("snapshots", 0),
         "errors": stats.get("errors", []),
     })))
-    conn.commit()
+
+
+def _load_cursor(conn) -> int:
+    """Läs earnings_surprise_cursor ur worker_state → next_index (int).
+
+    Ingen rad / ogiltigt värde → 0 (börja från början). DB-fel → 0 (samma
+    transaktion skrivs ändå inte — nästa körning tar om chunken).
+    """
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM worker_state WHERE key = %s", (CURSOR_STATE_KEY,))
+        row = cur.fetchone()
+        if row:
+            value = row[0]
+            if isinstance(value, dict):
+                return int(value.get("next_index", 0))
+            if isinstance(value, str):
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return int(parsed.get("next_index", 0))
+        return 0
+    except Exception as e:
+        logger.warning("Cursor-läsning misslyckades — startar från 0: %s", e)
+        return 0
+
+
+def _save_cursor(conn, next_index: int) -> None:
+    """Upsert earnings_surprise_cursor till worker_state.
+
+    Skrivs i SAMMA transaktion som earnings_surprises-upserten (commit sköts
+    av anroparen) — cursorn avancerar bara om datan också skrivs.
+    """
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO worker_state (key, value, updated_at)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    """, (CURSOR_STATE_KEY, json.dumps({
+        "next_index": next_index,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })))
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -415,11 +494,14 @@ def main():
         description="TS-SUE: standardiserad kvartalsöverraskning (mått, inte prediktion)")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--full", action="store_true",
+                        help="fullkörning — ignorerar worker_state-cursorn")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+    full_run = args.force or args.full
     db_url = os.environ.get("DATABASE_URL")
     tickers: list[str] = []
     if db_url:
@@ -443,13 +525,30 @@ def main():
                           "snapshots": 0, "errors": []}))
         return
 
+    # Chunkad körning: max CHUNK_SIZE tickers per run (Yahoo throttlar GH-
+    # runnern — en full 156-ticker-körning överskred 60-min-job-timeout).
+    # Cursor i worker_state ('earnings_surprise_cursor') pekar på nästa chunk;
+    # successiva veckor ackumulerar tills hela universumet är täckt (sedan
+    # wrap). --force/--full = fullkörning (ignorerar cursorn).
+    cursor = 0
+    if db_url and not full_run:
+        conn_c = _connect()
+        try:
+            cursor = _load_cursor(conn_c)
+        finally:
+            conn_c.close()
+    chunk_tickers, next_cursor = pick_chunk(tickers, cursor, CHUNK_SIZE)
+    logger.info("Chunk: %d/%d tickers (cursor %d → nästa %d%s)",
+                len(chunk_tickers), len(tickers), cursor, next_cursor,
+                ", fullkörning" if full_run else "")
+
     now = datetime.now(timezone.utc)
     published: list[dict] = []
     snapshots: list[dict] = []
     errors: list[str] = []
     raw_archive: dict[str, list] = {}
 
-    for ticker in tickers:
+    for ticker in chunk_tickers:
         try:
             df = fetch_earnings_dates(ticker)
             raw_archive[ticker] = _frame_to_records(df)
@@ -467,13 +566,14 @@ def main():
     if args.dry_run:
         print(json.dumps({
             "status": "ok", "dry_run": True,
-            "tickers": len(tickers), "rows": len(published),
+            "tickers": len(chunk_tickers), "rows": len(published),
             "snapshots": len(snapshots), "errors": errors,
+            "next_cursor": next_cursor,
         }))
         return
 
     if not db_url:
-        print(json.dumps({"status": "ok-no-db", "tickers": len(tickers),
+        print(json.dumps({"status": "ok-no-db", "tickers": len(chunk_tickers),
                           "rows": len(published), "snapshots": len(snapshots),
                           "errors": errors}))
         return
@@ -482,15 +582,18 @@ def main():
         conn = _connect()
         try:
             stats = upsert_earnings_surprises(conn, published, snapshots)
-            _write_worker_state(conn, {"tickers": len(tickers), **stats, "errors": errors})
+            _write_worker_state(conn, {"tickers": len(chunk_tickers), **stats,
+                                       "errors": errors})
+            _save_cursor(conn, next_cursor)
+            conn.commit()   # EN transaktion: data + last-run + cursor
         finally:
             conn.close()
-        print(json.dumps({"status": "ok", "tickers": len(tickers),
-                          **stats, "errors": errors}))
+        print(json.dumps({"status": "ok", "tickers": len(chunk_tickers),
+                          **stats, "errors": errors, "next_cursor": next_cursor}))
     except Exception as e:
         logger.error("DB-steg misslyckades: %s", e)
         print(json.dumps({"status": "error", "message": str(e),
-                          "tickers": len(tickers), "rows": len(published),
+                          "tickers": len(chunk_tickers), "rows": len(published),
                           "snapshots": len(snapshots), "errors": errors}))
         sys.exit(1)
 

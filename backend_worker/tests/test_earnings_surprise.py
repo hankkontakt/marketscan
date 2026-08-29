@@ -1,15 +1,20 @@
-"""Tester för earnings_surprise.py — SUE-beräkning, PIT-guard, snapshot-väljare.
+"""Tester för earnings_surprise.py — SUE-beräkning, PIT-guard, snapshot-väljare,
+chunkad körning (pick_chunk + worker_state-cursor) och main-chunk-loggen.
 
 Inga DB-beroenden: testar bara pure funktioner (compute_sue,
-select_estimate_source) och process_earnings_frame (DataFrame → rader).
+select_estimate_source, pick_chunk), process_earnings_frame (DataFrame → rader)
+och cursor load/save via fake-conn (mönster från fi_short_positions-testen).
 """
+import json
 import unittest
 from datetime import datetime, timezone
+from unittest import mock
 
 import pandas as pd
 
+from backend_worker import earnings_surprise as es
 from backend_worker.earnings_surprise import (
-    compute_sue, process_earnings_frame, select_estimate_source,
+    compute_sue, pick_chunk, process_earnings_frame, select_estimate_source,
 )
 
 
@@ -160,6 +165,154 @@ class TestSnapshotSelector(unittest.TestCase):
         )
         self.assertEqual(eps, 0.6)
         self.assertEqual(source, "retro")
+
+
+class TestPickChunk(unittest.TestCase):
+    """pick_chunk(tickers, cursor, chunk): chunk ur universum + nästa cursor."""
+
+    def test_mellanhack(self):
+        # cursor mitt i universumet → chunk + nästa cursor = cursor+chunk
+        tickers = [f"T{i}" for i in range(10)]
+        chunk, nxt = pick_chunk(tickers, 0, 4)
+        self.assertEqual(chunk, ["T0", "T1", "T2", "T3"])
+        self.assertEqual(nxt, 4)
+
+    def test_wraparound_vid_slut(self):
+        # sista chunken kortare än chunk-size → wrap: nästa cursor = 0
+        tickers = [f"T{i}" for i in range(10)]
+        chunk, nxt = pick_chunk(tickers, 8, 4)
+        self.assertEqual(chunk, ["T8", "T9"])
+        self.assertEqual(nxt, 0)
+
+    def test_exakt_slut_nollas(self):
+        # chunk slutar exakt på sista tickern → wrap: nästa cursor = 0
+        tickers = [f"T{i}" for i in range(10)]
+        chunk, nxt = pick_chunk(tickers, 6, 4)
+        self.assertEqual(chunk, ["T6", "T7", "T8", "T9"])
+        self.assertEqual(nxt, 0)
+
+    def test_tomt_universum(self):
+        self.assertEqual(pick_chunk([], 0, 60), ([], 0))
+
+    def test_cursor_bortom_slut(self):
+        # universumet krympt sedan förra körningen → tom chunk + wrap
+        tickers = [f"T{i}" for i in range(10)]
+        self.assertEqual(pick_chunk(tickers, 15, 4), ([], 0))
+
+    def test_negativ_cursor_klampas(self):
+        # korrupt worker_state-värde ska aldrig processa fel tickers
+        tickers = [f"T{i}" for i in range(10)]
+        chunk, nxt = pick_chunk(tickers, -3, 4)
+        self.assertEqual(chunk, ["T0", "T1", "T2", "T3"])
+        self.assertEqual(nxt, 4)
+
+
+class _FakeCursor:
+    """Cursor med execute/fetchone — lagrar skrivet värde, returnerar på läs."""
+
+    def __init__(self, stored_value=None):
+        self.stored_value = stored_value
+        self.last_query = ""
+        self.last_params = None
+
+    def execute(self, sql, params=None):
+        self.last_query = sql
+        self.last_params = params
+        return self
+
+    def fetchone(self):
+        if self.stored_value is None:
+            return None
+        return (self.stored_value,)
+
+
+class _FakeConn:
+    def __init__(self, stored_value=None):
+        self._cursor = _FakeCursor(stored_value)
+        self.committed = False
+
+    def cursor(self):
+        return self._cursor
+
+    def commit(self):
+        self.committed = True
+
+
+class TestCursorWorkerState(unittest.TestCase):
+    """earnings_surprise_cursor i worker_state: load/save via fake-conn."""
+
+    def test_load_fran_worker_state(self):
+        # psycopg2 returnerar JSONB som dict → next_index returneras direkt.
+        conn = _FakeConn(stored_value={"next_index": 42,
+                                       "updated_at": "2026-08-29T04:10:00+00:00"})
+        self.assertEqual(es._load_cursor(conn), 42)
+
+    def test_load_tom_worker_state(self):
+        # Ingen rad → 0 (börja från början).
+        self.assertEqual(es._load_cursor(_FakeConn(stored_value=None)), 0)
+
+    def test_load_str_value(self):
+        # JSONB som str (t.ex. från annan klient) → parsas.
+        conn = _FakeConn(stored_value=json.dumps({"next_index": 7}))
+        self.assertEqual(es._load_cursor(conn), 7)
+
+    def test_load_ogiltigt_varde(self):
+        # Värde utan next_index → 0.
+        self.assertEqual(es._load_cursor(_FakeConn(stored_value={"foo": "bar"})), 0)
+
+    def test_save_upsert_till_worker_state(self):
+        conn = _FakeConn()
+        es._save_cursor(conn, 60)
+        self.assertEqual(conn._cursor.last_params[0], es.CURSOR_STATE_KEY)
+        saved = json.loads(conn._cursor.last_params[1])
+        self.assertEqual(saved["next_index"], 60)
+        self.assertIn("updated_at", saved)
+        # Commit sköts av anroparen (samma transaktion som upsert) — cursorn
+        # avancerar bara om datan också skrivs.
+        self.assertFalse(conn.committed)
+
+
+class TestMainChunkLog(unittest.TestCase):
+    """main() loggar chunk-info (cursor → nästa) vid varje körning."""
+
+    @staticmethod
+    def _empty_frame():
+        return pd.DataFrame(columns=["EPS Estimate", "Reported EPS", "Surprise(%)"])
+
+    def test_main_loggar_chunk_info(self):
+        tickers = [f"T{i}.ST" for i in range(10)]
+        with mock.patch.object(es, "load_universe", return_value=tickers), \
+             mock.patch.object(es, "_last_run_age_hours", return_value=None), \
+             mock.patch.object(es, "_load_cursor", return_value=4), \
+             mock.patch.object(es, "fetch_earnings_dates", return_value=self._empty_frame()), \
+             mock.patch.object(es, "_archive_raw"), \
+             mock.patch.object(es, "_connect", return_value=mock.MagicMock()), \
+             mock.patch.object(es.time, "sleep"), \
+             mock.patch("sys.argv", ["earnings_surprise.py", "--dry-run"]), \
+             mock.patch.dict("os.environ", {"DATABASE_URL": "postgres://fake"}):
+            with self.assertLogs("backend_worker.earnings_surprise", level="INFO") as cm:
+                es.main()
+        joined = "\n".join(cm.output)
+        # cursor 4 + chunk 60 över 10 tickers → 6 tickers, wrap → nästa 0
+        self.assertIn("Chunk: 6/10 tickers (cursor 4 → nästa 0)", joined)
+
+    def test_full_ignorerar_cursor(self):
+        # --full: cursorn läses inte, hela universumet processas från 0.
+        tickers = [f"T{i}.ST" for i in range(10)]
+        with mock.patch.object(es, "load_universe", return_value=tickers), \
+             mock.patch.object(es, "_last_run_age_hours", return_value=None), \
+             mock.patch.object(es, "_load_cursor") as load_cursor, \
+             mock.patch.object(es, "fetch_earnings_dates", return_value=self._empty_frame()), \
+             mock.patch.object(es, "_archive_raw"), \
+             mock.patch.object(es, "_connect", return_value=mock.MagicMock()), \
+             mock.patch.object(es.time, "sleep"), \
+             mock.patch("sys.argv", ["earnings_surprise.py", "--dry-run", "--full"]), \
+             mock.patch.dict("os.environ", {"DATABASE_URL": "postgres://fake"}):
+            with self.assertLogs("backend_worker.earnings_surprise", level="INFO") as cm:
+                es.main()
+        load_cursor.assert_not_called()
+        joined = "\n".join(cm.output)
+        self.assertIn("Chunk: 10/10 tickers (cursor 0 → nästa 0, fullkörning)", joined)
 
 
 if __name__ == "__main__":

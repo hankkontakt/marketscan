@@ -265,8 +265,23 @@ MIN_SAMPLES = 20
 ROUND_TRIP_COST = 0.02  # 1 % per sida (dokumenterat: 84-100 bps spread i nordiska småbolag)
 
 
-def _forward_return_at(cur, ticker: str, from_date: date, days: int) -> float | None:
-    """Avkastning N dagar efter from_date, närmast tillgängliga pris (±14 dagar)."""
+def _forward_return_at_flagged(
+    cur,
+    ticker: str,
+    from_date: date,
+    days: int,
+) -> tuple[float, bool] | None:
+    """Avkastning N dagar efter from_date, närmast tillgängliga pris (±14 dagar).
+
+    Returnerar (avkastning, använde_terminalpris) eller None om omätbart.
+
+    Terminalpris-fallback (survivorship-bias-fix, audit P2-7): saknar tickern
+    pris i utfallsfönstret [target, target+14] (t.ex. delisted/avnoterad) men har
+    prisdata före target, används SENAST tillgängliga pris som slutpris och
+    flaggan sätts till True. Terminalpriset behålls även om det är > 365 dagar
+    gammalt (terminal är vad som finns — bättre än att tappa observationen).
+    Saknas prisdata helt för tickern → None (kan inte mäta, samma drop som förr).
+    """
     target = from_date + timedelta(days=days)
     cur.execute("""
         SELECT price FROM score_history
@@ -279,13 +294,46 @@ def _forward_return_at(cur, ticker: str, from_date: date, days: int) -> float | 
         WHERE ticker = %s AND scan_date = %s AND price IS NOT NULL
     """, (ticker, from_date.isoformat()))
     at_date = cur.fetchone()
-    if not after or not at_date:
+    if not at_date:
         return None
     try:
-        p0, p1 = float(at_date[0]), float(after[0])
-        return (p1 - p0) / p0 if p0 else None
-    except (TypeError, ZeroDivisionError):
+        p0 = float(at_date[0])
+        if not p0:
+            return None
+    except (TypeError, ValueError):
         return None
+
+    if after:
+        try:
+            p1 = float(after[0])
+        except (TypeError, ValueError):
+            return None
+        return (p1 - p0) / p0, False
+
+    # Terminalpris-fallback: senast tillgängliga pris före utfallsdagen.
+    cur.execute("""
+        SELECT price FROM score_history
+        WHERE ticker = %s AND scan_date <= %s AND price IS NOT NULL
+        ORDER BY scan_date DESC LIMIT 1
+    """, (ticker, target.isoformat()))
+    last = cur.fetchone()
+    if not last:
+        return None  # ingen prisdata alls → kan inte mäta (drop som förr)
+    try:
+        p1 = float(last[0])
+    except (TypeError, ValueError):
+        return None
+    return (p1 - p0) / p0, True
+
+
+def _forward_return_at(cur, ticker: str, from_date: date, days: int) -> float | None:
+    """Avkastning N dagar efter from_date, närmast tillgängliga pris (±14 dagar).
+
+    Signaturen är oförändrad för anropare; terminalpris-fallback och flagga
+    hanteras i _forward_return_at_flagged (se docstring där).
+    """
+    result = _forward_return_at_flagged(cur, ticker, from_date, days)
+    return result[0] if result is not None else None
 
 
 def _spearman(x: list[float], y: list[float]) -> float:
@@ -341,20 +389,27 @@ def compute_factor_metrics(dsn: str) -> int:
             logger.warning("För få observationer (%d) — hoppar över", len(rows))
             return 0
 
-        # Bygg per-horisont: (ticker, scan_date, faktor-value) → forward-return
+        # Bygg per-horisont: (ticker, scan_date, faktor-value) → forward-return.
+        # Terminalpris-observationer (delisted-fallback) räknas med; flaggan
+        # (använde_terminalpris) följer med i sample-tupeln och loggas per
+        # faktor/horisont (ingen note-kolumn i factor_metrics — migration 042).
         for horizon in FACTOR_HORIZONS:
             samples: dict[str, list] = {f: [] for f in FACTOR_FIELDS}
+            terminal_counts: dict[str, int] = {f: 0 for f in FACTOR_FIELDS}
             for r in rows:
                 sd = r["scan_date"]
                 if isinstance(sd, str):
                     sd = date.fromisoformat(sd[:10])
-                ret = _forward_return_at(cur, r["ticker"], sd, horizon)
+                ret = _forward_return_at_flagged(cur, r["ticker"], sd, horizon)
                 if ret is None:
                     continue
+                fwd, used_terminal = ret
                 for f in FACTOR_FIELDS:
                     v = r.get(f)
                     if v is not None and v != 0:
-                        samples[f].append((float(v), ret))
+                        samples[f].append((float(v), fwd, used_terminal))
+                        if used_terminal:
+                            terminal_counts[f] += 1
 
             for f in FACTOR_FIELDS:
                 pts = samples[f]
@@ -365,7 +420,11 @@ def compute_factor_metrics(dsn: str) -> int:
                 ic = _spearman(list(xs), list(ys))
 
                 decile_edges = np.percentile(xs, np.arange(10, 100, 10))
-                deciles = np.digitize(xs, decile_edges)  # 1..10
+                # np.digitize returnerar 0..9 för 9 kanter → +1 ger decil 1..10.
+                # (Utan +1 matchar "deciles == 10" aldrig → top tom → INSERT
+                # onåbar → factor_metrics skrevs aldrig. Pre-existerande bugg,
+                # hittad vid verifiering av terminalpris-fallbacken.)
+                deciles = np.digitize(xs, decile_edges) + 1
                 top = ys[deciles == 10]
                 bottom = ys[deciles == 1]
                 if len(top) < 3 or len(bottom) < 3:
@@ -395,6 +454,11 @@ def compute_factor_metrics(dsn: str) -> int:
                 written += 1
                 logger.info("  %s/%dd: n=%d, IC=%.3f, spread=%.2f%% (net %.2f%%)",
                             f, horizon, len(pts), ic, spread * 100, (spread - ROUND_TRIP_COST) * 100)
+                if terminal_counts[f]:
+                    logger.info(
+                        "  %s/%dd: %d observationer med terminalpris (delisted-fallback)",
+                        f, horizon, terminal_counts[f],
+                    )
             conn.commit()
 
     logger.info("factor_metrics klar: %d rader skrivna", written)
