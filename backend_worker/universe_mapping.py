@@ -267,6 +267,40 @@ def lookup_finnhub_isin(isin: str) -> Optional[str]:
         d = r.json()
         ticker = d.get("ticker") or d.get("symbol")
         return ticker if ticker else None
+
+
+def _finnhub_sector_fill(cur, limit: int = 160) -> int:
+    """Sektor/bransch-fyllnad via Finnhub profile2 `industry` (GH-kompatibelt —
+    Yahoo blockerar GH-runnern, Finnhub gör inte). Träffar endast rader med
+    sektor NULL; nyckel krävs ('FINNHUB_API_KEY' i universe_mapping.yml).
+    """
+    key = os.environ.get("FINNHUB_API_KEY")
+    if not key:
+        return 0
+    filled = 0
+    try:
+        cur.execute("""
+            SELECT isin, ticker FROM universe_registry
+            WHERE sector IS NULL AND isin IS NOT NULL AND ticker IS NOT NULL
+              AND status = 'listed'
+            LIMIT %s
+        """, (limit,))
+        rows = cur.fetchall()
+    except Exception:
+        return 0
+    for isin, ticker in rows:
+        try:
+            r = requests.get("https://finnhub.io/api/v1/profile2",
+                             params={"symbol": ticker, "token": key}, timeout=15)
+            industry = (r.json() or {}).get("industry")
+            if not industry:
+                continue
+            cur.execute("UPDATE universe_registry SET sector = %s WHERE isin = %s",
+                        (str(industry), isin))
+            filled += cur.rowcount or 0
+        except Exception:
+            continue
+    return filled
     except Exception:
         return None
 
@@ -609,10 +643,12 @@ def main():
         conn = _connect()
         cur = conn.cursor()
         backfilled = _backfill_names_and_sectors(cur)
+        sector_filled = _finnhub_sector_fill(cur)
         conn.commit()
         conn.close()
         det = run_delisting_detector()
         result.update({"registry": ups, "backfilled_names": backfilled,
+                       "sector_filled_finnhub": sector_filled,
                        "delisting": det})
         print(json.dumps({"status": "ok", **result}))
     except Exception as e:
