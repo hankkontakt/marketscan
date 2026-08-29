@@ -304,7 +304,12 @@ def run(mode: str, tickers: list[str] | None = None) -> None:
             logger.warning("targeted: parquet-läsning misslyckades (%s) — skippar load", pex)
             return
         dsn = os.environ["DATABASE_URL"]
-        load_scan(result, dsn, replace=False)
+        # replace=True: targeted har känd set av fullständiga rader (definitions-
+        # mässigt icke-NULL värden efter sanity) — och COALESCE-vägen (replace=False)
+        # skriver ALDRIG NULL över skräp-data (upptäckt 2026-08-29: NVDA pe=-4.07
+        # överlevde sanitering). min_keep_fraction 0.85: targeted ersätter bara om
+        # drygt 85 % av universumet finns i parquet (annars degraderas till UPSERT).
+        load_scan(result, dsn, replace=True, min_keep_fraction=0.85)
         logger.info("targeted klart: %s tickers uppdaterade, %s rader laddade", n_ok, len(result))
         return
 
