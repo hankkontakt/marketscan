@@ -300,6 +300,18 @@ def run(mode: str) -> None:
             # övriga tickers, skriver aldrig över icke-NULL med NULL). Skyddar mot att
             # en liten/partiell scan krymper hela scan_results.
             tickers_ok = load_scan(result, dsn, replace=(mode == "weekly"))
+
+            # T10: Nyhets-bäring → sentiment (72h-fönster). Non-fatal — ett
+            # DB-fel får inte döda pipelinen som redan laddat scan_results.
+            try:
+                import psycopg2
+                from backend_worker.news_bias import apply_news_bias
+                with psycopg2.connect(dsn) as conn:
+                    n_bias = apply_news_bias(conn)
+                logger.info("News bias applied to %d scan_results rows", n_bias)
+            except Exception as nb_exc:
+                logger.warning("News bias application failed (non-fatal): %s", nb_exc)
+
             try:
                 upload_score_snapshot(result)
             except Exception as r2_exc:

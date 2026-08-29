@@ -44,6 +44,19 @@ export function formatNumber(value: number | null | undefined, decimals = 0): st
   }).format(value);
 }
 
+/**
+ * UI-ärlighet (T12): visar ett numeriskt värde, men döljer omöjlig/ogiltig rådata
+ * med "—" i stället för råvärdet. NULL/NaN → "—". `min`/`max` sätter giltiga
+ * gränser (t.ex. min: 0 för P/E — negativt P/E är meningslöst). `suffix`
+ * läggs till efter siffran (t.ex. " %").
+ */
+export function displayValue<T extends number | null | undefined>(v: T, opts?: { min?: number; max?: number; suffix?: string }): string {
+  if (v == null || Number.isNaN(v)) return "—";
+  if (opts?.min != null && v < opts.min) return "—";
+  if (opts?.max != null && v > opts.max) return "—";
+  return `${v.toLocaleString("sv-SE", { maximumFractionDigits: 2 })}${opts?.suffix ?? ""}`;
+}
+
 export function formatMarketCap(value: number | null | undefined): string {
   if (value == null) return "—";
   if (value >= 1e12) return `${(value / 1e12).toFixed(1)} tn`;

@@ -8,7 +8,7 @@ import type { ScanRow } from "@/types/scan";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { FeedbackWidget } from "@/components/ui/FeedbackWidget";
 import { cn } from "@/lib/utils";
-import { formatPrice, formatPctChange, changeClass, signalClass, signalLabel } from "@/lib/format";
+import { formatPrice, formatPctChange, changeClass, signalClass, signalLabel, displayValue } from "@/lib/format";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { trackEvent, EVENT } from "@/lib/tracking";
@@ -71,7 +71,7 @@ const NUMBER_CARDS = (stock: ScanRow): NumberCardDef[] => [
   },
   {
     label: "P/E",
-    value: stock.pe_trailing != null ? stock.pe_trailing.toFixed(1) : "—",
+    value: displayValue(stock.pe_trailing, { min: 0 }),
     unit: "x",
     tooltip: "Pris per krona vinst. Lägre = billigare.",
   },
@@ -89,7 +89,7 @@ const NUMBER_CARDS = (stock: ScanRow): NumberCardDef[] => [
   },
   {
     label: "Skuldsättning",
-    value: stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(2) : "—",
+    value: displayValue(stock.debt_to_equity, { min: 0 }),
     unit: "x",
     tooltip: "Skulder / eget kapital. Lägre = mindre risk.",
   },

@@ -1,11 +1,11 @@
 """
 GET /stocks/{ticker} — detailed stock view.
 Hot data from Postgres, cold (price history, score history) from R2/DuckDB.
-Falls back to generated mock data when R2 is not configured.
+No mock fallback — missing history returns an empty list so the frontend
+shows "ej tillgänglig" instead of fabricated data.
 """
 import asyncio
 import re
-import random
 import logging
 import httpx
 from datetime import date, timedelta, datetime
@@ -27,76 +27,6 @@ def _validate_ticker(ticker: str) -> str:
     if not _TICKER_RE.match(t):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Ogiltigt ticker-format: {ticker}")
     return t
-
-
-def _generate_mock_candles(ticker: str, current_price: float, days: int = 400) -> list[dict]:
-    """Generate deterministic mock OHLCV candles for dev when R2 is not configured.
-    Seeded by ticker so the same stock always gets the same chart shape.
-    Uses sum of byte values for stable seed (Python hash is randomized)."""
-    seed = sum(bytearray(ticker.encode("utf-8"))) + len(ticker)
-    rng = random.Random(seed)
-
-    candles = []
-    # Start ~30% below current to give chart some upward movement
-    price = current_price / (1 + rng.uniform(0.1, 0.35))
-    start_date = date.today() - timedelta(days=days)
-
-    for i in range(days):
-        d = start_date + timedelta(days=i)
-        if d.weekday() >= 5:   # skip weekends
-            continue
-
-        # Random walk: small daily drift + volatility
-        daily_ret = rng.gauss(0.0004, 0.014)
-        close = max(price * (1 + daily_ret), 0.01)
-        open_p = price * (1 + rng.gauss(0, 0.004))
-        spread = abs(rng.gauss(0, 0.018)) * close
-        high = max(open_p, close) + spread * rng.random()
-        low  = min(open_p, close) - spread * rng.random()
-        vol  = max(50_000, int(rng.gauss(800_000, 250_000)))
-
-        candles.append({
-            "time": d.isoformat(),
-            "open": round(open_p, 2),
-            "high": round(max(high, open_p, close), 2),
-            "low":  round(min(low, open_p, close), 2),
-            "close": round(close, 2),
-            "volume": vol,
-        })
-        price = close
-
-    # Scale so the final close matches the real current price
-    if candles and candles[-1]["close"] > 0:
-        scale = current_price / candles[-1]["close"]
-        for c in candles:
-            c["open"]  = round(c["open"]  * scale, 2)
-            c["high"]  = round(c["high"]  * scale, 2)
-            c["low"]   = round(c["low"]   * scale, 2)
-            c["close"] = round(c["close"] * scale, 2)
-
-    return candles
-
-
-def _generate_mock_score_history(ticker: str, current_score: float, weeks: int = 52) -> list[dict]:
-    """Deterministic mock weekly score history for dev when R2 is not configured."""
-    seed = sum(bytearray(ticker.encode("utf-8"))) + len(ticker) + 1
-    rng = random.Random(seed)
-    score = max(10, min(95, current_score - rng.uniform(5, 20)))
-    history = []
-    today = date.today()
-    for i in range(weeks, 0, -1):
-        d = today - timedelta(weeks=i)
-        # Skip to Monday
-        d = d - timedelta(days=d.weekday())
-        score = max(10, min(99, score + rng.gauss(0.5, 3)))
-        if i == 1:
-            score = current_score  # End at real score
-        history.append({
-            "date": d.isoformat(),
-            "score": round(score, 1),
-            "signal": "STARK" if score >= 75 else "OK" if score >= 55 else "VÄNTA",
-        })
-    return history
 
 
 class PriceHistoryOut(BaseModel):
@@ -384,7 +314,12 @@ async def get_company_profile(ticker: str, sb=Depends(get_supabase)):
 
 @router.get("/{ticker}/price-history", response_model=PriceHistoryOut)
 async def get_price_history(ticker: str, sb=Depends(get_supabase)):
-    """OHLCV data from Finnhub API, with fallback to R2/DuckDB then mock data."""
+    """OHLCV data from Finnhub API, with fallback to R2/DuckDB.
+
+    No mock/synthetic fallback — when neither source has data the endpoint
+    returns an empty candle list so the frontend shows "Prishistorik ej
+    tillgänglig" instead of a fabricated curve.
+    """
     t = _validate_ticker(ticker)
 
     # 1. Try Finnhub API for real price data
@@ -425,38 +360,34 @@ async def get_price_history(ticker: str, sb=Depends(get_supabase)):
         data = await query_price_history(t)
         return {"ticker": ticker, "candles": data}
     except Exception as e:
-        logger.warning("R2 price history unavailable for %s — falling back to mock data: %s", ticker, e)
+        logger.warning("R2 price history unavailable for %s: %s", ticker, e)
 
-    # 3. Fallback: mock candles
-    try:
-        row = sb.table("scan_results").select("price").eq("ticker", t).maybe_single().execute()
-        current_price = row.data.get("price") if row and row.data else None
-    except Exception as inner_e:
-        logger.warning("Could not fetch current price for %s: %s", ticker, inner_e)
-        current_price = None
-
-    candles = _generate_mock_candles(t, current_price or 100.0)
-    return {"ticker": ticker, "candles": candles, "is_synthetic": True}
+    # 3. No data anywhere — empty list (frontend renders "Prishistorik ej
+    #    tillgänglig"). Empty list chosen over 404: react-query retries a 404
+    #    3× (slow skeleton), and this router's convention for missing data is
+    #    an empty list (news/earnings/insider-trades).
+    return {"ticker": ticker, "candles": []}
 
 
 @router.get("/{ticker}/score-history", response_model=ScoreHistoryOut)
 async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabase)):
-    """Weekly score snapshots from R2. Falls back to generated mock data."""
+    """Weekly score snapshots from R2.
+
+    No mock/synthetic fallback — when R2 has no data the endpoint returns an
+    empty history list so the frontend shows "Betygstrend ej tillgänglig"
+    instead of a fabricated score curve.
+    """
     t = _validate_ticker(ticker)
     try:
         # P1-1: must await the async function
         data = await query_score_history(t, limit=limit)
         return {"ticker": ticker, "history": data}
     except Exception as e:
-        logger.warning("R2 score history unavailable for %s — falling back to mock data: %s", ticker, e)
-        try:
-            row = sb.table("scan_results").select("score_total").eq("ticker", t).maybe_single().execute()
-            current_score = row.data.get("score_total") if row and row.data else 65.0
-        except Exception as inner_e:
-            logger.warning("Could not fetch current score for %s: %s", ticker, inner_e)
-            current_score = 65.0
-        history = _generate_mock_score_history(t, float(current_score or 65), limit)
-        return {"ticker": ticker, "history": history, "is_synthetic": True}
+        logger.warning("R2 score history unavailable for %s: %s", ticker, e)
+
+    # No data anywhere — empty list (frontend renders "Betygstrend ej
+    # tillgänglig (kräver historikdata i R2)").
+    return {"ticker": ticker, "history": []}
 
 
 @router.get("/{ticker}/earnings-memo")

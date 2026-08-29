@@ -150,6 +150,13 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
         df["trend_signal"] = df["trend_signal"].map(trend_map)
         # Values not in map become NaN → NULL in Postgres (allowed by schema)
 
+    # P0-fix: källa producerar 'current_price' (stock-scanner data_fetcher), DB-kolumnen heter 'price'
+    if "current_price" in df.columns and "price" not in df.columns:
+        df["price"] = df["current_price"]
+    elif "current_price" in df.columns:
+        # Båda finns → behåll äkta price, fallback till current_price
+        df["price"] = df["price"].fillna(df["current_price"])
+
     # Keep only known columns; add missing ones as NULL
     for col in SCAN_COLUMNS:
         if col not in df.columns:

@@ -41,7 +41,8 @@ def get_scan(
         .select("*")
         .gte("score_total", score_min)
         .lte("score_total", score_max)
-        .order("score_total", desc=True)
+        # P0-fix: sort_by var död kod — hårdkodad score_total sorterade Mångdubblar-vyn fel
+        .order(sort_by, desc=True)
         .limit(limit)
     )
 

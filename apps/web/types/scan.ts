@@ -58,4 +58,8 @@ export interface ScanRow {
   mews_operating_leverage: number | null;
   mews_revenue_accel: number | null;
   mews_clean_accruals: number | null;
+
+  // Nyhetsbäring (API levererar efter 053 — framåtriktad, kan saknas i äldre svar)
+  news_bias?: number | null;
+  news_bias_n?: number | null;
 }

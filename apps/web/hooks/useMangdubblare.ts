@@ -26,7 +26,7 @@ interface MangdubblareResponse {
 export function useMangdubblare() {
   return useQuery<MangdubblareResponse[]>({
     queryKey: ["mangdubblare"],
-    queryFn: () => api("/api/scan?mews_flag=true&limit=50"),
+    queryFn: () => api("/api/scan?mews_flag=true&sort_by=mews_score&limit=50"),
     staleTime: 60_000,
   });
 }

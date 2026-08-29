@@ -27,11 +27,25 @@ const AnalysCommittee = dynamic(async () => {
 import { cn } from "@/lib/utils";
 import {
   formatPrice, formatNumber, formatPct, formatPctChange, formatMarketCap, scoreColorClass, formatScore, changeClass,
-  signalClass, signalLabel,
+  signalClass, signalLabel, displayValue,
 } from "@/lib/format";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { ScanRow } from "@/types/scan";
+
+// ── UI-ärlighet (T12) ────────────────────────────────────────────────────────
+// Finansiella sektorer har strukturellt meningslös negativ bruttomarginal
+// (premie-/ränteintäkter ≠ försäljning) → dölj negativ gm där, visa annars.
+const FINANCIAL_SECTORS = ["Financial Services", "Real Estate", "Insurance"];
+
+function isFinancialSector(sector: string | null | undefined): boolean {
+  return sector != null && FINANCIAL_SECTORS.includes(sector);
+}
+
+function grossMarginValue(stock: ScanRow): string {
+  const min = isFinancialSector(stock.sector) ? 0 : undefined;
+  return displayValue(stock.gross_margin != null ? stock.gross_margin * 100 : null, { min, suffix: " %" });
+}
 
 interface Props {
   ticker: string;
@@ -371,13 +385,13 @@ function OverviewTab({ stock, showBeginnerCTA = false }: { stock: ScanRow; showB
           {[
             {
               label: "P/E (TTM)",
-              value: stock.pe_trailing != null ? formatNumber(stock.pe_trailing, 1) : "—",
+              value: displayValue(stock.pe_trailing, { min: 0 }),
               tip: "Pris/vinst-kvot (senaste 12 mån). Visar hur många kronor du betalar per krona vinst. Lågt P/E kan tyda på att aktien är billig, men beror också på bransch.",
               microTopic: "pe_trailing",
             },
             {
               label: "P/E (forward)",
-              value: stock.pe_forward != null ? formatNumber(stock.pe_forward, 1) : "—",
+              value: displayValue(stock.pe_forward, { min: 0 }),
               tip: "Pris/vinst-kvot baserad på analytikernas vinstprognos för kommande 12 månader. Ger en bild av vad marknaden förväntar sig.",
               microTopic: "pe_forward",
             },
@@ -394,7 +408,7 @@ function OverviewTab({ stock, showBeginnerCTA = false }: { stock: ScanRow; showB
             },
             {
               label: "Bruttomarginal",
-              value: stock.gross_margin != null ? formatPct(stock.gross_margin) : "—",
+              value: grossMarginValue(stock),
               tip: "Hur stor andel av intäkterna som blir kvar efter direkta produktionskostnader. Hög marginal = starkt prissättningsutrymme.",
             },
             {
@@ -410,7 +424,7 @@ function OverviewTab({ stock, showBeginnerCTA = false }: { stock: ScanRow; showB
             },
             {
               label: "Skuldsättning (D/E)",
-              value: stock.debt_to_equity != null ? formatNumber(stock.debt_to_equity, 2) : "—",
+              value: displayValue(stock.debt_to_equity, { min: 0 }),
               tip: "Räntebärande skulder delat med eget kapital. Visar hur mycket bolaget är finansierat med lån kontra eget kapital. Under 1,0 anses ofta konservativt.",
             },
             {
@@ -885,9 +899,23 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
 
       {/* News */}
       <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-        <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-primary)]">
-          Nyheter
-        </h3>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+            Nyheter
+          </h3>
+          {/* Nyhetsbäring (T12) — framåtriktad: fältet kan saknas i äldre API-svar */}
+          {stock.news_bias != null && (stock.news_bias < -0.15 || stock.news_bias > 0.15) && (
+            <span className={cn(
+              "shrink-0 text-[10px] font-medium px-2 py-0.5 rounded",
+              stock.news_bias < -0.15
+                ? "bg-[var(--color-down-soft)] text-[var(--color-down)]"
+                : "bg-[var(--color-up-soft)] text-[var(--color-up)]",
+            )}>
+              Nyhetsvinkel: {stock.news_bias < -0.15 ? "negativ" : "positiv"}
+              {stock.news_bias_n != null ? ` (${stock.news_bias_n} artiklar)` : ""}
+            </span>
+          )}
+        </div>
         {newsLoading ? (
           <div className="skeleton h-40 rounded-lg" />
         ) : news.length > 0 ? (
@@ -945,10 +973,10 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
         </h3>
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
           {[
-            { label: "Bruttomarginal", value: stock.gross_margin != null ? `${(stock.gross_margin * 100).toFixed(1)} %` : "—", tip: "Hur stor andel av intäkterna som kvarstår efter direkta produktionskostnader." },
+            { label: "Bruttomarginal", value: grossMarginValue(stock), tip: "Hur stor andel av intäkterna som kvarstår efter direkta produktionskostnader." },
             { label: "Rörelsemarginal", value: stock.operating_margin != null ? `${(stock.operating_margin * 100).toFixed(1)} %` : "—", tip: "Vinst som andel av intäkterna, efter driftkostnader men före räntor och skatt." },
             { label: "ROE", value: stock.roe != null ? `${(stock.roe * 100).toFixed(1)} %` : "—", tip: "Avkastning på eget kapital — hur effektivt bolaget skapar värde för aktieägarna." },
-            { label: "Skuldsättning (D/E)", value: stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(2) : "—", tip: "Skulder relativt eget kapital. Under 1,0 är konservativt." },
+            { label: "Skuldsättning (D/E)", value: displayValue(stock.debt_to_equity, { min: 0 }), tip: "Skulder relativt eget kapital. Under 1,0 är konservativt." },
             { label: "Finansiell styrka", value: stock.piotroski_f != null ? `${stock.piotroski_f}/9` : "—", tip: "Piotroski F-score: summerar 9 finansiella hälsokontroller. 7–9 är starkt." },
             { label: "Direktavkastning", value: stock.dividend_yield != null ? `${(stock.dividend_yield * 100).toFixed(2)} %` : "—", tip: "Årsutdelning delat med aktiekurs." },
           ].map(({ label, value, tip }) => (

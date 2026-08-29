@@ -1,5 +1,12 @@
 -- Seed data for development / demo
 -- Run after migration: supabase db reset
+--
+-- ⚠️ VARNING (2026-08-29): kör ALDRIG denna fil mot produktion!
+--   Dessa 8 rader är FASTA demovärden (hårdkodade heltalspoäng, ordinaL ml_rank).
+--   Då de kördes 2026-08-28 topp-rankade de VOLV-B.ST (84)/SAND.ST (77)/ALFA.ST (75)
+--   i produktion — och skrevs aldrig över av pipelinen (COALESCE-upsert + .ST-
+--   fetch-rate-limiting). Se migration 054 som tar bort dem + ROND 5 i PLAN.md.
+--   Om demodata behövs: använd i stället scripts/seed_demo.py (endast tom DB).
 
 -- Insert a demo admin user profile (assumes auth user exists with this ID)
 -- In production: users created via Supabase Auth trigger
