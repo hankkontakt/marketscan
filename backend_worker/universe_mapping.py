@@ -267,6 +267,8 @@ def lookup_finnhub_isin(isin: str) -> Optional[str]:
         d = r.json()
         ticker = d.get("ticker") or d.get("symbol")
         return ticker if ticker else None
+    except Exception:
+        return None
 
 
 def _finnhub_sector_fill(cur, limit: int = 160) -> int:
