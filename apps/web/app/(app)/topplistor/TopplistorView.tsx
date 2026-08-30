@@ -198,7 +198,7 @@ export function TopplistorView() {
       <div className="flex items-start gap-2 text-xs text-[var(--color-text-muted)] bg-[var(--color-bg-elevated)] rounded-lg p-3">
         <Info size={14} className="mt-0.5 shrink-0" />
         <p>
-          MasterRank är en rankning av <strong>signaler</strong>, inte en rekommendation. "Bubbla-triage" betyder att
+          MasterRank är en rankning av <strong>signaler</strong>, inte en rekommendation. &ldquo;Bubbla-triage&rdquo; betyder att
           aktien är övervärderad mot sin egen historik <em>och</em> tekniskt överköpt — ett starkt bolag vars pris
           sprungit ikapp nyheterna.
         </p>
