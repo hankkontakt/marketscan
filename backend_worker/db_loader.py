@@ -155,6 +155,18 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
             )
         ]
 
+    # ROND 5 (2026-08-30): lagra market_cap i USD — parquet levererar NATIV valuta
+    # (JPY/TWD/SEK o.s.v.), och DB ska vara USD-normaliserad. Görs i _prepare_df
+    # eftersom fx-kolumnen (currency) ENDAST är känd här (inte i SCAN_COLUMNS).
+    if "market_cap" in df.columns:
+        cur_col = df["currency"] if "currency" in df.columns else pd.Series(dtype=str)
+        # dtype-fix: currency kan vara alla str, market_cap numerisk
+        cc = cur_col.fillna("").astype(str)
+        df["market_cap"] = [
+            _to_usd(float(mc), c) if pd.notna(mc) else None
+            for mc, c in zip(df["market_cap"], cc)
+        ]
+
     if "has_holding" not in df.columns:
         df["has_holding"] = False
 
