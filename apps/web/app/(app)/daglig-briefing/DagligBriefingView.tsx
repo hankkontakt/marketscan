@@ -4,19 +4,18 @@ import { useMemo } from "react";
 import Link from "next/link";
 import {
   TrendingUp, TrendingDown, Users, Activity, Globe,
-  ArrowRight, Radio,
+  ArrowRight, Radio, Trophy,
 } from "lucide-react";
-import { useScreener } from "@/hooks/useScreener";
+import { useMarketIntelMasterRank } from "@/hooks/useMarketIntel";
 import { useScoreMovers } from "@/hooks/useAlerts";
 import { useInsiderRadar } from "@/hooks/useStrategies";
 import { useMacroRegime, useSectorOverview, useGlobalIndices } from "@/hooks/useMarkets";
 import { usePortfolio, usePortfolioHistory, useFundHoldings } from "@/hooks/usePortfolio";
 import { cn } from "@/lib/utils";
 import {
-  formatPrice, scoreColorClass, formatScore,
-  signalBadgeClass, signalShortLabel,
+  formatPrice, scoreColorClass,
 } from "@/lib/format";
-import type { ScanRow } from "@/types/scan";
+import type { MasterRankItem } from "@/lib/api";
 import type { ScoreMover } from "@/types/alerts";
 import { RegimeGauge } from "@/components/widgets/RegimeGauge";
 import { RiskGauge } from "@/components/widgets/RiskGauge";
@@ -298,30 +297,35 @@ function SectionCard({
 
 // ─── Stock row ─────────────────────────────────────────────────────────────
 
-function StockRow({ stock }: { stock: ScanRow }) {
+function MasterRankRow({ row }: { row: MasterRankItem }) {
+  const upside = row.analyst_upside;
   return (
     <Link
-      href={`/aktie/${stock.ticker}`}
+      href={`/aktie/${row.ticker}`}
       className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[var(--color-bg-elevated)] transition-colors group"
     >
       <div className="min-w-0 flex-1">
         <span className="text-sm font-semibold text-[var(--color-text-primary)] group-hover:text-[var(--color-accent)] transition-colors">
-          {stock.ticker}
+          {row.ticker}
         </span>
-        {stock.name && (
-          <span className="ml-2 text-xs text-[var(--color-text-muted)] truncate hidden sm:inline max-w-[100px]">
-            {stock.name}
-          </span>
-        )}
+        <span className="ml-2 text-xs text-[var(--color-text-muted)]">
+          {row.pit_status ?? "—"} · {row.tier ?? "—"}
+        </span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        {stock.score_total != null && (
-          <span className={cn("text-xs font-bold tabular font-mono", scoreColorClass(stock.score_total))}>
-            {formatScore(stock.score_total)}
+        {upside != null && (
+          <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-md",
+            upside > 10 ? "bg-[var(--color-up-soft)] text-[var(--color-up)]" : "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]")}>
+            {upside > 0 ? "+" : ""}{upside.toFixed(0)}%
           </span>
         )}
-        <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-md", signalBadgeClass(stock.entry_signal))}>
-          {signalShortLabel(stock.entry_signal)}
+        {row.rsi_14 != null && (
+          <span className="text-[10px] text-[var(--color-text-muted)] font-mono tabular">
+            RSI {row.rsi_14.toFixed(0)}
+          </span>
+        )}
+        <span className={cn("text-xs font-bold tabular font-mono", scoreColorClass(row.master_rank))}>
+          {row.master_rank != null ? row.master_rank.toFixed(0) : "—"}
         </span>
       </div>
     </Link>
@@ -361,11 +365,11 @@ function MoverRow({ mover, direction }: { mover: ScoreMover; direction: "up" | "
 
 export function DagligBriefingView() {
   // Data
-  const { data: starkStocks = [],  isLoading: loadingStark }    = useScreener({
-    segments: ["large_cap", "mid_cap", "small_cap", "micro_cap"],
-    entry_signal: "STARK",
-    limit: 7,
-  });
+  const { data: masterData = [], isLoading: loadingMaster } = useMarketIntelMasterRank(20);
+  const masterTop = masterData
+    .filter(r => r.master_rank != null)
+    .sort((a, b) => (b.master_rank ?? 0) - (a.master_rank ?? 0))
+    .slice(0, 7);
   const { data: moversUp   = [],  isLoading: loadingUp }         = useScoreMovers(7, "up",   5);
   const { data: moversDown = [],  isLoading: loadingDown }       = useScoreMovers(7, "down", 5);
   const { data: insiders   = [],  isLoading: loadingInsiders }   = useInsiderRadar(14, "buy");
@@ -402,13 +406,13 @@ export function DagligBriefingView() {
           href="/marknad"
         />
 
-        {/* STARK count */}
+        {/* MasterRank count */}
         <StatCard
-          icon={TrendingUp}
-          label="STARK-aktier"
-          value={loadingStark ? "…" : `${starkStocks.length} st`}
-          sub="idag"
-          href="/screener?entry_signal=STARK"
+          icon={Trophy}
+          label="Topplistor"
+          value={loadingMaster ? "…" : `${masterTop.length} st`}
+          sub="MasterRank"
+          href="/topplistor"
         />
 
         {/* OMX */}
@@ -465,15 +469,15 @@ export function DagligBriefingView() {
         <div className="lg:col-span-2 space-y-5">
 
           <SectionCard
-            title="Toppaktier idag"
-            icon={TrendingUp}
-            iconColor="text-[var(--color-up)]"
-            action={{ label: "Visa alla", href: "/screener?entry_signal=STARK" }}
-            isLoading={loadingStark}
-            empty={starkStocks.length === 0}
-            emptyText="Inga STARK-aktier just nu"
+            title="Topplistor — Top 7"
+            icon={Trophy}
+            iconColor="text-[var(--color-accent)]"
+            action={{ label: "Visa alla", href: "/topplistor" }}
+            isLoading={loadingMaster}
+            empty={masterTop.length === 0}
+            emptyText="Inga MasterRank-data just nu"
           >
-            {starkStocks.map(s => <StockRow key={s.ticker} stock={s} />)}
+            {masterTop.map(row => <MasterRankRow key={row.ticker} row={row} />)}
           </SectionCard>
 
           <SectionCard
