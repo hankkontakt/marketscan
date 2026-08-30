@@ -119,10 +119,22 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
         df["current_ratio"] = df["current_ratio"].mask(df["current_ratio"] > 20)
 
     # 5. roe/roa/gm/operating_margin: |v| > 5 → NA
+    #    dessutom: negativ gm för icke-finansiella → NA (yfinance-skrap:
+    #    GE -0.13, ACN -0.18, 000270.KS -0.18 — alla positiva live)
     for col in ("roe", "roa", "gross_margin", "operating_margin"):
         if col in df.columns:
             v = _is_num(df[col])
             df[col] = v.mask(~np.isfinite(v) | (v.abs() > 5))
+            if col == "gross_margin":
+                sect = (
+                    df["sector"].fillna("").astype(str)
+                    if "sector" in df.columns
+                    else pd.Series("", index=df.index)
+                )
+                non_fin = ~sect.isin(
+                    ["Financial Services", "Real Estate", "Insurance"]
+                )
+                df[col] = df[col].mask((df[col] < 0) & non_fin)
 
     return df
 
