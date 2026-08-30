@@ -28,6 +28,10 @@ export interface ScanRow {
   ml_rank: number | null;
   piotroski_f: number | null;
 
+  // MasterRank (ROND 8) — berikas från /market-intel/master/rank i ScreenerView
+  master_rank: number | null;
+  master_tier: string | null;
+
   price: number | null;
   change_pct: number | null;
   market_cap: number | null;

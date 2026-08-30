@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { Search, X, Bookmark, BookmarkCheck } from "lucide-react";
 import { useScreener, useScanMeta } from "@/hooks/useScreener";
+import { useMarketIntelMasterRank } from "@/hooks/useMarketIntel";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SegmentToggle } from "@/components/screener/SegmentToggle";
 import { FilterRail } from "@/components/screener/FilterRail";
@@ -31,7 +32,17 @@ export function ScreenerView() {
   const qc = useQueryClient();
 
   const { data = [], isLoading } = useScreener(filters);
+  const { data: masterRows = [] } = useMarketIntelMasterRank(500);
   const { data: meta } = useScanMeta();
+
+  // Berika raderna med MasterRank (ROND 8) — sorterbar kolumn + fallback
+  const enriched = useMemo(() => {
+    const masterMap = new Map(masterRows.map(r => [r.ticker, r]));
+    return (data || []).map((row) => {
+      const m = masterMap.get(row.ticker);
+      return { ...row, master_rank: m?.master_rank ?? null, master_tier: m?.tier ?? null };
+    });
+  }, [data, masterRows]);
 
   const buckets = useMemo(() => {
     const b = new Array(10).fill(0);
@@ -230,7 +241,7 @@ export function ScreenerView() {
       </div>
 
       {/* Results */}
-      <ResultTable data={data} loading={isLoading} onReset={() => { setFilters(DEFAULT_FILTERS); setNlInterpreted(""); setNlQuery(""); }} />
+      <ResultTable data={enriched} loading={isLoading} onReset={() => { setFilters(DEFAULT_FILTERS); setNlInterpreted(""); setNlQuery(""); }} />
 
       {/* Score histogram */}
       {data.length > 0 && (

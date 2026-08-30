@@ -57,6 +57,18 @@ export function displayValue<T extends number | null | undefined>(v: T, opts?: {
   return `${v.toLocaleString("sv-SE", { maximumFractionDigits: 2 })}${opts?.suffix ?? ""}`;
 }
 
+/** Vänlig svensk etikett för pit_status (QMJ punkt-i-tid-status). */
+export function pitLabel(pit: string | null | undefined): string {
+  if (pit == null) return "—";
+  switch (pit) {
+    case "READY": return "Data OK";
+    case "PENDING": return "Väntar bokslut";
+    case "STALE": return "Gammal data";
+    case "NO_QMJ": return "Ej QMJ-rankad";
+    default: return pit;
+  }
+}
+
 export function formatMarketCap(value: number | null | undefined): string {
   if (value == null) return "—";
   if (value >= 1e12) return `${(value / 1e12).toFixed(1)} tn`;

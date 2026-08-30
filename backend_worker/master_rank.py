@@ -477,12 +477,18 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
 
         fy_end = q.get("as_of_date")
         fy_date = None
-        if fy_end:
-            try:
-                fy_date = date.fromisoformat(str(fy_end)[:10])
-            except Exception:
-                fy_date = None
-        pit, pit_reason = pit_status(fy_date, today)
+        # Om QMJ inte har rankat tickern (globala tickers utan QMJ-rad) →
+        # NO_QMJ (ingen data, inte stale). Endast när QMJ-rad finns men
+        # as_of_date saknas → STALE (gammal/okänd bokslutsdata).
+        if q:
+            if fy_end:
+                try:
+                    fy_date = date.fromisoformat(str(fy_end)[:10])
+                except Exception:
+                    fy_date = None
+            pit, pit_reason = pit_status(fy_date, today)
+        else:
+            pit, pit_reason = "NO_QMJ", "QMJ har inte utvärderat denna aktie (endast nordiska)"
 
         # Quality: QMJ quality_z (weight 0) om PENDING; annars medel med score_quality
         qu = q.get("quality_z")

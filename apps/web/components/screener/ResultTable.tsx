@@ -24,13 +24,13 @@ interface Props {
   onReset?: () => void;
 }
 
-type SortKey = "score_total" | "change_pct" | "price" | "market_cap" | "pe_trailing" | "roe";
+type SortKey = "master_rank" | "score_total" | "change_pct" | "price" | "market_cap" | "pe_trailing" | "roe";
 type SortDir = "asc" | "desc";
 
 export function ResultTable({ data, loading, onReset }: Props) {
   const router = useRouter();
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({
-    key: "score_total",
+    key: "master_rank",
     dir: "desc",
   });
   const [focusedRow, setFocusedRow] = useState<number>(-1);
@@ -79,6 +79,14 @@ export function ResultTable({ data, loading, onReset }: Props) {
             <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
               <Th label="Aktie" width="220px" />
               <Th label="Segment" width="110px" />
+              <Th
+                label="MasterRank"
+                sortKey="master_rank"
+                sort={sort}
+                onSort={toggleSort}
+                width="90px"
+                align="right"
+              />
               <Th
                 label="Totalbetyg"
                 sortKey="score_total"
@@ -168,6 +176,11 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 {/* Segment */}
                 <td className="px-4 py-3 text-[var(--color-text-muted)]">
                   {segmentLabel(row.segment)}
+                </td>
+
+                {/* MasterRank */}
+                <td className="px-4 py-3 text-right">
+                  <ScoreChip score={row.master_rank} />
                 </td>
 
                 {/* Totalbetyg */}
