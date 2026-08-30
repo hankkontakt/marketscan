@@ -260,6 +260,8 @@ def compute_signal_analytics(dsn: str) -> int:
 # factor_metrics-tabellen (migration 042). Netto = decil-spread − 2×1 % (round-trip).
 
 FACTOR_FIELDS = ["score_total", "score_quality", "score_momentum", "score_growth", "score_value"]
+# ROND 8 (MasterRank): även mät Rank-IC per master-block — detta driver viktjusteringen.
+MASTER_FIELDS = ["master_rank", "analyst_z", "tech_z", "val_hist_z", "catalyst_z"]
 FACTOR_HORIZONS = [90, 180, 365]
 MIN_SAMPLES = 20
 ROUND_TRIP_COST = 0.02  # 1 % per sida (dokumenterat: 84-100 bps spread i nordiska småbolag)
@@ -374,16 +376,34 @@ def compute_factor_metrics(dsn: str) -> int:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         # Observationer: veckovis sampling per ticker (billigt + tillräckligt för IC)
-        cur.execute("""
-            SELECT ticker, scan_date, score_total, score_quality, score_momentum,
-                   score_growth, score_value, price
-            FROM score_history
-            WHERE price IS NOT NULL AND score_total IS NOT NULL
-              AND EXTRACT(DOW FROM scan_date) = 3
-            ORDER BY scan_date
-        """)
+        # ROND 8: master-fälten (master_rank, analyst_z, tech_z, val_hist_z, catalyst_z)
+        # hämtas bara om de finns — score_history kan sakna kolumnerna innan migr 069.
+        try:
+            cur.execute("""
+                SELECT ticker, scan_date, score_total, score_quality, score_momentum,
+                       score_growth, score_value, master_rank, analyst_z, tech_z,
+                       val_hist_z, catalyst_z, price
+                FROM score_history
+                WHERE price IS NOT NULL AND score_total IS NOT NULL
+                  AND EXTRACT(DOW FROM scan_date) = 3
+                ORDER BY scan_date
+            """)
+            master_available = True
+        except Exception:
+            logger.warning("master-kolumner saknas i score_history (migr 069 ej körd) — kör utan")
+            cur.execute("""
+                SELECT ticker, scan_date, score_total, score_quality, score_momentum,
+                       score_growth, score_value, price
+                FROM score_history
+                WHERE price IS NOT NULL AND score_total IS NOT NULL
+                  AND EXTRACT(DOW FROM scan_date) = 3
+                ORDER BY scan_date
+            """)
+            master_available = False
         rows = cur.fetchall()
-        logger.info("factor_metrics: %d veckovisa observationer laddade", len(rows))
+        all_factor_fields = FACTOR_FIELDS + (MASTER_FIELDS if master_available else [])
+        logger.info("factor_metrics: %d veckovisa observationer laddade (master-fält: %s)",
+                    len(rows), "ja" if master_available else "nej")
 
         if len(rows) < MIN_SAMPLES:
             logger.warning("För få observationer (%d) — hoppar över", len(rows))
@@ -394,8 +414,8 @@ def compute_factor_metrics(dsn: str) -> int:
         # (använde_terminalpris) följer med i sample-tupeln och loggas per
         # faktor/horisont (ingen note-kolumn i factor_metrics — migration 042).
         for horizon in FACTOR_HORIZONS:
-            samples: dict[str, list] = {f: [] for f in FACTOR_FIELDS}
-            terminal_counts: dict[str, int] = {f: 0 for f in FACTOR_FIELDS}
+            samples: dict[str, list] = {f: [] for f in all_factor_fields}
+            terminal_counts: dict[str, int] = {f: 0 for f in all_factor_fields}
             for r in rows:
                 sd = r["scan_date"]
                 if isinstance(sd, str):
@@ -404,14 +424,14 @@ def compute_factor_metrics(dsn: str) -> int:
                 if ret is None:
                     continue
                 fwd, used_terminal = ret
-                for f in FACTOR_FIELDS:
+                for f in all_factor_fields:
                     v = r.get(f)
                     if v is not None and v != 0:
                         samples[f].append((float(v), fwd, used_terminal))
                         if used_terminal:
                             terminal_counts[f] += 1
 
-            for f in FACTOR_FIELDS:
+            for f in all_factor_fields:
                 pts = samples[f]
                 if len(pts) < MIN_SAMPLES:
                     continue

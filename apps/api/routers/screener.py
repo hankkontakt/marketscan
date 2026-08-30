@@ -3,10 +3,14 @@ GET /scan — hot path, Postgres only (no DuckDB, no pandas).
 Handles segment-toggle, all filters, NL search via AI.
 """
 import csv
+import logging
+
 from fastapi import APIRouter, Depends, Query
 from apps.api.dependencies import get_supabase
 from apps.api.schemas.scan import ScanRow
 from apps.api.core.search_utils import safe_search
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/scan", tags=["screener"])
 
@@ -16,36 +20,9 @@ router = APIRouter(prefix="/scan", tags=["screener"])
 _ALL_SEGMENTS = ["large_cap", "mid_cap", "small_cap", "micro_cap"]
 
 
-@router.get("", response_model=list[ScanRow])
-def get_scan(
-    segments: list[str] | None = Query(default=None),
-    score_min: float = Query(default=0, ge=0, le=100),
-    score_max: float = Query(default=100, ge=0, le=100),
-    sector: str | None = None,
-    country: str | None = None,
-    entry_signal: str | None = None,
-    trend_signal: str | None = None,
-    piotroski_min: int | None = Query(default=None, ge=0, le=9),
-    pe_max: float | None = None,
-    roe_min: float | None = None,
-    dividend_yield_min: float | None = None,
-    exclude_low_liquidity: bool = False,
-    search: str | None = None,
-    mews_flag: bool | None = None,
-    sort_by: str = Query(default="score_total", pattern="^(score_total|mews_score)$"),
-    limit: int = Query(default=500, ge=1, le=500),
-    sb=Depends(get_supabase),
-):
-    q = (
-        sb.table("scan_results")
-        .select("*")
-        .gte("score_total", score_min)
-        .lte("score_total", score_max)
-        # P0-fix: sort_by var död kod — hårdkodad score_total sorterade Mångdubblar-vyn fel
-        .order(sort_by, desc=True)
-        .limit(limit)
-    )
-
+def _apply_common_filters(q, segments, sector, country, entry_signal, trend_signal,
+                          piotroski_min, pe_max, roe_min, dividend_yield_min,
+                          exclude_low_liquidity, mews_flag, search):
     # Default = ALL segments (small/micro included — the app's focus). Only
     # filter when the client explicitly passes ?segments=...
     if segments is not None:
@@ -76,7 +53,76 @@ def get_scan(
         safe_term = safe_search(search)
         if safe_term:
             q = q.or_(f"ticker.ilike.%{safe_term}%,name.ilike.%{safe_term}%")
+    return q
 
+
+@router.get("", response_model=list[ScanRow])
+def get_scan(
+    segments: list[str] | None = Query(default=None),
+    score_min: float = Query(default=0, ge=0, le=100),
+    score_max: float = Query(default=100, ge=0, le=100),
+    sector: str | None = None,
+    country: str | None = None,
+    entry_signal: str | None = None,
+    trend_signal: str | None = None,
+    piotroski_min: int | None = Query(default=None, ge=0, le=9),
+    pe_max: float | None = None,
+    roe_min: float | None = None,
+    dividend_yield_min: float | None = None,
+    exclude_low_liquidity: bool = False,
+    search: str | None = None,
+    mews_flag: bool | None = None,
+    sort_by: str = Query(default="score_total", pattern="^(score_total|mews_score|master_rank)$"),
+    limit: int = Query(default=500, ge=1, le=500),
+    sb=Depends(get_supabase),
+):
+    # ROND 8: master_rank ligger i EN SEPTAT tabell — om sort_by=master_rank,
+    # hämta först master_rank-ordningen, sen scan_results för de tickers som
+    # matchar filtren (bevarad ordning).
+    if sort_by == "master_rank":
+        try:
+            order_res = (
+                sb.table("master_rank")
+                .select("ticker, master_rank")
+                .not_.is_("master_rank", "null")
+                .order("master_rank", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            ordered = [r["ticker"] for r in (order_res.data or [])]
+        except Exception as e:
+            logger.warning("master_rank query failed (falls back to score_total): %s", e)
+            ordered = []
+
+        if not ordered:
+            return []
+
+        q = (
+            sb.table("scan_results")
+            .select("*")
+            .gte("score_total", score_min)
+            .lte("score_total", score_max)
+            .in_("ticker", ordered)
+        )
+        q = _apply_common_filters(q, segments, sector, country, entry_signal, trend_signal,
+                                  piotroski_min, pe_max, roe_min, dividend_yield_min,
+                                  exclude_low_liquidity, mews_flag, search)
+        result = q.execute()
+        by_ticker = {r["ticker"]: r for r in (result.data or [])}
+        return [by_ticker[t] for t in ordered if t in by_ticker]
+
+    q = (
+        sb.table("scan_results")
+        .select("*")
+        .gte("score_total", score_min)
+        .lte("score_total", score_max)
+        # P0-fix: sort_by var död kod — hårdkodad score_total sorterade Mångdubblar-vyn fel
+        .order(sort_by, desc=True)
+        .limit(limit)
+    )
+    q = _apply_common_filters(q, segments, sector, country, entry_signal, trend_signal,
+                              piotroski_min, pe_max, roe_min, dividend_yield_min,
+                              exclude_low_liquidity, mews_flag, search)
     result = q.execute()
     return result.data
 

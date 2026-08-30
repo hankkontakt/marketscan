@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "comment": "MasterRank weights v1 (ROND 8). Data-driven refresh: var 60:e dag laeser master_rank.py factor_metrics och skriver om vikterna (IC > 0.03 uppvikt, IC < -0.02 nedvikt).",
+  "weights": {
+    "quality": 0.25,
+    "value": 0.15,
+    "momentum": 0.15,
+    "analyst": 0.15,
+    "insider": 0.10,
+    "catalyst": 0.10,
+    "payout": 0.05,
+    "growth": 0.05
+  },
+  "caps": {
+    "analyst_max_share": 0.15,
+    "renormalize_max": 1.5
+  },
+  "hysteresis": {
+    "ic_up": 0.03,
+    "ic_down": -0.02
+  }
+}

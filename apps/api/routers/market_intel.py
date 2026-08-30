@@ -192,6 +192,149 @@ def get_qmj_rank(sb=Depends(get_supabase)):
     ]
 
 
+# ─── MasterRank (ROND 8) — auktoritativ ranking ───────────────────────────────
+
+class MasterRankOut(BaseModel):
+    ticker: str
+    master_rank: float | None = None
+    tier: str | None = None
+    quality_z: float | None = None
+    value_z: float | None = None
+    momentum_z: float | None = None
+    analyst_z: float | None = None
+    tech_z: float | None = None
+    insider_z: float | None = None
+    catalyst_z: float | None = None
+    payout_z: float | None = None
+    growth_z: float | None = None
+    val_hist_z: float | None = None
+    val_peers_z: float | None = None
+    val_abs_z: float | None = None
+    val_flags: list = []
+    analyst_upside: float | None = None
+    analyst_count: int | None = None
+    rsi_14: float | None = None
+    ma50_dist_pct: float | None = None
+    ma200_dist_pct: float | None = None
+    dist_52w_high_pct: float | None = None
+    trend_tech: str | None = None
+    tech_flags: list = []
+    catalyst_next: str | None = None
+    catalyst_days: int | None = None
+    pit_status: str | None = None
+    pit_reason: str | None = None
+    exclusion_reason: str | None = None
+    data_missing: list = []
+
+
+def _master_out(r: dict) -> MasterRankOut:
+    f = lambda v: float(v) if v is not None else None
+    fi = lambda v: int(v) if v is not None else None
+    return MasterRankOut(
+        ticker=r["ticker"],
+        master_rank=f(r.get("master_rank")),
+        tier=r.get("tier"),
+        quality_z=f(r.get("quality_z")),
+        value_z=f(r.get("value_z")),
+        momentum_z=f(r.get("momentum_z")),
+        analyst_z=f(r.get("analyst_z")),
+        tech_z=f(r.get("tech_z")),
+        insider_z=f(r.get("insider_z")),
+        catalyst_z=f(r.get("catalyst_z")),
+        payout_z=f(r.get("payout_z")),
+        growth_z=f(r.get("growth_z")),
+        val_hist_z=f(r.get("val_hist_z")),
+        val_peers_z=f(r.get("val_peers_z")),
+        val_abs_z=f(r.get("val_abs_z")),
+        val_flags=r.get("val_flags") or [],
+        analyst_upside=f(r.get("analyst_upside")),
+        analyst_count=fi(r.get("analyst_count")),
+        rsi_14=f(r.get("rsi_14")),
+        ma50_dist_pct=f(r.get("ma50_dist_pct")),
+        ma200_dist_pct=f(r.get("ma200_dist_pct")),
+        dist_52w_high_pct=f(r.get("dist_52w_high_pct")),
+        trend_tech=r.get("trend_tech"),
+        tech_flags=r.get("tech_flags") or [],
+        catalyst_next=r.get("catalyst_next"),
+        catalyst_days=fi(r.get("catalyst_days")),
+        pit_status=r.get("pit_status"),
+        pit_reason=r.get("pit_reason"),
+        exclusion_reason=r.get("exclusion_reason"),
+        data_missing=r.get("data_missing") or [],
+    )
+
+
+@router.get("/master/rank", response_model=list[MasterRankOut])
+def get_master_rank(limit: int = 50, sb=Depends(get_supabase)):
+    """MasterRank-topplistan (ROND 8). Senaste scan_date, rankad på master_rank DESC.
+
+    T1/T2-kandidater först; EXCLUDED (exclusion_reason) sorteras sist.
+    Ingen T1 utan data_quality-krav — det ligger i motorn (pit_status=READY).
+    """
+    try:
+        latest = (
+            sb.table("master_rank")
+            .select("scan_date")
+            .order("scan_date", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("master_rank latest query failed: %s", e)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"Kunde inte läsa master_rank: {e}",
+        )
+    if not (latest.data or []):
+        return []
+
+    scan_date = latest.data[0]["scan_date"]
+    res = (
+        sb.table("master_rank")
+        .select("*")
+        .eq("scan_date", scan_date)
+        .not_.is_("master_rank", "null")
+        .order("master_rank", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return [_master_out(r) for r in (res.data or [])]
+
+
+@router.get("/master/{ticker}", response_model=MasterRankOut)
+def get_master_ticker(ticker: str, sb=Depends(get_supabase)):
+    """Full MasterRank-profil för enskild ticker (alla block + exclusions + PIT)."""
+    try:
+        latest = (
+            sb.table("master_rank")
+            .select("scan_date")
+            .order("scan_date", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("master_rank latest query failed: %s", e)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"Kunde inte läsa master_rank: {e}",
+        )
+    if not (latest.data or []):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "master_rank saknar data")
+
+    scan_date = latest.data[0]["scan_date"]
+    res = (
+        sb.table("master_rank")
+        .select("*")
+        .eq("scan_date", scan_date)
+        .eq("ticker", ticker)
+        .limit(1)
+        .execute()
+    )
+    if not (res.data or []):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Ingen MasterRank för {ticker}")
+    return _master_out(res.data[0])
+
+
 @router.get("/qmj/{ticker}", response_model=QmjRankOut)
 def get_qmj_ticker(ticker: str, sb=Depends(get_supabase)):
     """Senaste QMJ-raden för ticker (inkl. exclusion_reason — för badge-display).

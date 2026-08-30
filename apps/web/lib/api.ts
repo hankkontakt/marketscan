@@ -153,6 +153,44 @@ export interface QmjRankItem {
   warning_flags: string[];             // t.ex. ["sell_cluster", "illiquid"]
 }
 
+// ─── MasterRank (ROND 8) ─────────────────────────────────────────────────────
+// Auktoritativ ranking: fuserar score_total + QMJ + 4 nya block
+// (värderingshistorik, analytiker, teknik, katalysator). Endpoint:
+// GET /api/market-intel/master/rank.
+
+export interface MasterRankItem {
+  ticker: string;
+  master_rank: number | null;
+  tier: string | null;                 // T1|T2|T3|T4|EXCLUDED
+  quality_z: number | null;
+  value_z: number | null;
+  momentum_z: number | null;
+  analyst_z: number | null;
+  tech_z: number | null;
+  insider_z: number | null;
+  catalyst_z: number | null;
+  payout_z: number | null;
+  growth_z: number | null;
+  val_hist_z: number | null;
+  val_peers_z: number | null;
+  val_abs_z: number | null;
+  val_flags: string[];                 // ['EXTREME_OVERVAL','CHEAP']
+  analyst_upside: number | null;       // % uppsida (target vs spot)
+  analyst_count: number | null;
+  rsi_14: number | null;
+  ma50_dist_pct: number | null;
+  ma200_dist_pct: number | null;
+  dist_52w_high_pct: number | null;
+  trend_tech: string | null;           // 'Upptrend'|'Sidled'|'Nedtrend'
+  tech_flags: string[];                // ['OVERBOUGHT','OVERSOLD','TREND_DOWN','PULLBACK']
+  catalyst_next: string | null;        // 'YYYY-MM-DD:earnings'
+  catalyst_days: number | null;
+  pit_status: string | null;           // READY|PENDING|STALE
+  pit_reason: string | null;
+  exclusion_reason: string | null;
+  data_missing: string[];
+}
+
 export interface ClusterInfo {
   ticker: string;
   cluster_score: number | null;
@@ -169,6 +207,14 @@ export function marketIntelShorts(ticker: string): Promise<ShortInfo[]> {
 
 export function marketIntelQmjRank(): Promise<QmjRankItem[]> {
   return api<QmjRankItem[]>("/api/market-intel/qmj/rank");
+}
+
+export function marketIntelMasterRank(limit = 50): Promise<MasterRankItem[]> {
+  return api<MasterRankItem[]>(`/api/market-intel/master/rank?limit=${limit}`);
+}
+
+export function marketIntelMasterTicker(ticker: string): Promise<MasterRankItem> {
+  return api<MasterRankItem>(`/api/market-intel/master/${encodeURIComponent(ticker)}`);
 }
 
 export function marketIntelClusters(ticker: string): Promise<ClusterInfo> {

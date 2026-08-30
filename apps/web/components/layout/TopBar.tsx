@@ -8,7 +8,7 @@ import {
   Search, Moon, Sun, User, LogOut, Settings, ChevronDown, TrendingUp,
   Briefcase, SlidersHorizontal, Globe, Star, CalendarDays, BarChart2,
   BookOpen, Shield, FlaskConical, Activity, Brain, Eye, ArrowLeftRight,
-  Menu, X, Compass, ListChecks, Radar,
+  Menu, X, Compass, ListChecks, Radar, Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCommandPalette } from "@/hooks/useCommandPalette";
@@ -34,6 +34,7 @@ const PRIMARY_NAV = [
 /** Verktyg dropdown items (desktop) */
 const VERKTYG_ITEMS = [
   { href: "/jamfor",           label: "Jämför aktier",  icon: ArrowLeftRight, desc: "Analysera aktier sida vid sida" },
+  { href: "/topplistor",       label: "Topplistor",     icon: Trophy,         desc: "MasterRank — den auktoritativa rankningen" },
   { href: "/insider-radar",    label: "Insider Radar",   icon: Eye,            desc: "Insiderhandel och stora affärer" },
   { href: "/radar",            label: "Radar",           icon: Radar,          desc: "Kandidater med sammanvägda signaler" },
   { href: "/kvalitetslista",   label: "Kvalitetslista",  icon: ListChecks,     desc: "Evidensbaserad kvalitetsscreening" },
@@ -54,6 +55,7 @@ const DRAWER_PRIMARY = [
 
 const DRAWER_VERKTYG = [
   { href: "/jamfor",           label: "Jämför aktier", icon: ArrowLeftRight },
+  { href: "/topplistor",       label: "Topplistor",    icon: Trophy },
   { href: "/insider-radar",    label: "Insider Radar",  icon: Eye },
   { href: "/radar",            label: "Radar",          icon: Radar },
   { href: "/kvalitetslista",   label: "Kvalitetslista", icon: ListChecks },

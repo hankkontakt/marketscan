@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Sun,
   LogOut,
+  Trophy,
 } from "lucide-react";
 import { useCommandPalette } from "@/hooks/useCommandPalette";
 import { api } from "@/lib/api";
@@ -35,6 +36,7 @@ const QUICK_LINKS = [
   { icon: SlidersHorizontal, label: "Aktier — alla", href: "/screener" },
   { icon: SlidersHorizontal, label: "Aktier — Starkt köpläge", href: "/screener?entry_signal=STARK" },
   { icon: SlidersHorizontal, label: "Aktier — Småbolag", href: "/screener?segments=small_cap,micro_cap" },
+  { icon: Trophy, label: "Topplistor — MasterRank", href: "/topplistor" },
   { icon: Briefcase, label: "Min portfölj", href: "/portfolj" },
   { icon: Star, label: "Bevakningar", href: "/bevakningar" },
   { icon: Settings, label: "Kontrollpanel", href: "/kontrollpanel" },

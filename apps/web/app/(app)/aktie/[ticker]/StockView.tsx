@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AlertTriangle, CheckCircle2, XCircle, Globe, Users, Building2, ChevronDown, ChevronUp } from "lucide-react";
 import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski, useSimilarStocks, useCompanyProfile, type SimilarStockItem, type CompanyProfile } from "@/hooks/useStock";
-import { useMarketIntelShorts, useMarketIntelQmjRank, useMarketIntelClusters } from "@/hooks/useMarketIntel";
+import { useMarketIntelShorts, useMarketIntelQmjRank, useMarketIntelClusters, useMarketIntelMasterTicker } from "@/hooks/useMarketIntel";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
 import { VerdictCard } from "@/components/stock/VerdictCard";
 import { ExplainSection } from "@/components/stock/ExplainSection";
@@ -262,7 +262,7 @@ export function StockView({ ticker }: Props) {
 
               <div className="px-6 py-6">
                 <Tabs.Content value="oversikt"><OverviewTab stock={stock} /></Tabs.Content>
-                <Tabs.Content value="faktorer"><FaktorerTab stock={stock} /></Tabs.Content>
+                <Tabs.Content value="faktorer"><FaktorerTab stock={stock} ticker={ticker} /></Tabs.Content>
                 <Tabs.Content value="analys"><AnalysTab ticker={ticker} /></Tabs.Content>
                 <Tabs.Content value="rapporter"><RapporterTab ticker={ticker} stock={stock} /></Tabs.Content>
                 <Tabs.Content value="ai"><AITab stock={stock} /></Tabs.Content>
@@ -629,21 +629,22 @@ const FACTOR_DESCS: Record<string, string> = {
   score_sentiment: "Nyhetssentiment, analytikerkonsensus och marknadsregim",
 };
 
-function FaktorerTab({ stock }: { stock: ScanRow }) {
+function FaktorerTab({ stock, ticker }: { stock: ScanRow; ticker: string }) {
   const [showDetails, setShowDetails] = useState(false);
+  const { data: master } = useMarketIntelMasterTicker(ticker);
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
       {/* Radar */}
       <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-        <h3 className="text-sm font-medium mb-2 text-[var(--color-text-secondary)]">Faktoröversikt</h3>
+        <h3 className="text-sm font-medium mb-2 text-[var(--color-text-secondary)]">FaktorÃ¶versikt</h3>
         <FactorRadar stock={stock} />
         <div className="mt-3 text-center">
           <button
             onClick={() => setShowDetails(!showDetails)}
             className="text-xs text-[var(--color-accent)] hover:underline"
           >
-            {showDetails ? "Dölj detaljer" : "Detaljer"}
+            {showDetails ? "DÃ¶lj detaljer" : "Detaljer"}
           </button>
         </div>
         {showDetails && (
@@ -660,7 +661,7 @@ function FaktorerTab({ stock }: { stock: ScanRow }) {
                       <InfoTooltip text={desc} side="right" />
                     </span>
                     <span className={cn("font-mono text-xs font-semibold tabular", scoreColorClass(score))}>
-                      {score != null ? Math.round(score) : "—"}
+                      {score != null ? Math.round(score) : "â€”"}
                     </span>
                   </div>
                   <div className="h-1.5 rounded-full overflow-hidden bg-[var(--color-bg-elevated)]">
@@ -680,6 +681,52 @@ function FaktorerTab({ stock }: { stock: ScanRow }) {
               );
             })}
           </div>
+        )}
+      </div>
+
+      {/* MasterRank (ROND 8) — kort: varför rankas denna aktie så? */}
+      <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
+        <h3 className="text-sm font-medium mb-2 text-[var(--color-text-secondary)]">MasterRank</h3>
+        {master ? (
+          <div className="space-y-2">
+            <div className="flex items-baseline gap-2">
+              <span className={cn("text-2xl font-bold tabular", scoreColorClass(master.master_rank))}>
+                {master.master_rank != null ? Math.round(master.master_rank) : "—"}
+              </span>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                {master.tier ?? ""} · PIT: {master.pit_status ?? "—"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg p-2 bg-[var(--color-bg-elevated)]">
+                <div className="text-[var(--color-text-muted)]">Värdering vs historik</div>
+                <div className="font-semibold tabular">{master.val_hist_z != null ? Math.round(master.val_hist_z) : "—"}</div>
+              </div>
+              <div className="rounded-lg p-2 bg-[var(--color-bg-elevated)]">
+                <div className="text-[var(--color-text-muted)]">Analytikeruppsida</div>
+                <div className="font-semibold">
+                  {master.analyst_upside != null
+                    ? `${master.analyst_upside > 0 ? "+" : ""}${master.analyst_upside.toFixed(1)}%`
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-lg p-2 bg-[var(--color-bg-elevated)]">
+                <div className="text-[var(--color-text-muted)]">RSI 14</div>
+                <div className="font-semibold tabular">{master.rsi_14 != null ? Math.round(master.rsi_14) : "—"}</div>
+              </div>
+              <div className="rounded-lg p-2 bg-[var(--color-bg-elevated)]">
+                <div className="text-[var(--color-text-muted)]">Nästa katalysator</div>
+                <div className="font-semibold">{master.catalyst_days != null ? `om ${master.catalyst_days} d` : "—"}</div>
+              </div>
+            </div>
+            {master.val_flags?.includes("EXTREME_OVERVAL") && master.tech_flags?.includes("OVERBOUGHT") && (
+              <div className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded bg-[var(--color-warn-soft)] text-[var(--color-warn)]">
+                <AlertTriangle size={10} /> Bubbla-triage: starkt bolag, priset har sprungit ikapp nyheterna
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-[var(--color-text-muted)]">MasterRank ej tillgänglig ännu (uppdateras fredags)</p>
         )}
       </div>
     </div>

@@ -32,6 +32,11 @@ SCORE_FIELDS = [
 
 SIGNAL_FIELDS = ["entry_signal", "trend_signal"]
 
+MASTER_FIELDS = [
+    "master_rank", "master_tier", "analyst_z", "tech_z", "val_hist_z",
+    "catalyst_z", "pit_status",
+]
+
 
 def snapshot_scores(dsn: str) -> dict[str, int]:
     """
@@ -62,9 +67,23 @@ def snapshot_scores(dsn: str) -> dict[str, int]:
             logger.warning("scan_results is empty — nothing to snapshot")
             return stats
 
+        # MasterRank-fält (kan saknas om master_rank-pipelinen inte kört än)
+        try:
+            cur.execute("""
+                SELECT ticker, master_rank, tier, analyst_z, tech_z, val_hist_z,
+                       catalyst_z, pit_status
+                FROM master_rank
+                WHERE scan_date = (SELECT MAX(scan_date) FROM master_rank)
+            """)
+            master_rows = {r[0]: r for r in cur.fetchall()}
+        except Exception as e:
+            logger.warning("master_rank-tabellen saknas/ej körd: %s — snapshottar utan", e)
+            master_rows = {}
+
         # ── 2. Bulk upsert into score_history ─────────────────────────────────
         insert_data = []
         for row in today_rows:
+            mr = master_rows.get(row["ticker"], {})
             insert_data.append((
                 row["ticker"], today,
                 row["score_total"], row["score_value"], row["score_quality"],
@@ -72,6 +91,8 @@ def snapshot_scores(dsn: str) -> dict[str, int]:
                 row["score_dividend"], row["score_sentiment"],
                 row["entry_signal"], row["confidence_label"], row["trend_signal"],
                 row["price"], row["change_pct"], row["vol_20d"], row["piotroski_f"],
+                mr.get("master_rank"), mr.get("tier"), mr.get("analyst_z"),
+                mr.get("tech_z"), mr.get("val_hist_z"), mr.get("catalyst_z"), mr.get("pit_status"),
             ))
 
         psycopg2.extras.execute_values(
@@ -82,7 +103,9 @@ def snapshot_scores(dsn: str) -> dict[str, int]:
                 score_total, score_value, score_quality, score_momentum,
                 score_growth, score_risk, score_dividend, score_sentiment,
                 entry_signal, confidence_label, trend_signal,
-                price, change_pct, vol_20d, piotroski_f
+                price, change_pct, vol_20d, piotroski_f,
+                master_rank, master_tier, analyst_z, tech_z, val_hist_z,
+                catalyst_z, pit_status
             ) VALUES %s
             ON CONFLICT (ticker, scan_date) DO UPDATE SET
                 score_total = EXCLUDED.score_total,
@@ -99,7 +122,14 @@ def snapshot_scores(dsn: str) -> dict[str, int]:
                 price = EXCLUDED.price,
                 change_pct = EXCLUDED.change_pct,
                 vol_20d = EXCLUDED.vol_20d,
-                piotroski_f = EXCLUDED.piotroski_f
+                piotroski_f = EXCLUDED.piotroski_f,
+                master_rank = EXCLUDED.master_rank,
+                master_tier = EXCLUDED.master_tier,
+                analyst_z = EXCLUDED.analyst_z,
+                tech_z = EXCLUDED.tech_z,
+                val_hist_z = EXCLUDED.val_hist_z,
+                catalyst_z = EXCLUDED.catalyst_z,
+                pit_status = EXCLUDED.pit_status
             """,
             insert_data,
             template=None,

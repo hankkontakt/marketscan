@@ -538,3 +538,47 @@ varje wave + commits av egna steg**. Inga data förlorade.
   EXIT=0; sanity-gate GRÖN (pe<=1>200=0, de<0=0, seed=0, EG divY 0.0212).
 - **Migrationsvakt:** T3b var SEMANTISK datamigrering → vakt-granskad +
   användarens explicita order → godkänd och applicerad. Schemaändringar: inga.
+
+---
+
+## ROND 8 — MasterRank (2026-08-30): auktoritativ ranking
+
+**Mål:** En enda rankningsmotor (MasterRank) i detta repo som fuserar
+score_total (extern) + QMJ alpha_rank med fyra nya block — värderingshistorik,
+analytikeruppsida, teknik, katalysator — med data-drivna vikter från
+factor_metrics. Anti-bubbla-grind: EXTREME_OVERVAL + OVERBOUGHT → rank cap 60.
+
+| Task | Status | Bevis |
+|---|---|---|
+| Migrationer 066-070 (analyst_estimates, catalyst_events, master_rank, score_history/prediction_outcomes-master-kolumner) | ✅ Kodat | SQL i supabase/migrations/066-070 |
+| analyst_fetcher.py (yfinance .info target/recs — Finnhub US-only per audit) | ✅ Kodat | tester + dry-run OK |
+| catalyst_fetcher.py (från earnings_surprises PIT-snapshots + dividend) | ✅ Kodat | tester + dry-run OK |
+| technical_snapshot.py (RSI14/MA50/MA200/52v från QMJ-cache) | ✅ Kodat | tester + import OK |
+| master_rank.py + resources/weights.json (fusion + tiers + bubble-triage + reweight) | ✅ Kodat | dry-run: bubble→60/T3 |
+| Evidensloop: score_tracker + signal_analytics + outcome_filler master-fält | ✅ Kodat | imports OK |
+| API: /market-intel/master/rank + /master/{ticker} + screener sort_by=master_rank | ✅ Kodat | 44/44 API-tester gröna |
+| UI: TopplistorView + TopBar/NavRail/CommandPalette-länkar + StockView MasterRank-kort | ✅ Kodat | tsc EXIT=0 |
+| workflow master_rank.yml (fredag 04:30 UTC efter QMJ) | ✅ Kodat | .github/workflows/master_rank.yml |
+| Tester test_master_rank.py | ✅ 26/26 | unittest OK |
+
+**Gates körda:** 26/26 unittest (test_master_rank) · 44/44 API-tester ·
+type-check EXIT=0 · imports `backend_worker.*` OK.
+
+## PRODUKTIONSKÖRNING 2026-08-30 (live-verifierad)
+
+| Steg | Resultat |
+|---|---|
+| Migrationer 066-070 via `supabase db push` | ✅ Applicerade — `Remote database is up to date`; alla tabeller/kolumner verifierade |
+| Analyst-fetcher (yfinance .info) | ✅ **513/579** analyst-rader (88 % täckning), varav **159 nordiska**; 509 med upside |
+| Catalyst-fetcher | ✅ 676 events (52 earnings + 624 dividend-proxies) |
+| Master-rank | ✅ 841 rader skrivna; nordiska: INVE-B.ST 60.7/READY/T3, SEB-A.ST 53.5/T3 (analyst -6.1% n=17), SHB-A.ST 59.3/T3; globala: LLY 72.3/T2 (uppsida 11.96%, katalysator 17d) |
+| Finnhub live-test | ❌ `target-price`/`recommend-trends` = JSON-fel ALLA (inkl. US) — **bekräftar: yfinance .info är enda källa**; `earnings-calendar` = US-only (nordiska/globala 403) — **bekräftar audit** |
+| Buggar fångade & fixade live | pe_trailing-fel i score_history (→ byggd ttm-eps-pe-historia), Decimal-vs-float (NUMERIC), tuple-vs-dict i load_inputs, %s-antal i upsert, complex-power i analyst_z (negativa tanh ≈ komplexa), **renormaliseringscap saknades → tunna data toppade (fix: cap 1.5 + thin_data ≥6/8-block → max T3)** |
+
+**LÄRDOM (kritisk):** `fuse()` utan renormaliseringscap uppvägde 2-block-data (quality+momentum) till ~87 poäng (T1) — HALO/EXEL/CPRX/INCY toppade fast de bara hade 2/8 block. Rond 5-beslutet "cap 1.5" var skrivet men aldrig implementerat. **Nu:** cap 1.5 + n_valid < 6 → max T3 + `thin_data`-flagga + pit=STALE ≠ thin_data (globala tickers inte felaktigt straffade).
+
+**KVASTAR (kräver dig):**
+1. ~~Applicera migrationer 066-070~~ ✅ **KLART 2026-08-30** via `supabase db push`.
+2. ~~Kör manuellt (analyst/catalyst/master)~~ ✅ **KLART live** (513 analyst-rader, 676 events, 841 master_rank-rader).
+3. ~~Secrets: FINNHUB_API_KEY~~ ✅ I `.env.local` (giltig) — men **används inte** (US-only; yfinance .info primär).
+4. Sanity-gate golden samples för Advantest/Palantir/China Life — lägg till i scripts/ranking_sanity_gate.py (framtida ROND).

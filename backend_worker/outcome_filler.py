@@ -193,6 +193,10 @@ def log_predictions(df, dsn: str) -> int:
     # Dynamisk model_version: om df har attrs, använd det; annars auto
     model_version = getattr(df, "attrs", {}).get("model_version", "ranker_v1")
 
+    # ROND 8: master-fält (migration 070) — logga om de finns i df
+    master_cols = [c for c in ("master_rank", "master_tier", "analyst_z", "tech_z",
+                               "val_hist_z", "catalyst_z") if c in df.columns]
+
     for _, row in ml_df.iterrows():
         ticker = str(row.get("ticker", "")).strip()
         if not ticker:
@@ -205,6 +209,7 @@ def log_predictions(df, dsn: str) -> int:
             _safe_int(row.get("ml_rank")),
             _safe_float(row.get("score_total")),
             _safe_float(row.get("price")),
+            *[_safe_float(row.get(c)) if c != "master_tier" else row.get(c) for c in master_cols],
         ))
 
     if not rows_to_insert:
@@ -214,16 +219,22 @@ def log_predictions(df, dsn: str) -> int:
     try:
         conn = psycopg2.connect(dsn)
         with conn.cursor() as cur:
-            # Batch-insert, idempotent
+            # Batch-insert, idempotent. Master-kolumner (migr 070) läggs till
+            # dynamiskt BARA om de finns i df — tabellen kan vara på gammalt schema.
+            master_cols_sql = [c for c in master_cols if c != "master_tier"]
+            master_tier_sql = "master_tier" if "master_tier" in master_cols else None
+            extra_cols = master_cols_sql + ([master_tier_sql] if master_tier_sql else [])
+            insert_cols = ("ticker, predicted_at, model_version, predicted_return, "
+                           "ml_rank, score_total, price_at"
+                           + (", " + ", ".join(extra_cols) if extra_cols else ""))
             for chunk_start in range(0, len(rows_to_insert), 500):
                 chunk = rows_to_insert[chunk_start:chunk_start + 500]
                 from psycopg2.extras import execute_values
                 execute_values(
                     cur,
-                    """
+                    f"""
                     INSERT INTO prediction_outcomes
-                        (ticker, predicted_at, model_version, predicted_return,
-                         ml_rank, score_total, price_at)
+                        ({insert_cols})
                     VALUES %s
                     ON CONFLICT (ticker, predicted_at, model_version) DO NOTHING
                     """,

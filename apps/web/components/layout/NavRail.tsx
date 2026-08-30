@@ -23,6 +23,7 @@ import {
   Zap,
   ListChecks,
   Radar,
+  Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { href: "/signal-analytics", icon: Activity,        label: "Signalanalys" },
   { href: "/insider-radar",    icon: Eye,             label: "Insider Radar" },
   { href: "/radar",            icon: Radar,           label: "Radar" },
+  { href: "/topplistor",       icon: Trophy,          label: "Topplistor" },
   { href: "/kvalitetslista",   icon: ListChecks,      label: "Kvalitetslista" },
   { href: "/mangdubblare",     icon: Zap,             label: "Mångdubblare" },
   { href: "/daglig-briefing",  icon: Newspaper,       label: "Daglig Briefing" },

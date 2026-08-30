@@ -1,0 +1,62 @@
+name: MasterRank
+
+permissions:
+  contents: read
+
+# ROND 8 — MasterRank: den auktoritativa rankningsmotorn.
+# Körs fredag natt EFTER QMJ (04:15) + analyst/catalyst-fetchers:
+#   04:15 UTC  qmj_scores (befintlig)
+#   04:20 UTC  analyst_fetcher (yfinance .info target/recs)
+#   04:25 UTC  catalyst_fetcher (earnings_surprises PIT-snapshots + dividend)
+#   04:30 UTC  master_rank (fusion + block A-D)
+# Manuell: workflow_dispatch med limit-tickers.
+
+on:
+  schedule:
+    - cron: "30 4 * * 5"      # Fredag 04:30 UTC (efter QMJ + fetchers)
+  workflow_dispatch:
+    inputs:
+      limit_tickers:
+        description: "Antal tickers att bearbeta (0 = alla — standard)"
+        required: false
+        default: "0"
+        type: string
+
+env:
+  TZ: "Europe/Stockholm"
+  PYTHONPATH: "."
+
+jobs:
+  master_rank:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend_worker/requirements.txt
+
+      - name: Fetch analyst estimates (yfinance .info)
+        run: |
+          LIMIT="${{ github.event.inputs.limit_tickers || '0' }}"
+          python -m backend_worker.analyst_fetcher --limit-tickers "$LIMIT"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Build catalyst events (earnings_surprises + dividend)
+        run: python -m backend_worker.catalyst_fetcher
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Compute MasterRank
+        run: |
+          LIMIT="${{ github.event.inputs.limit_tickers || '0' }}"
+          python -m backend_worker.master_rank --limit-tickers "$LIMIT"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

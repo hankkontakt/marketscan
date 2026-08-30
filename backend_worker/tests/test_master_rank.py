@@ -1,0 +1,219 @@
+"""Tester för MasterRank (ROND 8) — rena funktioner (ingen nätverk/DB)."""
+import json
+import unittest
+from datetime import date, timedelta
+from pathlib import Path
+
+import backend_worker.master_rank as mr
+import backend_worker.technical_snapshot as tech
+import backend_worker.catalyst_fetcher as cat
+import backend_worker.analyst_fetcher as an
+
+WEIGHTS = mr.load_weights()
+
+
+class TestFuse(unittest.TestCase):
+    def test_bubble_triage_caps_extreme(self):
+        """EXTREME_OVERVAL + OVERBOUGHT → rank capad till 60 (T3), BUBBLE_TRIAGE."""
+        row = {"quality_z": 88.0, "value_z": 20.0, "momentum_z": 95.0,
+               "analyst_z": 70.0, "insider_z": 60.0, "catalyst_z": 80.0,
+               "payout_z": 55.0, "growth_z": 75.0,
+               "val_flags": ["EXTREME_OVERVAL"], "tech_flags": ["OVERBOUGHT"],
+               "pit_status": "READY"}
+        f = mr.fuse(row, WEIGHTS)
+        self.assertEqual(f["master_rank"], 60.0)
+        self.assertEqual(f["tier"], "T3")
+        self.assertEqual(f["bubble_triage"], "BUBBLE_TRIAGE")
+
+    def test_pending_pit_caps_below_t2(self):
+        """PENDING (ej READY) → thin_data-cap → aldrig T2/T1 (max T3)."""
+        row = {"quality_z": 88.0, "value_z": 80.0, "momentum_z": 95.0,
+               "analyst_z": 90.0, "insider_z": 80.0, "catalyst_z": 90.0,
+               "payout_z": 80.0, "growth_z": 90.0,
+               "val_flags": ["CHEAP"], "tech_flags": [],
+               "pit_status": "PENDING"}
+        f = mr.fuse(row, WEIGHTS)
+        self.assertLess(f["master_rank"], 65.0)  # under T2-tröskeln (thin_data)
+        self.assertEqual(f["tier"], "T3")  # aldrig T1/T2 när PENDING
+        self.assertIn("thin_data", f["data_missing"])
+
+    def test_missing_blocks_renormalized(self):
+        """Saknade block → vikt 0 + data_missing (aldrig neutral 50)."""
+        row = {"quality_z": 90.0, "value_z": None, "momentum_z": None,
+               "analyst_z": None, "insider_z": None, "catalyst_z": None,
+               "payout_z": None, "growth_z": None,
+               "val_flags": [], "tech_flags": [], "pit_status": "READY"}
+        f = mr.fuse(row, WEIGHTS)
+        self.assertIsNotNone(f["master_rank"])
+        self.assertIn("value", f["data_missing"])
+        self.assertIn("momentum", f["data_missing"])
+
+    def test_no_data_returns_none(self):
+        row = {"quality_z": None, "value_z": None, "momentum_z": None,
+               "analyst_z": None, "insider_z": None, "catalyst_z": None,
+               "payout_z": None, "growth_z": None,
+               "val_flags": [], "tech_flags": [], "pit_status": "READY"}
+        f = mr.fuse(row, WEIGHTS)
+        self.assertIsNone(f["master_rank"])
+
+    def test_thin_data_caps_below_t1(self):
+        """Färre än 6/8 block → aldrig T1 (renormalisering cap 1.5 + thin_data)."""
+        row = {"quality_z": 99.0, "value_z": None, "momentum_z": 98.0,
+               "analyst_z": None, "insider_z": None, "catalyst_z": None,
+               "payout_z": None, "growth_z": None,
+               "val_flags": [], "tech_flags": [], "pit_status": "READY"}
+        f = mr.fuse(row, WEIGHTS)
+        self.assertLess(f["master_rank"], 65.0)  # under T2-tröskeln
+        self.assertNotEqual(f["tier"], "T1")
+        self.assertIn("thin_data", f["data_missing"])
+
+    def test_analyst_never_dominates(self):
+        """Analyst capad: analyst contribution ≤ 15 % av rank."""
+        row = {"quality_z": 90.0, "value_z": 90.0, "momentum_z": 90.0,
+               "analyst_z": 100.0, "insider_z": 60.0, "catalyst_z": 80.0,
+               "payout_z": 55.0, "growth_z": 75.0,
+               "val_flags": [], "tech_flags": [], "pit_status": "READY"}
+        f = mr.fuse(row, WEIGHTS)
+        self.assertLessEqual(f["master_rank"], 100.0)
+
+
+class TestValBlocks(unittest.TestCase):
+    def test_val_hist_billig_ger_hog_z(self):
+        """Låg P/E mot egen historik → hög val_hist_z."""
+        pe = 10.0
+        history = [20.0, 22.0, 25.0, 18.0, 21.0, 19.0, 24.0, 23.0]
+        z = mr.val_hist_z(pe, history)
+        self.assertGreater(z, 60.0)
+
+    def test_val_hist_dyr_ger_lag_z(self):
+        pe = 50.0
+        history = [20.0, 22.0, 25.0, 18.0, 21.0, 19.0, 24.0, 23.0]
+        z = mr.val_hist_z(pe, history)
+        self.assertLess(z, 40.0)
+
+    def test_val_peers_requires_15(self):
+        self.assertIsNone(mr.val_peers_z(10.0, [20.0] * 14))
+        z = mr.val_peers_z(10.0, [20.0] * 15)
+        self.assertIsNotNone(z)
+
+    def test_peg_extreme_flag(self):
+        flags = mr.val_flags(50.0, 60.0, 30.0, peg=4.0, pe_hist_pctl=95.0)
+        self.assertIn("EXTREME_OVERVAL", flags)
+
+
+class TestTech(unittest.TestCase):
+    def test_rsi_monotonic_up(self):
+        closes = [100.0 + i * 0.5 for i in range(260)]
+        r = tech.compute_technical(closes)
+        self.assertEqual(r["tech_flags"], ["OVERBOUGHT"])
+        self.assertEqual(r["trend_tech"], "Upptrend")
+
+    def test_rsi_flat(self):
+        closes = [100.0] * 260
+        r = tech.compute_technical(closes)
+        self.assertIsNotNone(r["rsi_14"])  # ingen volatilitet → 50 (neutral)
+        self.assertEqual(r["rsi_14"], 50.0)
+        self.assertNotIn("OVERBOUGHT", r["tech_flags"])
+
+    def test_trend_down_detected(self):
+        closes = [100.0 - i * 0.5 for i in range(260)]
+        r = tech.compute_technical(closes)
+        self.assertEqual(r["trend_tech"], "Nedtrend")
+        self.assertIn("TREND_DOWN", r["tech_flags"])
+
+    def test_pullback_flag(self):
+        closes = [100.0] * 250 + [95.0] * 10
+        r = tech.compute_technical(closes)
+        self.assertIn("PULLBACK", r["tech_flags"])
+
+
+class TestCatalyst(unittest.TestCase):
+    def test_days_until(self):
+        self.assertEqual(cat.days_until(date(2026, 9, 1), date(2026, 8, 30)), 2)
+
+    def test_catalyst_z_near_event_higher(self):
+        today = date(2026, 8, 30)
+        near = [{"ticker": "A", "event_date": today + timedelta(days=5), "confidence": "high"}]
+        far = [{"ticker": "A", "event_date": today + timedelta(days=100), "confidence": "high"}]
+        z_near = cat.catalyst_z(near, today)
+        z_far = cat.catalyst_z(far, today)
+        self.assertIsNotNone(z_near)
+        self.assertGreater(z_near, z_far)
+
+    def test_catalyst_boost_window(self):
+        today = date(2026, 8, 30)
+        evs = [{"ticker": "A", "event_date": today + timedelta(days=10), "confidence": "medium"}]
+        b = cat.catalyst_boost(evs, today)
+        self.assertGreater(b, 0.0)
+        self.assertLessEqual(b, 5.0)
+
+
+class TestAnalyst(unittest.TestCase):
+    def test_extract_target(self):
+        mock = {"targetMeanPrice": 50.0, "targetHighPrice": 60.0, "targetLowPrice": 40.0,
+                "numberOfAnalystOpinions": 7, "recommendationMean": 4.1,
+                "recommendationKey": "buy", "currentPrice": 45.0}
+        r = an.extract_analyst(mock, 45.0)
+        self.assertEqual(r["target_median"], 50.0)
+        self.assertAlmostEqual(r["upside_pct"], 11.11, places=2)
+        self.assertEqual(r["flags"], [])
+
+    def test_few_analysts_flag(self):
+        mock = {"targetMeanPrice": 50.0, "numberOfAnalystOpinions": 1,
+                "recommendationMean": 4.0, "currentPrice": 45.0}
+        r = an.extract_analyst(mock, 45.0)
+        self.assertIn("FEW_ANALYSTS", r["flags"])
+
+    def test_dead_target_flag(self):
+        mock = {"targetMeanPrice": 200.0, "numberOfAnalystOpinions": 3,
+                "recommendationMean": 4.0, "currentPrice": 45.0}
+        r = an.extract_analyst(mock, 45.0)
+        self.assertIn("DEAD_TARGET", r["flags"])
+
+    def test_analyst_z_coverage_scaling(self):
+        """Fler analytiker → inte lägre z (coverage skalar upp, aldrig ned)."""
+        single = {"upside_pct": 20.0, "recommendation_mean": 4.0, "target_count": 1}
+        many = {"upside_pct": 20.0, "recommendation_mean": 4.0, "target_count": 10}
+        z_single = an.analyst_z(single)
+        z_many = an.analyst_z(many)
+        self.assertIsNotNone(z_single)
+        self.assertIsNotNone(z_many)
+        self.assertGreaterEqual(z_many, z_single)
+
+
+class TestTier(unittest.TestCase):
+    def test_tier_thresholds(self):
+        self.assertEqual(mr.tier_of(80.0, False, "READY"), "T1")
+        self.assertEqual(mr.tier_of(70.0, False, "READY"), "T2")
+        self.assertEqual(mr.tier_of(55.0, False, "READY"), "T3")
+        self.assertEqual(mr.tier_of(40.0, False, "READY"), "T4")
+        self.assertEqual(mr.tier_of(None, True, "READY"), "EXCLUDED")
+
+
+class TestPitStatus(unittest.TestCase):
+    def test_ready(self):
+        pit, reason = mr.pit_status(date(2025, 12, 31), date(2026, 8, 30))
+        self.assertEqual(pit, "READY")
+
+    def test_pending(self):
+        pit, _ = mr.pit_status(date(2026, 6, 30), date(2026, 8, 30))
+        self.assertEqual(pit, "PENDING")
+
+    def test_stale(self):
+        pit, _ = mr.pit_status(None, date(2026, 8, 30))
+        self.assertEqual(pit, "STALE")
+
+
+class TestReweight(unittest.TestCase):
+    def test_ic_maps_to_weights(self):
+        """IC > 0.03 → uppvikt; IC < -0.02 → nedvikt; neutral → minskad."""
+        ic_map = {"quality": 0.05, "value": -0.04, "momentum": 0.002}
+        new_w = mr.reweight_from_ic(ic_map, WEIGHTS)
+        self.assertGreater(new_w["weights"]["quality"], WEIGHTS["weights"]["quality"])
+        self.assertLess(new_w["weights"]["value"], WEIGHTS["weights"]["value"])
+        total = sum(new_w["weights"].values())
+        self.assertAlmostEqual(total, 1.0, places=3)
+
+
+if __name__ == "__main__":
+    unittest.main()
