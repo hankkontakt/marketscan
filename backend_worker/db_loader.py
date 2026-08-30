@@ -170,29 +170,25 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
     df["scan_date"] = date.today().isoformat()
 
     if "segment" not in df.columns:
-        # Normalise market_cap to USD before applying thresholds — parquet stores
-        # Swedish stocks in SEK, US stocks in USD, etc.  Without this almost all
-        # SEK-denominated companies end up classified as large_cap.
-        currency_col = df.get("currency", pd.Series(dtype=str))
+        # ROND 6 (2026-08-30): parquetens market_cap är REDAN USD (data_fetcher.
+        # _sanity_check konverterar currency != USD via _FX_TO_USD). Att köra
+        # _to_usd här dubbelkonverterar (6098.T 167.9B USD x 0.0066 = 1.1B USD
+        # i DB). Använd mcap direkt; > 1e12 = nästan säkert nativ valuta -> som
+        # storleksordning ändå "large_cap" via _derive_segment (ingen FX).
         df["segment"] = [
-            _derive_segment(_to_usd(mc, cur))
-            for mc, cur in zip(
-                df.get("market_cap", pd.Series(dtype=float)),
-                currency_col,
-            )
+            _derive_segment(mc)
+            for mc in df.get("market_cap", pd.Series(dtype=float))
         ]
 
-    # ROND 5 (2026-08-30): lagra market_cap i USD — parquet levererar NATIV valuta
-    # (JPY/TWD/SEK o.s.v.), och DB ska vara USD-normaliserad. Görs i _prepare_df
-    # eftersom fx-kolumnen (currency) ENDAST är känd här (inte i SCAN_COLUMNS).
-    if "market_cap" in df.columns:
-        cur_col = df["currency"] if "currency" in df.columns else pd.Series(dtype=str)
-        # dtype-fix: currency kan vara alla str, market_cap numerisk
-        cc = cur_col.fillna("").astype(str)
-        df["market_cap"] = [
-            _to_usd(float(mc), c) if pd.notna(mc) else None
-            for mc, c in zip(df["market_cap"], cc)
-        ]
+    # ROND 5 (2026-08-30) — KORRIGERAD 2026-08-30 (ROND 6):
+    # market_cap är redan USD-normaliserad av stock-scanner data_fetcher._sanity_check
+    # (rad 7: currency != USD -> * FX-tabell). Att konvertera IGEN i db_loader
+    # dubbelkonverterade: 6098.T 167.9B USD (parquet) x 0.0066 = 1.1B USD (fel!).
+    # Denna lista-konvertering är därför BORTTAGEN. Segment-beräkningen ovan
+    # använder _to_usd endast för KLASSIFICERING (konservativ).
+    # Om en källa ändå levererar nativ valuta fångas det av den gamla
+    # market_cap > 1e12-regeln vid nästa pipekörning (finns ej här).
+
 
     if "has_holding" not in df.columns:
         df["has_holding"] = False
