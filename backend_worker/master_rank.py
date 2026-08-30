@@ -328,17 +328,17 @@ def load_inputs(cur, today: date) -> list[dict]:
     """Samla alla inputs per ticker: scan_results + qmj_scores + analyst + catalyst + tech."""
     cur.execute("""
         SELECT ticker, score_total, score_quality, score_momentum, score_growth,
-               score_value, price, pe_trailing, pe_forward, revenue_growth,
+               score_value, score_dividend, price, pe_trailing, pe_forward, revenue_growth,
                market_cap, sector, dividend_yield, piotroski_f
         FROM scan_results
     """)
     scan = {}
-    for (ticker, st, sq, sm, sg, sv, price, pe_t, pe_f, rev_g, mcap, sector, div_y, piot) in cur.fetchall():
+    for (ticker, st, sq, sm, sg, sv, sdiv, price, pe_t, pe_f, rev_g, mcap, sector, div_y, piot) in cur.fetchall():
         scan[ticker] = {"score_total": st, "score_quality": sq, "score_momentum": sm,
-                        "score_growth": sg, "score_value": sv, "price": price,
-                        "pe_trailing": pe_t, "pe_forward": pe_f, "revenue_growth": rev_g,
-                        "market_cap": mcap, "sector": sector, "dividend_yield": div_y,
-                        "piotroski_f": piot}
+                        "score_growth": sg, "score_value": sv, "score_dividend": sdiv,
+                        "price": price, "pe_trailing": pe_t, "pe_forward": pe_f,
+                        "revenue_growth": rev_g, "market_cap": mcap, "sector": sector,
+                        "dividend_yield": div_y, "piotroski_f": piot}
 
     cur.execute("""
         SELECT ticker, quality_z, momentum_z, value_z, payout_z, insider_z,
@@ -426,15 +426,33 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         if sec and pe and pe > 0:
             peers_by_sector.setdefault(sec, []).append(float(pe))
 
-    from backend_worker.technical_snapshot import compute_technical, _read_history
+    from backend_worker.technical_snapshot import compute_technical, _read_history, fetch_price_history
 
     values: list[dict] = []
+    # Förhämtning av prishistorik (yfinance) — QMJ-cachen finns sällan på servern,
+    # så tech-blocken måste hämta kurserna själva (cachad 7 d i data/qmj_raw/).
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    tech_cache: dict[str, dict] = {}
+    lock = threading.Lock()
+    tickers_list = list(scan.keys())
+
+    def _tech(tk: str):
+        closes = _read_history(tk)
+        if closes is None:
+            closes = fetch_price_history(tk)   # hämtar + cachar
+        if closes:
+            with lock:
+                tech_cache[tk] = compute_technical(closes)
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        list(ex.map(_tech, tickers_list))
+
     for t, s in scan.items():
         q = qmj.get(t, {})
         a = analyst.get(t, {})
         evs = cat_map.get(t, [])
-        closes = _read_history(t)
-        tech = compute_technical(list(closes) if closes else [])
+        tech = tech_cache.get(t, {})
 
         pe_t = s["pe_trailing"]
         pe_f = s["pe_forward"]
@@ -472,9 +490,9 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             qu = None
         quality_z = _fmt_f(np.mean([float(x) for x in [qu, s["score_quality"]] if x is not None]) if (qu is not None or s["score_quality"] is not None) else None)
 
-        # Value: QMJ value_z + val_blend
+        # Value: QMJ value_z + val_blend + score_value-fallback
         vq = q.get("value_z")
-        val_blocks = [float(x) for x in [vq, val_h, val_p, val_a] if x is not None]
+        val_blocks = [float(x) for x in [vq, val_h, val_p, val_a, s["score_value"]] if x is not None]
         value_z = _fmt_f(np.mean(val_blocks)) if val_blocks else None
 
         # Momentum: QMJ momentum_z + score_momentum + tech_z
@@ -500,10 +518,18 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         catalyst_next = f"{next_ev[0]}:earnings" if next_ev else None
         catalyst_days = next_ev[1] if next_ev else None
 
-        # Insider / payout / growth från QMJ + scan
+        # Insider / payout / growth — QMJ-pelare med scan_results-fallback
+        # (QMJ körs bara för nordiska; globala tickers får fallback från scan
+        # så att blocken inte är tomma och thin_data inte händer i onödan).
         iz = q.get("insider_z")
         pz = q.get("payout_z")
         gz = s["score_growth"]
+        scv = s["score_value"]     # fallback till värde-blocket
+        if iz is None:
+            iz = 50.0 + (s["piotroski_f"] - 4.5) * 8.0   # piotroski-proxy 0-100
+            iz = float(np.clip(iz, 0.0, 100.0))
+        if pz is None:
+            pz = s["score_dividend"]   # utdelningsscore som payout-proxy
 
         values.append({
             "ticker": t,

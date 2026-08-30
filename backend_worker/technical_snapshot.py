@@ -68,6 +68,33 @@ def _read_history(ticker: str) -> Optional[list[float]]:
     return closes
 
 
+def fetch_price_history(ticker: str) -> Optional[list[float]]:
+    """Hämta 1y-prishistorik från yfinance och cacha i qmj_raw-format.
+
+    Om QMJ-cachen saknas (vanligt på GH/Vercel) hämtar master_rank kurserna
+    själv. Cachar returns_1y + close_last (samma format som qmj_scores) så att
+    efterföljande körningar inte behöver nätverket. Thread-säker (per-fil skriv).
+    """
+    import time
+    try:
+        import yfinance as yf
+        y = yf.Ticker(ticker)
+        hist = y.history(period="1y", interval="1d", auto_adjust=True)
+        if hist is None or hist.empty or "Close" not in hist:
+            logger.debug("%s: ingen prishistorik från yfinance", ticker)
+            return None
+        rets = hist["Close"].pct_change().dropna().tolist()
+        last = float(hist["Close"].iloc[-1])
+        _cache_path(ticker).parent.mkdir(parents=True, exist_ok=True)
+        payload = {"ticker": ticker, "fetched_at": date.today().isoformat(),
+                   "returns_1y": rets, "close_last": last}
+        _cache_path(ticker).write_text(json.dumps(payload, default=str), encoding="utf-8")
+        return list(hist["Close"].astype(float))
+    except Exception as e:
+        logger.debug("%s: prishistorik-fetch misslyckades: %s", ticker, e)
+        return None
+
+
 # ═════════════════════════ PURE CORE (testbar; ingen nätverk/DB) ══════════════
 
 def rsi_14(closes: list[float]) -> Optional[float]:
