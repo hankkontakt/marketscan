@@ -22,6 +22,7 @@ import { RegimeGauge } from "@/components/widgets/RegimeGauge";
 import { RiskGauge } from "@/components/widgets/RiskGauge";
 import { WatchlistStrip } from "@/components/widgets/WatchlistStrip";
 import { MewsStrip } from "@/components/widgets/MewsStrip";
+import { MasterRankStrip } from "@/components/widgets/MasterRankStrip";
 import { PortfolioCoachCard } from "@/components/widgets/PortfolioCoachCard";
 
 // ─── helpers ──────────────────────────────────────────────────────────────
@@ -453,6 +454,9 @@ export function DagligBriefingView() {
 
       {/* ── Mångdubblar-kandidater ───────────────────────────────── */}
       <MewsStrip />
+
+      {/* ── Topplistor — MasterRank ──────────────────────────────── */}
+      <MasterRankStrip />
 
       {/* ── Main grid ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
