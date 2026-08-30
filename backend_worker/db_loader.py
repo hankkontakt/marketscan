@@ -72,6 +72,59 @@ def _to_usd(market_cap: float | None, currency: str | None) -> float | None:
     return market_cap * rate
 
 
+def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sista försvarslinje (ROND 5, 2026-08-30): sanera rådata INNAN COPY till DB.
+
+    Bakgrund: nyare code (data_fetcher._sanity_check) normaliserar vid hämtning,
+    men gamla/allvarliga parquet-filer (scored_universe_2026-08-29) innehåller
+    råvärden (pe=-4.07, divY=0.44 i %, de=-34) som annars skrivs rakt in i
+    scan_results via COALESCE/EXCLUDED. Reglerna speglar data_fetcher._sanity_check,
+    utan sector/gm (görs ändå i stock-scanner — här skyddas bara omöjliga värden).
+
+    Alla normaliseringar görs på DataFrame-nivå (vektoriserat) och loggas.
+    """
+    import numpy as np
+    import pandas as pd
+
+    def _is_num(s: pd.Series) -> pd.Series:
+        return pd.to_numeric(s, errors="coerce")
+
+    # 1. P/E: icke-finit/<=1/>200 → NA (fångar negativa yfinance-värden)
+    for col in ("pe_trailing", "pe_forward"):
+        if col in df.columns:
+            v = _is_num(df[col])
+            df[col] = v.mask(~np.isfinite(v) | (v <= 1) | (v > 200))
+
+    # 2. dividend_yield: %-värden (0.44 = 0.44 %) → fraktion (0.0044);
+    #    redan-fraktion (<=0.1) lämnas; >1 dubbel-saneras (redan /100).
+    if "dividend_yield" in df.columns:
+        v = _is_num(df["dividend_yield"])
+        frac = v.copy()
+        frac.loc[v > 0.1] = v.loc[v > 0.1] / 100
+        df["dividend_yield"] = frac.mask(~np.isfinite(frac) | (frac < 0))
+
+    # 3. debt_to_equity: negativt → 0 (nettokassa), >200 → NA
+    if "debt_to_equity" in df.columns:
+        v = _is_num(df["debt_to_equity"])
+        df["debt_to_equity"] = v.mask(~np.isfinite(v), other=None).clip(lower=0.0)
+        df["debt_to_equity"] = df["debt_to_equity"].mask(df["debt_to_equity"] > 200)
+
+    # 4. current_ratio: negativt → 0, >20 → NA
+    if "current_ratio" in df.columns:
+        v = _is_num(df["current_ratio"])
+        df["current_ratio"] = v.mask(~np.isfinite(v), other=None).clip(lower=0.0)
+        df["current_ratio"] = df["current_ratio"].mask(df["current_ratio"] > 20)
+
+    # 5. roe/roa/gm/operating_margin: |v| > 5 → NA
+    for col in ("roe", "roa", "gross_margin", "operating_margin"):
+        if col in df.columns:
+            v = _is_num(df[col])
+            df[col] = v.mask(~np.isfinite(v) | (v.abs() > 5))
+
+    return df
+
+
 def _derive_segment(market_cap_usd: float | None) -> str:
     """Map USD market cap to segment string."""
     if market_cap_usd is None or market_cap_usd <= 0:
@@ -157,6 +210,10 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
         # Båda finns → behåll äkta price, fallback till current_price
         df["price"] = df["price"].fillna(df["current_price"])
 
+    # ROND 5 (2026-08-30): sista försvarslinjen — sanera omöjliga/%-värden innan de
+    # skrivs till DB. Skyddar mot gamla parquet-filer och yfinance-rådata.
+    df = _apply_sanity(df)
+
     # Keep only known columns; add missing ones as NULL
     for col in SCAN_COLUMNS:
         if col not in df.columns:
@@ -201,6 +258,15 @@ def load_scan(
     prepared = _prepare_df(df)
     cols = SCAN_COLUMNS
     col_list = ",".join(cols)
+
+    # ROND 5: logga antalet sanerade rader (kollar bara nyckelkolumner)
+    problematic = int(
+        prepared["dividend_yield"].gt(0.1).sum()
+        + prepared["pe_trailing"].le(1).sum()
+        + prepared["debt_to_equity"].lt(0).sum()
+    )
+    if problematic:
+        logger.info("load_scan sanity: %d rader med skräpvärden sanerade (divY/pe/de)", problematic)
 
     buf = io.StringIO()
     prepared.to_csv(buf, index=False, header=False, na_rep="", encoding="utf-8")
