@@ -318,3 +318,223 @@ python scripts/smoke_test.py
 6. ui-analys: radarsidan auth-skyddad (redirect /login) — visuell QA kräver användarens konto; data-lagret verifierat 200.
 
 **Kvarstående / medvetna beslut:** sektor + SUE-data beroende av Yahoo-IP-tolerans (GH-runnern blockerad): koden är PIT-riktig och testad; data fylls när körningar träffar en IP som godkänns (lokal körning ger kvitto; GH-backfill förbättras om Yahoo regleras).
+
+---
+
+# ROND 5 — RANKING-INTEGRITET (2026-08-29, utredning + plan)
+
+> Fråga: "Hur kan EG (Everest Group) vara 'Mångdubblar-kandidat' (mews 72.2, f-score
+> 4/9, negativa marginaler, nyheter '3 Reasons to Sell EG')?" → hela top-5 +
+> mitten/botten-5 utredda mot ground truth. Utredningskvitto:
+> `.opencode/audit/ground_truth_top5.md`, `.opencode/audit/ground_truth_bottom5.md`.
+
+## A. FAKTA — topp 5 vs verklighet (ground truth, 2+ källor)
+
+| Rank | Ticker | Systemet | Verkligt | Dom |
+|---|---|---|---|---|
+| 1 | VOLV-B.ST | P/E n/a, alla fundamenta NULL, kval=88, cap 580e9 SEK | P/E 19,8 (fwd 14,1), ROE 21 %, yield 3,8 % | Legitim — MEN raden har NULL-data; kvalitetspoäng ej förankrad |
+| 2 | DIVISLAB.NS | P/E 42,67, D/E −24,76, f-score 4, mom 97 | P/E ~84, nettokassa, ROE 16 % | Övervärderad (pris ovanför riktkurs), skräpdata ger "billig" |
+| 3 | SAND.ST | alla fundamenta NULL, kval=80, heltalsscores | P/E 26, ROE 18 %, +24 % org Q2 | Legitim kvalitet — men rådata NULL |
+| 4 | ALFA.ST | alla fundamenta NULL, kval=78 | P/E 29, ROE 19 %, order +35 % | Legitim — men dyr (upside +2 %) |
+| 5 | APP | P/E 0,39 (!), ROA 0,4, D/E 27,94 | P/E ~24, ROA 46 % (0,4 ≈ rätt), D/E 1,11 | P/E och D/E är skräp → "billigaste" av alla; momentum brutet (−50 % från topp) |
+
+**Mönster:** 3 av 5 topprader (VOLV/SAND/ALFA) har NULL-fundamentals + heltals-scores
+som liknar batch från annan källa/pipeline (smallcap/nordic) — CSV:erna (420 rader,
+0 .ST-rader) innehåller INTE dessa radvärden. Rankingen bygger delvis på
+proveniens-inkonsistens, inte på verkliga nyckeltal. APP/DIVISLAB vinner pga
+korrupta värden (P/E 0,39; D/E −24,76 → risk-score straffas inte).
+
+## B. FAKTA — mitten/botten 5 vs verklighet (systemets fel, inte aktiernas)
+
+| Ticker | Systemet | Verkligt | Dom |
+|---|---|---|---|
+| SEB-A.ST | pe −0,26, roa −0,02, gm −0,42, **f-score 0** | P/E 13,5, ROE 14–16 %, CET1 17,2 %, yield 5 % | Grovt felrankad |
+| FFH.TO | pe −17,51, de −1,65 | P/E 8, P/B 1,02, ROE 16,5 %, +21 % upside, återköp | Grovt felrankad (mews 68,9 — strax under flaggan) |
+| BLK | pe 7,28, gm −0,03, **f-score 4** | P/E 27,8, GM 47 %, AUM $15,3T rekord | Grovt felrankad |
+| UMG.AS | pe 64,54, de 90,81 | P/E 82–84 (distorderat), fwd 18–20, de 0,73, +32–47 % upside | Delvis fel — de 90,81 är skräp |
+| BURE.ST | de −50,01, roa −0,14, gm −0,42 | Investmentbolag: P/B 0,95, NAV-rabatt 5–6 %, NAV +28 % H1 | Fel måttstock (P/E/ROA/gm meningslöst för inv.bolag) |
+
+**Mönster:** banker/försäkring/investmentbolag får konsekvent absurda `.info`-värden
+(negativ gm, negativ D/E, negativ CR, negativ P/E) → straffas i kvalitet/risk/f-score
+→ systematisk felrankning av HELA financials-sektorn, både uppåt (mews!) och nedåt.
+
+## C. ROTORSAKER (verifierade, fil:rad)
+
+| # | Bugg | Bevis | Effekt |
+|---|---|---|---|
+| R1 | **price=NULL för 418/426 rader** — `current_price` produceras (data_fetcher.py:739/775) men `price`-kolumnen i SCAN_COLUMNS (db_loader.py:20) får ALDRIG den; mock-fallback hårdkodar 100.0 (stocks.py:432-438) | portfolio.py:44 kommentar "currently NULL for every ticker" | **Priskurvan på aktiesidan är FABRICERAD** (mock-candles slutar på 100.00 kr) |
+| R2 | **dividend_yield ×100 i UI** — lagrat ÄR procent (2.19 = 2.19 %; CSV:306 bevis: 8/370,11) men VerdictCard.tsx:98 ×100 och StockView.tsx:418 `formatPct` (×100) | skärm: 219.00 % | Felaktig direktavkastning på alla sidor |
+| R3 | **MAX_DIVIDEND_YIELD = 0.15 (fraktion) mot data i %** — clip(upper=0.15) klipper ALLT över 0,15 % (scoring.py:34,678) | score_dividend = 67,74 för ~alla rader | Dividend-faktorn död (konstant) |
+| R4 | **pe_trailing = rå yfinance** utan sanity — 164/426 negativa (NVDA −2,28, AAPL −1,72, EG −13,1) | data_fetcher.py:685 | "Billig"-signaler + felaktig display |
+| R5 | **Ingen financials-branch** — banker/försäkring får gm/försäljnings-D/E/CR som är meningslösa/negativa (SEB gm −0,42, EG cr −1,08) | data_fetcher.py:694-706, grep "Financial" = 0 | F-score 0–4 för bra banker (SEB), F-score 4 för EG trots ROE 14 % |
+| R6 | **Market cap i blanda valutor i size-score** — SEK (VOLV 580e9) vs USD (NVDA 5,45e12) utan FX | scoring.py:645-665, currency.py har FX-karta men används ej | Size-poäng felaktig för icke-USD |
+| R7 | **MEWS sektorblind + fillna(0)-buggar** — `_f_low_ps`/`_f_operating_leverage`/`_f_clean_accruals` fillna(0) → percentil; `_f_clean_accruals` ascending=False → 0 = "ren" = HÖG poäng; `_f_small_size`/`_f_low_ps` belönar försäkringsstruktur (premieintäkts-P/S är strukturellt lågt) | smallcap/mews.py:30-122 | **Alla 4 mews-flaggor = Financial Services (3) + Consumer Defensive (1), alla med piotr ≤ 5** |
+| R8 | **MEWS 3/6 signaler = median-fill** — EG's operating_leverage/revenue_accel/clean_accruals = 50,04 exakt (saknad data → `_percentile_score` median) | mews.py:61-105, smallcap/scoring.py:80 | Flagga sätts på 72,2 med 3/6 signaler som är "inga data" |
+| R9 | **Ingen kvalitetsgate på mews-flaggan** — piotroski 4, roa −0,42 %, rev −21,6 % BLOCKERAR inte flagga | mews.py:147 (endast score ≥ 70) | Badge "Mångdubblar-kandidat" på usel fundamenta |
+| R10 | **Mångdubblar-vyn sorteras på score_total** — sort_by deklareras (screener.py:35) men rad 44 hardkodar score_total; useMangdubblare.ts:29 → mews-vyn = RNR/PRU-ordning, inte mews-ordning | screener.py:35-44 | Vyn visar inte bästa mews-kandidater |
+| R11 | **Renormalisering cap 3.0** — NaN-delscore → fillna(0) med vikt räknad → skala ×3 (scoring.py:867) | EG score_value=NULL | Saknad value-faktor blåser upp övriga |
+| R12 | **Nyhets-bäring används ej i scoring** — news_events-bearing klassificeras (radarn) men kopplas aldrig in; aktiesidans nyheter är display-only (stocks.py:623-667) | grep-sweep bevis | "3 Reasons to Sell EG" påverkar INGET |
+| R13 | **data_quality mäter närvaro, inte riktighet** — 0,875 för EG trots 6/8 skräpvärden; MIN_DATA_QUALITY=0.5 | config.py:182 | Skräpdata passerar kvalitetsporten |
+
+## D. FIX-PLAN (reviderad efter reviewer-gate 2026-08-29; blockerande fynd inarbetade)
+
+> **ENHETSBESLUT (låst): dividend_yield normaliseras till FRAKTION 0-1 i T1**
+> (2.19 % → 0.0219). UI behåller ×100 (VerdictCard/formatPct) → visar 2.19 %.
+> MAX_DIVIDEND_YIELD 0.15 (= 15 %) stämmer då. FilterRail(/100) + themes(0.02) konsistenta.
+
+### P0 — Data-lagrets korrekthet
+- **T1** `stock-scanner/core/data_fetcher.py` — sanity + enhetsnormalisering i
+  `extract_metrics`:
+  - `pe_trailing`/`pe_forward`: ≤ 1 eller icke-finit → NULL (fångar negativa OCH
+    APP:s 0.39); övre gräns > 200 → NULL;
+  - `dividend_yield`: `if v > 1: v = v/100` (2.19 → 0.0219); icke-finit → NULL
+    (hädanefter fraktion 0-1 hela vägen);
+  - `debt_to_equity`: `clip(lower=0)` (NEGATIV → 0, ej NULL — bevara legitima
+    nettokassa-bolag/negativt eget kapital); övre gräns 200 → NULL; `current_ratio`
+    clip(lower=0), övre gräns 20 → NULL;
+  - `roa/roe/gm/om`: |v| > 5 → NULL (aldrig >100 %); icke-finit → NULL.
+  Verifiering (CSV): 0 st negativa pe; 0 st de < 0; APP pe=24.x (ej 0.39);
+  EG divYield=0.0219.
+- **T2** `stock-scanner/core/data_fetcher.py` — financials-branch på RIKTIGT
+  sektorfält: `info.get("sector")` hämtas redan (data_fetcher.py:677) och finns i
+  score-universumet. För `sector in (Financial Services, Real Estate)`:
+  `gross_margin=NaN`, `current_ratio=NaN`, `debt_to_equity` åsidosätts av en
+  financials-variant; kvalitetsmått = ROE + profit_margin (bank/insurance-normal).
+  INGEN ticker-suffix-heuristik (suffix = börs, inte sektor). Verifiering: SEB
+  gm=NULL (ej −0.42), SEB roe > 0.
+- **T3** `marketscan/backend_worker/db_loader.py` + `apps/api/routers/stocks.py`:
+  (a) mappa `current_price` → `price` i SCAN_COLUMNS (price blir icke-NULL);
+  (b) mock-candles (stocks.py:432-438) OCH mock score-history (stocks.py:442-459):
+  kräv äkta data, annars 404/"ingen data" — inget fabrikat.
+  Verifiering (DB, ej CSV): `/api/stocks/EG/price-history` slutar på 370.11;
+  `SELECT count(*) FROM scan_results WHERE price IS NULL` = 0.
+- **T3b** **DB-cleanup + backfill (semantisk datamigrering — kräver
+  migration-vakt + användarens applikationsgodkännande, se Migrationsprotokollet)**:
+  engångs-SQL: `pe_trailing=NULL WHERE pe_trailing<=1 OR pe_trailing>200`;
+  `debt_to_equity=0 WHERE debt_to_equity<0`; `dividend_yield=dividend_yield/100
+  WHERE dividend_yield>1`; + backfill `current_price→price`. Skäl: COALESCE-upsert
+  (db_loader.py:180-225, replace=False) skriver ALDRIG NULL över befintligt skräp
+  — gamla pe=−13.1/de=90.81 ligger kvar tills en full replace. Bakgrund: gamla
+  rader → skräp till NULL → T12 visar "—".
+- **T4** (reviderad — EJ "ta bort ×100"): efter T1-normalisering → verifiera att
+  ALLA UI-konsumenter är konsistenta med FRAKTION: VerdictCard.tsx:98 (×100 ✓),
+  StockView.tsx:418 (formatPct ✓ — Intl ×100), FilterRail.tsx:166-167 (/100 ✓),
+  themes.ts:38 (0.02 ✓). EG visar 2.19 % (ej 219.00 %). Alla fyrar läses; ev.
+  dubbel-division fixas; icke-finit → "—".
+- **T5** `stock-scanner/core/scoring.py:678` — bekräfta MAX_DIVIDEND_YIELD=0.15
+  mot fraktion (låst beslut ovan); ingen kodändring förväntas, enbart enhetstest
+  (EG 0.0219 → inte clippad; spridning i score_dividend, ej konstant 67,74).
+- **T9 (flyttad från P2 till P0)** Piotroski financials-variant: banker/försäkring/
+  REIT — F6 (CR), F8 (gm), F9 (om) ersätts/neutraliseras och ROE/profit_margin-
+  standard används (piotroski.py:207-260, sektor-medveten). Verifiering: SEB
+  f-score ≥ 5, EG f-score ≥ 6 i ny CSV. (T2:s verifieringskriterium kräver denna.)
+
+### P1 — MEWS-integritet + sektorrättvisa
+- **T6** `stock-scanner/smallcap/mews.py`:
+  (a) `_f_low_ps`: Financial Services exkluderas (premieintäkter ≠ försäljning);
+      `ps <= 0` → median-fill i stället för fillna(0);
+  (b) alla `fillna(0)`-sites (mews.py:36, 78, 105, 122) → `fillna(serie.median())`
+      — median = neutral ~50, INTE 0 = "ren"/"billigt" (gäller särskilt
+      `_f_clean_accruals` ascending=False: 0 = HÖG poäng idag). Ingen ändring i
+      delade `_percentile_score` (smallcap/scoring.py:80) — blast radius;
+  (c) `_f_operating_leverage`: teckenkoll på opinc_ttm (ej bara prev);
+  (d) `_f_small_size` OCH `calc_size_score` (scoring.py:645-665): USD-normaliserad
+      cap (återanvänd `_FX_TO_USD`-mönstret i db_loader.py:43-72) — blandvalutan
+      kvarstår i size-signalerna annars.
+  Verifiering: EG mews ≤ 65 (_f_low_ps exkluderad + neutrala medianer);
+  mews_flag=False.
+- **T7** `stock-scanner/smallcap/mews.py:147` — kvalitetsgate: flagga kräver
+  `mews_score ≥ 70 AND piotroski_f ≥ 5 AND roa > 0 AND coverage ≥ 4/6 med äkta
+  data, inklusive fcf_yield (vikt 0.25 — starkaste prediktorn får inte saknas)`.
+  Verifiering: alla flagged har piotr ≥ 5, roa > 0, fcf_yield icke-neutral.
+- **T8** `marketscan/apps/api/routers/screener.py:44` — sort_by-respekt
+  (mews_score när mews_flag=true); `apps/web/hooks/useMangdubblare.ts:29`
+  skickar `sort_by=mews_score`. Verifiering: /api/scan?mews_flag=true&sort_by=mews_score
+  returnerar mews-desc.
+- **T10** Nyhets-bäring → sentiment: `news_events.bearing` (nasdaq/gnews/ddgs,
+  redan klassad) fogas in i sentiment-kedjan; 72 h-fönster, viktad direktbäring;
+  EG (3 negativa artiklar aug) får sentiment_raw-minskning. UI-märkning
+  "nyhetsbias" (aldrig "alpha"-claims — repo-textregel).
+- **T11** `stock-scanner/core/scoring.py` — renormaliseringsclip cap 3.0 → 1.5
+  på BÅDA site:na (rad 867 icke-sektorpathen OCH rad 886 sektorpathen — den
+  senare är live: df har sector + SECTOR_FACTOR_WEIGHTS finns i config.py:115);
+  logga när scale > 1.2 + UI-varning "N-data saknas" i stället för tyst uppblåst
+  poäng.
+- **T12** UI ärlighet (sista försvarslinjen): VerdictCard/StockView — om
+  price/pe/de/gm saknas eller är omöjliga → "—" i stället för råvärdet.
+
+### P2 — Proveniens + efterkontroll (top-5-mönstret "NOLL-fundamentals-meny")
+- **T15 (NY) Proveniens-spårning .ST-rader**: VOLV-B.ST/SAND.ST/ALFA.ST har
+  NULL-fundamentals + heltals-scores (84.0/77.0/75.0) + ml_rank (3/8/9) och
+  saknas i scored_universe CSV:er (420 rader, 0 .ST) — de matas in från en ANNAN
+  källa (smallcap_scored_*.csv? ML-ranker? qmj? seed_demo?). Uppdrag: identifiera
+  exakt källa + vilken pipeline-rad som skrev dem; lägg till `source`/`coverage`-
+  markör i scan_results (om bucket saknas: tyst nolla) och säkerställ att
+  .ST-aktier är lika kompletta som övriga. Verifiering: VOLV-B.ST har
+  roe/pe/price icke-NULL i DB + proveniens dokumenterad.
+- **T13** Golden-sample-gate (regression-vakt): NVDA pe>0, SEB roe>0, EG divY
+  0.01–0.05, VOLV price≠NULL, mews-flagga kräver piotr ≥ 5, ingen mock-priskurva.
+  Verifiering MOT DB (ej CSV).
+- **T14** Före/efter-regression av rankningen: DB-statistik-jämförelse per körning
+  (negativa pe/de-räknare, NULL-räknare, mews-flagga-set) PLUS top-50-listan
+  före/efter viktningsändringar (legitima kandidater får inte tappas) + avisering
+  vid regression.
+
+## E. VERIFIERING PER VÅG
+- W1 (P0): py_compile stock-scanner; lokal `daily_pipeline` mot 5 tickers
+  (SEB-A.ST, EG, NVDA, VOLV-B.ST, BLK) → CSV- OCH **DB**-granskning av
+  T1/T2/T3-värden (COALESCE-fällan: CSV räcker inte).
+- W2 (P1): unittest mews (fixturer: finansiella, växt med saknad data, negativa
+  värden) + `python -c "from apps.api.main import app; print(len(app.routes))"`.
+- W3 (P2/P3): `npx tsc --noEmit`; smoke-test mot staging; regression-vakt
+  (golden-sample) 1×/milestone; top-50 före/efter-jämförelse.
+- **Migrationsvakt:** T3b är en SEMANTISK datamigrering (ej schema) → enligt
+  Migrationsprotokollet §2b krävs migration-vakt-granskning + användarens
+  uttryckliga godkännande innan applicering. Schemaändringar: inga i denna rond.
+
+## F. ROND 5 — STATUS 2026-08-29 (implementering klar; applikation väntar på DB-nyckel)
+
+| Task | Status | Bevis |
+|---|---|---|
+| T1 sanity+enheter (data_fetcher) | ✅ | +152 rader; 5/5 test_data_fetcher; OK1/OK2 + edge-batteri; py_compile |
+| T2 financials-branch (data_fetcher) | ✅ | sektor-fält använt (inget suffix); gm/cr NULL för Financial Services/Real Estate/Insurance |
+| T3 price-mappning + mock-bort | ✅ | db_loader current_price→price (4 fall verifierade); stocks.py: `_generate_mock_candles`/`_generate_mock_score_history` HELT borttagna (grep 0 i kod); tom lista i stället för fabrikat |
+| T3b DB-cleanup (054) | 🔴 **VÄNTAR APPLICERING** | 054 skriven + migration-vakt APPROVED (efter ml_rank-skärpning); kräver DATABASE_URL — `.env.local` har tom nyckel → **kräver användarens nyckel** |
+| T4 UI-konsumenter fraktion | ✅ | VerdictCard ×100 / formatPct / FilterRail /100 / themes 0.02 alla konsekventa med fraktion — inga ändringar behövdes (utom displayValue-T12) |
+| T5 MAX_DIVIDEND_YIELD 0.15 | ✅ | stämmer mot fraktion (enhetstest bevisar) |
+| T6 mews-fix | ✅ | fillna(0)→median-flöde; low_ps-sektormask; opinc_ttm>0; median-fill avsiktlig; 9/9 test_mews; INSUR-block-mönstret bevisat (44.0 → flag False) |
+| T7 kvalitetsgate | ✅ | piotr≥5 + roa>0/roe-fallback + coverage≥4 + **fcf_yield-krav** (reviewer-fynd); och **pipeline-ordningen fixad**: MEWS körs nu EFTER Piotroski (daily_pipeline 1259-1273) — annars var gaten alltid ofullständig |
+| T8 sort_by | ✅ | screener.py:44 `.order(sort_by)`; useMangdubblare skickar `sort_by=mews_score` |
+| T9 Piotroski financials | ✅ | SEB-lik bank: f-score 7 (var 0); industri-kontroll oförändrad (8) mot HEAD; 15/15 test_piotroski |
+| T10 nyhets-bäring | ✅ | news_bias.py (5/5 tester; 229/229 och 224/224 backend_worker-suites vid respektive wave); entrypoint non-fatal-anrop; 053_news_bias.sql APPROVED |
+| T11 renormalisering | ✅ | MAX_RENORMALIZATION=1.5 på BÅDA site:na (867+886); varningsprint >1.2; bevis: 1.21 för 9/10, 1.50-cap för 4/10 |
+| T12 UI-ärlighet | ✅ | displayValue i format.ts; pe/de/gm-gränser i VerdictCard + StockView (gm sektor-villkorad); news_bias-badge; tsc + vitest gröna |
+| T13 golden-sample | ✅ | `scripts/ranking_sanity_gate.py` — kördes: RÖD (korrekt nuläge: NVDA −2.28, SEB roe −0.07, EG 2.19, mock-100.0, 277 pe-anomalier, 151 de<0, 418 price NULL, 1 seed-rad kvar) |
+| T14 före/efter | ✅ | baseline-JSON-param i gaten; top-50-jämförelse görs vid första applikation |
+| T15 proveniens .ST-rader | ✅ | **rotorsak: `supabase/seed.sql` (hårdkodade demovärden, exekverad 2026-08-28)!** INTE pipelinen. VOLV-B.ST 84.0 = seed-rad som aldrig skrevs över (COALESCE + .ST-rate-limit). seed.sql fick VARNING-kommentar; raderna tas bort av 054-steget 6 |
+
+**Gates körda (ledaren, faktisk utdata):** py_compile 6 filer OK · 29/29
+(test_mews+piotroski+data_fetcher) · 9/9 test_mews efter ordningsfix · 229/229 +
+224/224 backend_worker · 153 routes oförändrat · tsc via `npm run type-check`
+EXIT=0 · vitest 13/13 · ruff clean · migration-vakt: 053 APPROVED / 054
+NEEDS_REVISION → skärpt med ml_rank → APPROVED.
+
+**LÄRDOM VÅG 1 (git-backförlust):** worker-spawnarna lämnade plötsligt 76
+ändrade filer (30 850 deletioner i reports/ + data/*) — upptäckt av verify-gate,
+återställt med `git checkout -- reports/ data/` + regenererad
+scored_universe_2026-08-28.csv från parquet (420 rader, identiska data).
+Orsak: oklar (worker-test-körning); lärdom: **kör `git status` före OCH efter
+varje wave + commits av egna steg**. Inga data förlorade.
+
+**KVASTAR (kräver dig):**
+1. ~~Applicera migrationerna~~ ✅ **KLART 2026-08-30**: 053–059 applicerade +
+   journalförda (001–059 komplett). Sanity-gate GRÖN.
+2. ~~Lägg DATABASE_URL / applicera~~ ✅ **KLART**: DATABASE_URL i working_dsn +
+   `.env.local`; alla migrationer körda via psql-poolem (6543).
+- W1 (P0): ~~py_compile stock-scanner; lokal daily_pipeline~~ ✅ **KLART**:
+   lokalt verifierat (NVDA pe -4.89→NULL, divY 0.44→0.0044, de -34.9→0).
+- W2 (P1): ~~unittest mews/piotroski~~ ✅ **KLART**: 481/482 + 229/229.
+- W3 (P2/P3): ~~tsc; smoke; regression-vakt~~ ✅ **KLART**: npm run type-check
+  EXIT=0; sanity-gate GRÖN (pe<=1>200=0, de<0=0, seed=0, EG divY 0.0212).
+- **Migrationsvakt:** T3b var SEMANTISK datamigrering → vakt-granskad +
+  användarens explicita order → godkänd och applicerad. Schemaändringar: inga.
