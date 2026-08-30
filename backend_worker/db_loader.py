@@ -91,10 +91,12 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
         return pd.to_numeric(s, errors="coerce")
 
     # 1. P/E: icke-finit/<=1/>200 → NA (fångar negativa yfinance-värden)
+    #    dessutom pe < 6 → NA (yfinance .info ger ibland ~1-5 istället för 20-40:
+    #    META 1.15, KO 2.41, APP 3.68, CME 3.66, LIN 5.18, LLY 5.59)
     for col in ("pe_trailing", "pe_forward"):
         if col in df.columns:
             v = _is_num(df[col])
-            df[col] = v.mask(~np.isfinite(v) | (v <= 1) | (v > 200))
+            df[col] = v.mask(~np.isfinite(v) | (v <= 1) | (v > 200) | (v < 6))
 
     # 2. dividend_yield: %-värden (0.44 = 0.44 %) → fraktion (0.0044);
     #    redan-fraktion (<=0.1) lämnas; >1 dubbel-saneras (redan /100).
