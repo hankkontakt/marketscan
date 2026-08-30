@@ -88,6 +88,9 @@ def extract_analyst(info: dict, price: Optional[float]) -> dict:
         flags.append("STALE_TARGET")
 
     rec_key_clean = rec_key if isinstance(rec_key, str) else None
+    dispersion = None
+    if tgt_med is not None and tgt_high is not None and tgt_low is not None and tgt_med > 0:
+        dispersion = (tgt_high - tgt_low) / tgt_med
     return {
         "target_median": tgt_med,
         "target_high": tgt_high,
@@ -97,6 +100,7 @@ def extract_analyst(info: dict, price: Optional[float]) -> dict:
         "recommendation_mean": rec_mean,
         "recommendation_key": rec_key_clean,
         "flags": flags,
+        "target_dispersion": round(dispersion, 3) if dispersion is not None else None,
     }
 
 
@@ -156,6 +160,7 @@ def fetch_analyst(ticker: str) -> Optional[dict]:
     if rec.get("target_median") is None and rec.get("recommendation_mean") is None:
         return None
     rec["ticker"] = ticker
+    rec["currency"] = info.get("currency")
     return rec
 
 
@@ -175,8 +180,9 @@ def upsert_analyst(cur, rows: list[dict], today: date):
             cur.execute("""
                 INSERT INTO analyst_estimates (
                     ticker, fetched_at, target_median, target_high, target_low,
-                    target_count, upside_pct, recommendation_mean, recommendation_key, source
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'yfinance')
+                    target_count, upside_pct, recommendation_mean, recommendation_key,
+                    source, analyst_flags, currency, target_dispersion
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'yfinance', %s, %s, %s)
                 ON CONFLICT (ticker, fetched_at) DO UPDATE SET
                     target_median = EXCLUDED.target_median,
                     target_high = EXCLUDED.target_high,
@@ -185,11 +191,16 @@ def upsert_analyst(cur, rows: list[dict], today: date):
                     upside_pct = EXCLUDED.upside_pct,
                     recommendation_mean = EXCLUDED.recommendation_mean,
                     recommendation_key = EXCLUDED.recommendation_key,
-                    source = EXCLUDED.source
+                    source = EXCLUDED.source,
+                    analyst_flags = EXCLUDED.analyst_flags,
+                    currency = EXCLUDED.currency,
+                    target_dispersion = EXCLUDED.target_dispersion
             """, (r["ticker"], today.isoformat(),
                   r.get("target_median"), r.get("target_high"), r.get("target_low"),
                   r.get("target_count"), r.get("upside_pct"),
-                  r.get("recommendation_mean"), r.get("recommendation_key")))
+                  r.get("recommendation_mean"), r.get("recommendation_key"),
+                  json.dumps(r.get("flags", [])),
+                  r.get("currency"), r.get("target_dispersion")))
         except Exception as e:
             logger.warning("upsert analyst %s misslyckades: %s", r.get("ticker"), e)
     return len(rows)

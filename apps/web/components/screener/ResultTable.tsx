@@ -195,14 +195,14 @@ export function ResultTable({ data, loading, onReset }: Props) {
                   </span>
                 </td>
 
-                {/* Trend */}
+                {/* Trend — fallback till trend_tech från MasterRank när trend_signal saknas */}
                 <td className="px-4 py-3">
-                  <TrendBadge trend={row.trend_signal} />
+                  <TrendBadge trend={row.trend_signal ?? row.trend_tech} />
                 </td>
 
                 {/* Kurs */}
                 <td className="px-4 py-3 tabular text-right text-[var(--color-text-primary)]">
-                  {formatPrice(row.price)}
+                  {formatPrice(row.price, row.currency ?? "USD")}
                 </td>
 
                 {/* Idag */}
@@ -221,8 +221,8 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 </td>
 
                 {/* ROE */}
-                <td className="px-4 py-3 tabular text-right text-[var(--color-text-secondary)]">
-                  {row.roe ? `${(row.roe * 100).toFixed(0)}%` : "—"}
+                <td className="px-4 py-3 text-right tabular">
+                  {row.roe != null && row.roe > 0.0005 ? `${(row.roe * 100).toFixed(0)}%` : "—"}
                 </td>
               </tr>
             ))}

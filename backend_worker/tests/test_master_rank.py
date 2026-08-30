@@ -189,6 +189,23 @@ class TestTier(unittest.TestCase):
         self.assertEqual(mr.tier_of(40.0, False, "READY"), "T4")
         self.assertEqual(mr.tier_of(None, True, "READY"), "EXCLUDED")
 
+    def test_signal_from_tier(self):
+        """ROND 9: entry_signal härleds från MasterRank-tier (PETR4-fix)."""
+        self.assertEqual(mr.signal_from_tier("T1"), "STARK")
+        self.assertEqual(mr.signal_from_tier("T2"), "OK")
+        self.assertEqual(mr.signal_from_tier("T3"), "VÄNTA")
+        self.assertEqual(mr.signal_from_tier("T4"), "EJ_AKTUELL")
+        self.assertEqual(mr.signal_from_tier("EXCLUDED"), "EJ_AKTUELL")
+
+    def test_fuse_includes_entry_signal(self):
+        """fuse returnerar also entry_signal — etiketten speglar ranken."""
+        row = {"quality_z": 88.0, "value_z": 80.0, "momentum_z": 90.0,
+               "analyst_z": 70.0, "insider_z": 60.0, "catalyst_z": 80.0,
+               "payout_z": 55.0, "growth_z": 75.0,
+               "val_flags": [], "tech_flags": [], "pit_status": "READY"}
+        f = mr.fuse(row, WEIGHTS)
+        self.assertEqual(f["entry_signal"], "T2" if f["tier"] == "T2" else "STARK")
+
 
 class TestPitStatus(unittest.TestCase):
     def test_ready(self):

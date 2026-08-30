@@ -134,10 +134,12 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
     # 5. roe/roa/gm/operating_margin: |v| > 5 → NA
     #    dessutom: negativ gm för icke-finansiella → NA (yfinance-skrap:
     #    GE -0.13, ACN -0.18, 000270.KS -0.18 — alla positiva live)
+    # ROND 9: ROE/ROA == 0 → NA (ett lönsamt bolag har aldrig exakt 0 % ROE;
+    #    "0 %" i UI var en TTM/artefakt — t.ex. 2914.T med temporärt negativt kvartal).
     for col in ("roe", "roa", "gross_margin", "operating_margin"):
         if col in df.columns:
             v = _is_num(df[col])
-            df[col] = v.mask(~np.isfinite(v) | (v.abs() > 5))
+            df[col] = v.mask(~np.isfinite(v) | (v.abs() > 5) | (v == 0))
             if col == "gross_margin":
                 sect = (
                     df["sector"].fillna("").astype(str)

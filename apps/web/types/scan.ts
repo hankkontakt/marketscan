@@ -31,6 +31,10 @@ export interface ScanRow {
   // MasterRank (ROND 8) — berikas från /market-intel/master/rank i ScreenerView
   master_rank: number | null;
   master_tier: string | null;
+  trend_tech: "Upptrend" | "Sidled" | "Nedtrend" | null;
+  analyst_flags: string[];
+  target_dispersion: number | null;
+  currency: string | null;
 
   price: number | null;
   change_pct: number | null;

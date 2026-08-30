@@ -397,7 +397,7 @@ function OverviewTab({ stock, showBeginnerCTA = false }: { stock: ScanRow; showB
             },
             {
               label: "ROE",
-              value: stock.roe != null ? formatPct(stock.roe) : "—",
+              value: stock.roe != null && stock.roe > 0.0005 ? formatPct(stock.roe) : "—",
               tip: "Avkastning på eget kapital. Hur effektivt bolaget genererar vinst med ägarnas kapital. Över 15 % anses generellt bra.",
               microTopic: "roe",
             },
@@ -1022,7 +1022,7 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
           {[
             { label: "Bruttomarginal", value: grossMarginValue(stock), tip: "Hur stor andel av intäkterna som kvarstår efter direkta produktionskostnader." },
             { label: "Rörelsemarginal", value: stock.operating_margin != null ? `${(stock.operating_margin * 100).toFixed(1)} %` : "—", tip: "Vinst som andel av intäkterna, efter driftkostnader men före räntor och skatt." },
-            { label: "ROE", value: stock.roe != null ? `${(stock.roe * 100).toFixed(1)} %` : "—", tip: "Avkastning på eget kapital — hur effektivt bolaget skapar värde för aktieägarna." },
+            { label: "ROE", value: stock.roe != null && stock.roe > 0.0005 ? `${(stock.roe * 100).toFixed(1)} %` : "—", tip: "Avkastning på eget kapital — hur effektivt bolaget skapar värde för aktieägarna." },
             { label: "Skuldsättning (D/E)", value: displayValue(stock.debt_to_equity, { min: 0 }), tip: "Skulder relativt eget kapital. Under 1,0 är konservativt." },
             { label: "Finansiell styrka", value: stock.piotroski_f != null ? `${stock.piotroski_f}/9` : "—", tip: "Piotroski F-score: summerar 9 finansiella hälsokontroller. 7–9 är starkt." },
             { label: "Direktavkastning", value: stock.dividend_yield != null ? `${(stock.dividend_yield * 100).toFixed(2)} %` : "—", tip: "Årsutdelning delat med aktiekurs." },

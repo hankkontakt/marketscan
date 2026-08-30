@@ -40,7 +40,15 @@ export function ScreenerView() {
     const masterMap = new Map(masterRows.map(r => [r.ticker, r]));
     return (data || []).map((row) => {
       const m = masterMap.get(row.ticker);
-      return { ...row, master_rank: m?.master_rank ?? null, master_tier: m?.tier ?? null };
+      return {
+        ...row,
+        master_rank: m?.master_rank ?? null,
+        master_tier: m?.tier ?? null,
+        trend_tech: m?.trend_tech ?? null,
+        analyst_flags: m?.analyst_flags ?? [],
+        target_dispersion: m?.target_dispersion ?? null,
+        currency: m?.currency ?? null,
+      };
     });
   }, [data, masterRows]);
 

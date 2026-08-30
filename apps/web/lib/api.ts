@@ -181,14 +181,17 @@ export interface MasterRankItem {
   ma50_dist_pct: number | null;
   ma200_dist_pct: number | null;
   dist_52w_high_pct: number | null;
-  trend_tech: string | null;           // 'Upptrend'|'Sidled'|'Nedtrend'
+  trend_tech: "Upptrend" | "Sidled" | "Nedtrend" | null;  // 'Upptrend'|'Sidled'|'Nedtrend'
   tech_flags: string[];                // ['OVERBOUGHT','OVERSOLD','TREND_DOWN','PULLBACK']
   catalyst_next: string | null;        // 'YYYY-MM-DD:earnings'
   catalyst_days: number | null;
-  pit_status: string | null;           // READY|PENDING|STALE
+  pit_status: string | null;           // READY|PENDING|STALE|NO_QMJ
   pit_reason: string | null;
   exclusion_reason: string | null;
   data_missing: string[];
+  currency: string | null;             // quote-valuta (USD/JPY/BRL/TWD/SEK...)
+  analyst_flags: string[];             // ['FEW_ANALYSTS','STALE_TARGET','DEAD_TARGET']
+  target_dispersion: number | null;    // (high-low)/median — spridning av riktkurser
 }
 
 export interface ClusterInfo {

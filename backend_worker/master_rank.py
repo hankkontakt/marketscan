@@ -276,8 +276,27 @@ def fuse(row: dict, weights: dict) -> dict:
 
     rank = _fmt_f(rank)
     tier = tier_of(rank, False, row.get("pit_status", "READY"))
-    return {"master_rank": rank, "tier": tier, "data_missing": missing,
+    # ROND 9: entry_signal härleds DETERMINISTISKT från MasterRank-tier så att
+    # etiketten aldrig motsäger rank-siffran (PETR4 71/T2 vs gammal "Avvakta").
+    entry_signal = signal_from_tier(tier)
+    return {"master_rank": rank, "tier": tier, "entry_signal": entry_signal,
+            "data_missing": missing,
             "bubble_triage": "BUBBLE_TRIAGE" if "bubble_triage" in missing else None}
+
+
+def signal_from_tier(tier: str | None) -> str:
+    """MasterRank-tier → entry_signal (motsv. köplägesetikett).
+
+    T1 (≥75) → STARK · T2 (65-74) → OK · T3 (50-64) → VÄNTA ·
+    T4 (<50) / EXCLUDED → EJ_AKTUELL.
+    """
+    if tier == "T1":
+        return "STARK"
+    if tier == "T2":
+        return "OK"
+    if tier == "T3":
+        return "VÄNTA"
+    return "EJ_AKTUELL"
 
 
 def compute_table(values: list[dict], weights: dict) -> list[dict]:
@@ -289,6 +308,7 @@ def compute_table(values: list[dict], weights: dict) -> list[dict]:
         row.update({
             "master_rank": fused["master_rank"],
             "tier": fused.get("tier"),
+            "entry_signal": fused.get("entry_signal"),
             "data_missing": json.dumps(fused["data_missing"]),
             "bubble_triage": fused.get("bubble_triage"),
         })
@@ -353,14 +373,17 @@ def load_inputs(cur, today: date) -> list[dict]:
                        "exclusion_reason": ex, "as_of_date": aod}
 
     cur.execute("""
-        SELECT ticker, target_median, target_count, upside_pct, recommendation_mean
+        SELECT ticker, target_median, target_count, upside_pct, recommendation_mean,
+               analyst_flags, currency, target_dispersion
         FROM analyst_estimates
         WHERE fetched_at = (SELECT MAX(fetched_at) FROM analyst_estimates)
     """)
     analyst = {}
-    for (ticker, tm, tc, up, rm) in cur.fetchall():
+    for (ticker, tm, tc, up, rm, afl, cur_cy, disp) in cur.fetchall():
         analyst[ticker] = {"target_median": tm, "target_count": tc,
-                           "upside_pct": up, "recommendation_mean": rm}
+                           "upside_pct": up, "recommendation_mean": rm,
+                           "analyst_flags": afl or [],
+                           "currency": cur_cy, "target_dispersion": disp}
 
     cur.execute("""
         SELECT ticker, event_type, event_date, days_until, confidence
@@ -506,10 +529,18 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         momentum_z = _fmt_f(np.mean(mum)) if mum else None
         tech_z_f = _fmt_f(tz)
 
-        # Analyst: analyst_z från rec (från analyst_fetcher-analytik)
+        # Analyst: analyst_z från rec (från analyst_fetcher-analytik).
+        # ROND 9: dispersion-penalty — bred riktkursspridning = osäkerhet →
+        # dämpar analyst_z (PETR4-fallet: spann 37-63 BRL).
         from backend_worker.analyst_fetcher import analyst_z as _az
         az = _az({"upside_pct": a.get("upside_pct"), "recommendation_mean": a.get("recommendation_mean"),
                   "target_count": a.get("target_count")})
+        disp = a.get("target_dispersion")
+        if az is not None and disp is not None:
+            disp = float(disp)
+            # dispersion 0.0 → ingen straff; ≥2.0 → max 50 % straff
+            penalty = max(0.0, min(0.5, disp / 4.0))
+            az = _fmt_f(az * (1.0 - penalty))
 
         # Catalyst
         from backend_worker.catalyst_fetcher import catalyst_z as _cz, catalyst_boost as _cb
@@ -555,6 +586,8 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             "val_flags": vflags,
             "analyst_upside": a.get("upside_pct"),
             "analyst_count": a.get("target_count"),
+            "analyst_flags": a.get("analyst_flags", []),
+            "target_dispersion": disp,
             "rsi_14": rsi,
             "ma50_dist_pct": tech.get("ma50_dist_pct"),
             "ma200_dist_pct": tech.get("ma200_dist_pct"),
@@ -565,6 +598,7 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             "catalyst_days": catalyst_days,
             "pit_status": pit,
             "pit_reason": pit_reason,
+            "currency": a.get("currency"),
             "exclusion_reason": q.get("exclusion_reason"),
         })
 
@@ -594,10 +628,10 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                     rsi_14, ma50_dist_pct, ma200_dist_pct, dist_52w_high_pct,
                     trend_tech, tech_flags,
                     catalyst_next, catalyst_days, pit_status, pit_reason,
-                    exclusion_reason, warning_flags, data_missing
+                    exclusion_reason, warning_flags, data_missing, currency
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                           %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                          %s, %s, %s, %s, %s, %s, %s)
+                          %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ticker, scan_date) DO UPDATE SET
                     master_rank = EXCLUDED.master_rank,
                     tier = EXCLUDED.tier,
@@ -629,7 +663,8 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                     pit_reason = EXCLUDED.pit_reason,
                     exclusion_reason = EXCLUDED.exclusion_reason,
                     warning_flags = EXCLUDED.warning_flags,
-                    data_missing = EXCLUDED.data_missing
+                    data_missing = EXCLUDED.data_missing,
+                    currency = EXCLUDED.currency
             """, (t, today.isoformat(),
                   r.get("master_rank"), r.get("tier"),
                   r.get("quality_z"), r.get("value_z"), r.get("momentum_z"),
@@ -638,7 +673,7 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                   r.get("val_hist_z"), r.get("val_peers_z"), r.get("val_abs_z"),
                   json.dumps(r.get("val_flags", [])),
                   r.get("analyst_upside"), r.get("analyst_count"),
-                  json.dumps([]),
+                  json.dumps(r.get("analyst_flags", [])),
                   r.get("rsi_14"), r.get("ma50_dist_pct"), r.get("ma200_dist_pct"),
                   r.get("dist_52w_high_pct"), r.get("trend_tech"),
                   json.dumps(r.get("tech_flags", [])),
@@ -646,8 +681,18 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                   r.get("pit_status"), r.get("pit_reason"),
                   r.get("exclusion_reason"),
                   json.dumps([]),
-                  r.get("data_missing", "[]")))
+                  r.get("data_missing", "[]"),
+                  r.get("currency")))
             written += 1
+            # ROND 9: skriv tillbaka entry_signal till scan_results så att
+            # köplägesetiketten alltid speglar MasterRank-tier.
+            try:
+                cur.execute("""
+                    UPDATE scan_results SET entry_signal = %s
+                    WHERE ticker = %s
+                """, (r.get("entry_signal", "EJ_AKTUELL"), t))
+            except Exception as e:
+                logger.warning("backfill entry_signal %s misslyckades: %s", t, e)
         except Exception as e:
             logger.warning("upsert master_rank %s misslyckades: %s", t, e)
     return written

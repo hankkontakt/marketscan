@@ -77,7 +77,7 @@ const NUMBER_CARDS = (stock: ScanRow): NumberCardDef[] => [
   },
   {
     label: "ROE",
-    value: stock.roe != null ? (stock.roe * 100).toFixed(1) : "—",
+    value: stock.roe != null && stock.roe > 0.0005 ? (stock.roe * 100).toFixed(1) : "—",
     unit: "%",
     tooltip: "Avkastning på eget kapital. Högre = mer lönsamt.",
   },

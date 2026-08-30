@@ -136,7 +136,7 @@ function MasterRow({ row }: { row: MasterRankItem }) {
         )}
       </td>
 
-      {/* Bubbla-triage */}
+      {/* Bubbla-triage + analyst-flags */}
       <td className="px-4 py-3">
         {isBubble ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--color-warn-soft)] text-[var(--color-warn)]">
@@ -147,6 +147,23 @@ function MasterRow({ row }: { row: MasterRankItem }) {
             <Trophy size={10} /> Kandidat
           </span>
         ) : null}
+        <div className="flex flex-wrap gap-1 mt-1">
+          {(row.analyst_flags ?? []).map(f => (
+            <span key={f} className="text-[9px] font-medium px-1 py-0.5 rounded bg-[var(--color-warn-soft)] text-[var(--color-warn)]">
+              {f.replace(/_/g, " ").toLowerCase()}
+            </span>
+          ))}
+          {row.analyst_upside != null && Math.abs(row.analyst_upside) < 5 && (
+            <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]">
+              uppsida inprisad
+            </span>
+          )}
+          {row.target_dispersion != null && row.target_dispersion > 0.6 && (
+            <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-[var(--color-warn-soft)] text-[var(--color-warn)]">
+              spridda riktkurser
+            </span>
+          )}
+        </div>
       </td>
     </tr>
   );
