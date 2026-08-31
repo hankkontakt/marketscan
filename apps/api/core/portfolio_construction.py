@@ -321,7 +321,7 @@ def build_barbell_portfolio(
         "holdings_count": len(holdings),
         "core_weight": round(sum(h["weight"] for h in holdings if h["segment_type"] == "CORE"), 4),
         "satellite_weight": round(sum(h["weight"] for h in holdings if h["segment_type"] == "SATELLITE"), 4),
-        "avg_master_rank": round(float(np.mean([float(h["master_rank"] or 0.0) for h in holdings])), 1) if holdings else 0.0,
+        "avg_master_rank": round(sum(float(h["master_rank"] or 0.0) for h in holdings) / len(holdings), 1) if holdings else 0.0,
         "max_sector_weight": max(sector_breakdown.values()) if sector_breakdown else 0.0,
     }
 

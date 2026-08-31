@@ -5,7 +5,6 @@ Inga externa beroenden utöver standardbiblioteket och numpy.
 from __future__ import annotations
 import logging
 from typing import Optional
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +165,8 @@ def derive_regime_from_scan(scan_rows: list[dict]) -> tuple[str, dict]:
 
     breadth_pct = (uptrends / total) * 100.0 if total > 0 else 50.0
 
-    avg_change_abs = float(np.mean([abs(r.get("change_pct") or 0.0) for r in scan_rows]))
+    changes = [abs(float(r.get("change_pct") or 0.0)) for r in scan_rows]
+    avg_change_abs = (sum(changes) / len(changes)) if changes else 0.0
     synthetic_vix = 15.0 + avg_change_abs * 500.0
 
     return classify_macro_regime(
