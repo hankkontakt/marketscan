@@ -41,10 +41,16 @@ export interface ScanRow {
   market_cap: number | null;
   pe_trailing: number | null;
   pe_forward: number | null;
+  pe_trailing_raw: number | null;
+  pe_forward_raw: number | null;
   roe: number | null;
   roa: number | null;
+  roe_raw: number | null;
+  roa_raw: number | null;
   revenue_growth: number | null;
   earnings_growth: number | null;
+  revenue_growth_raw: number | null;
+  earnings_growth_raw: number | null;
   debt_to_equity: number | null;
   current_ratio: number | null;
   gross_margin: number | null;

@@ -18,7 +18,9 @@ SCAN_COLUMNS = [
     "entry_signal", "confidence_label", "trend_signal",
     "predicted_return", "ml_rank", "piotroski_f",
     "price", "change_pct", "market_cap", "pe_trailing", "pe_forward",
+    "pe_trailing_raw", "pe_forward_raw",
     "roe", "roa", "revenue_growth", "earnings_growth",
+    "roe_raw", "roa_raw", "revenue_growth_raw", "earnings_growth_raw",
     "debt_to_equity", "current_ratio", "gross_margin", "operating_margin",
     "dividend_yield", "beta", "vol_20d",
     "low_liquidity", "has_holding", "scan_date",
@@ -93,10 +95,15 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
     # 1. P/E: icke-finit/<=1/>200 → NA (fångar negativa yfinance-värden)
     #    dessutom pe < 6 → NA (yfinance .info ger ibland ~1-5 istället för 20-40:
     #    META 1.15, KO 2.41, APP 3.68, CME 3.66, LIN 5.18, LLY 5.59)
+    #    ROND 10: *_raw-kolumner (råvärden före neutralisering) får INTE <6-regeln
+    #    — de är sanna värden, inte residualer. Endast icke-finit/<=0/>1000 → NA.
     for col in ("pe_trailing", "pe_forward"):
         if col in df.columns:
             v = _is_num(df[col])
-            df[col] = v.mask(~np.isfinite(v) | (v <= 1) | (v > 200) | (v < 6))
+            if col.endswith("_raw"):
+                df[col] = v.mask(~np.isfinite(v) | (v <= 0) | (v > 1000))
+            else:
+                df[col] = v.mask(~np.isfinite(v) | (v <= 1) | (v > 200) | (v < 6))
 
     # 2. dividend_yield: %-värden (0.44 = 0.44 %) → fraktion (0.0044);
     #    redan-fraktion (<=0.1) lämnas; >1 dubbel-saneras (redan /100).
@@ -136,10 +143,14 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
     #    GE -0.13, ACN -0.18, 000270.KS -0.18 — alla positiva live)
     # ROND 9: ROE/ROA == 0 → NA (ett lönsamt bolag har aldrig exakt 0 % ROE;
     #    "0 %" i UI var en TTM/artefakt — t.ex. 2914.T med temporärt negativt kvartal).
+    # ROND 10: *_raw får INTE |v|>5 → NA (råvärden kan vara >5, t.ex. stora P/E).
     for col in ("roe", "roa", "gross_margin", "operating_margin"):
         if col in df.columns:
             v = _is_num(df[col])
-            df[col] = v.mask(~np.isfinite(v) | (v.abs() > 5) | (v == 0))
+            if col.endswith("_raw"):
+                df[col] = v.mask(~np.isfinite(v))
+            else:
+                df[col] = v.mask(~np.isfinite(v) | (v.abs() > 5) | (v == 0))
             if col == "gross_margin":
                 sect = (
                     df["sector"].fillna("").astype(str)

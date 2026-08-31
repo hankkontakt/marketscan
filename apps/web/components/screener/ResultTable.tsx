@@ -215,14 +215,20 @@ export function ResultTable({ data, loading, onReset }: Props) {
                   {formatMarketCap(row.market_cap)}
                 </td>
 
-                {/* P/E */}
+                {/* P/E — visar RÅ värde (neutraliserad residual är intern) */}
                 <td className="px-4 py-3 tabular text-right text-[var(--color-text-secondary)]">
-                  {row.pe_trailing ? formatNumber(row.pe_trailing, 1) : "—"}
+                  {(() => {
+                    const v = row.pe_trailing_raw ?? row.pe_trailing;
+                    return v != null && v > 0 ? formatNumber(v, 1) : "—";
+                  })()}
                 </td>
 
-                {/* ROE */}
+                {/* ROE — visar RÅ värde (neutraliserad residual är intern) */}
                 <td className="px-4 py-3 text-right tabular">
-                  {row.roe != null && row.roe > 0.0005 ? `${(row.roe * 100).toFixed(0)}%` : "—"}
+                  {(() => {
+                    const v = row.roe_raw ?? row.roe;
+                    return v != null && v > 0.0005 ? `${(v * 100).toFixed(0)}%` : "—";
+                  })()}
                 </td>
               </tr>
             ))}

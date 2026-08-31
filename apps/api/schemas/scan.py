@@ -31,10 +31,16 @@ class ScanRow(BaseModel):
     market_cap: float | None = None
     pe_trailing: float | None = None
     pe_forward: float | None = None
+    pe_trailing_raw: float | None = None
+    pe_forward_raw: float | None = None
     roe: float | None = None
     roa: float | None = None
+    roe_raw: float | None = None
+    roa_raw: float | None = None
     revenue_growth: float | None = None
     earnings_growth: float | None = None
+    revenue_growth_raw: float | None = None
+    earnings_growth_raw: float | None = None
     debt_to_equity: float | None = None
     current_ratio: float | None = None
     gross_margin: float | None = None
