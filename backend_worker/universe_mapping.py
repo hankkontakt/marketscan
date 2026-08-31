@@ -56,6 +56,17 @@ PAGE_DELAY = 1.5          # sekunder — marknadssök är aggressivt rate-limita
 SEED_TICKERS: dict[str, str] = {
     "SE0015671995": "NCAB.ST",
     "SE0015950399": "TAGM-B.ST",
+    "SE0008129336": "PLEJD.ST",
+    "SE0009888617": "BONEX.ST",
+    "SE0000135810": "RAY-B.ST",
+    "SE0001200015": "IVSO.ST",
+    "SE0000115107": "VBG-B.ST",
+    "SE0000360703": "NOTE.ST",
+    "SE0003756758": "SDIP-B.ST",
+    "SE0009698518": "BIOA-B.ST",
+    "SE0009148092": "MEDC.ST",
+    "SE0007692829": "CAMX.ST",
+    "SE0009697224": "ENEA.ST",
 }
 
 SEED_NAMES: dict[str, str] = {

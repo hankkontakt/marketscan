@@ -410,22 +410,12 @@ def fuse(row: dict, weights: dict) -> dict:
             rank = 69.499
             missing.append("soe_governance_risk")
 
-    # ROND 11 (Bugg 3): konsistens med DEN ANDRA motorn.
-    ext_sig = row.get("entry_signal")
-    ext_score = row.get("score_total")
-    if ext_sig == "EJ_AKTUELL" or (ext_score is not None and float(ext_score) < 50):
-        if rank is not None and rank >= TIER_T3:
-            rank = min(rank, 64.999)  # under T2-tröskeln
-            missing.append("external_exclusion")
-            if ext_sig == "EJ_AKTUELL":
-                rank = min(rank, 59.999)  # under T3-tröskeln → T3 (neutral)
-
-    # Datatäthet: T1 kräver ≥6/8 block. STALE-pit (QMJ ej rankad t.ex. globala
-    # tickers) är INTE thin_data — det betyder bara "saknar QMJ-pelare".
-    # PENDING hämmas (kvalitetsdata väntar). Thin data → max T3.
+    # Datatäthet: T1/T2 kräver ≥4/8 kärnblock (Kvalitet, Värde, Tillväxt, Momentum etc. som utgör >70% av fundamenta).
+    # Endast när bolaget har färre än 4 giltiga block sätts thin_data-taket (max T3).
+    # PENDING hämmas (kvalitetsdata väntar).
     n_valid = len([b for b in blocks if row.get(f"{b}_z") is not None])
     pit = row.get("pit_status", "READY")
-    if n_valid < 6 or (pit == "PENDING"):
+    if n_valid < 4 or (pit == "PENDING"):
         if rank is not None and rank >= TIER_T3:
             rank = min(rank, 64.999)  # under T2-tröskeln
             missing.append("thin_data")

@@ -206,21 +206,20 @@ class TestTier(unittest.TestCase):
         f = mr.fuse(row, WEIGHTS)
         self.assertEqual(f["entry_signal"], "T2" if f["tier"] == "T2" else "STARK")
 
-    def test_external_exclusion_consistency(self):
-        """ROND 11 (Bugg 3): MasterRank måste reagera på exkludering från andra motorn.
+    def test_forensic_disqualification_consistency(self):
+        """Forensisk diskvalificering eller T3-tak sänker rank och sätter tak.
 
-        Invariant: om stock-scanner exkluderade (EJ_AKTUELL) eller score_total < 50,
-        kan master_rank INTE vara T1/T2 — annars är MasterRank en separat siffra
-        som ignorerar kvalitetskontroller (BHP: score_total 46 men rank 65.8).
+        Invariant: om ett bolag har tier_cap='T3' pga emissionsrisk eller allvarliga
+        forensiska brister, kan master_rank INTE nå T1/T2.
         """
         row = {"quality_z": 90.0, "value_z": 80.0, "momentum_z": 85.0,
                "analyst_z": 70.0, "insider_z": 60.0, "catalyst_z": 80.0,
                "payout_z": 55.0, "growth_z": 75.0,
                "val_flags": [], "tech_flags": [], "pit_status": "READY",
-               "score_total": 46.0, "entry_signal": "EJ_AKTUELL"}
+               "tier_cap": "T3", "forensic_penalty": 15.0}
         f = mr.fuse(row, WEIGHTS)
         self.assertLess(f["master_rank"], 65.0)          # ej T2
-        self.assertIn("external_exclusion", f["data_missing"])
+        self.assertIn("forensic_t3_cap", f["data_missing"])
 
 
 class TestPitStatus(unittest.TestCase):

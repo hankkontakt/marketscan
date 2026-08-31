@@ -38,5 +38,6 @@ Thumbs.db
 .vercel
 .env*
 scratch_*
+alpha_candidates_output.json
 .commandcode/
 .freebuff/
