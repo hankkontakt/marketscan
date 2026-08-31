@@ -231,6 +231,73 @@ class TestReweight(unittest.TestCase):
         total = sum(new_w["weights"].values())
         self.assertAlmostEqual(total, 1.0, places=3)
 
+    def test_reweight_noise_gate(self):
+        """ROND 9: n < 30 → ingen ändring (brus); IC under noise-floor → ingen uppvikt."""
+        # För få observationer → oförändrade vikter
+        low_n = {"quality": 10}
+        new_w = mr.reweight_from_ic({"quality": 0.05}, WEIGHTS, n_map=low_n)
+        self.assertEqual(new_w["weights"]["quality"], WEIGHTS["weights"]["quality"])
+        # IC under noise-floor (1.96/sqrt(30)=0.358) → ingen uppvikt; renorm 0.25→0.2308
+        ok_n = {"quality": 30}
+        new_w2 = mr.reweight_from_ic({"quality": 0.05}, WEIGHTS, n_map=ok_n)
+        self.assertLess(new_w2["weights"]["quality"], WEIGHTS["weights"]["quality"] * 1.01)
+
+
+class TestSectorNeutral(unittest.TestCase):
+    def test_sector_z_within_sector(self):
+        """ROND 9: sektor-neutral z — lägre P/E än peers → hög z, ej global."""
+        sector_maps = {"pe_trailing": {"Technology": [20.0, 30.0, 40.0, 50.0, 60.0] * 4}}
+        # P/E 55 (nära toppen av 20-60 → hög percentil = dyr → LÅG z)
+        z = mr.sector_neutral_z(55.0, "Technology", sector_maps["pe_trailing"])
+        self.assertLess(z, 30.0)
+        # P/E 22 (i botten → låg percentil = billig → HÖG z)
+        z2 = mr.sector_neutral_z(22.0, "Technology", sector_maps["pe_trailing"])
+        self.assertGreater(z2, 70.0)
+
+    def test_sector_z_fallback_global(self):
+        """Saknar sektor/för få peers → global percentil (oförändrad)."""
+        val = 42.0
+        self.assertEqual(mr.sector_neutral_z(val, None, {}), 42.0)
+        self.assertEqual(mr.sector_neutral_z(val, "Tech", {"Tech": [1.0]}), 42.0)
+
+
+class TestEvidenceLoop(unittest.TestCase):
+    def test_purged_folds(self):
+        """ROND 9: purged walk-forward ger folds med icke-överlappande fönster."""
+        from datetime import date, timedelta
+        from backend_worker import evidence_loop
+        rows = []
+        for i in range(400):  # 400 dagar — ger flera folds givet horizon 30/embargo 5
+            rows.append({"ticker": "A", "scan_date": date(2026, 1, 1) + timedelta(days=i),
+                         "value": float(i), "fwd": float(i % 7)})
+        folds = evidence_loop.purged_walk_forward(rows, horizon=30, embargo=5)
+        self.assertGreater(len(folds), 0)
+        # Varje fold: train-slut + horizon + embargo <= test-start (ingen läcka)
+        for train, test in folds:
+            train_end = max(r["scan_date"] for r in train)
+            test_start = min(r["scan_date"] for r in test)
+            self.assertLessEqual(train_end + timedelta(days=35), test_start)
+
+    def test_ic_with_purge_valid(self):
+        """purged-IC returnerar float för tillräcklig data."""
+        from datetime import date, timedelta
+        from backend_worker import evidence_loop
+        rows = []
+        for i in range(400):
+            rows.append({"ticker": "A", "scan_date": date(2026, 1, 1) + timedelta(days=i),
+                         "value": float(i), "fwd": float(i)})
+        folds = evidence_loop.purged_walk_forward(rows, 30, 5)
+        ic = evidence_loop.ic_with_purge(folds)
+        self.assertIsNotNone(ic)
+
+    def test_deflated_sharpe_gate(self):
+        """DSR-gate: fler tester → högre strap → lägre signifikans."""
+        from backend_worker import evidence_loop
+        single = evidence_loop.deflated_sharpe_correction(0.05, n_tests=1, n_obs=100)
+        many = evidence_loop.deflated_sharpe_correction(0.05, n_tests=8, n_obs=100)
+        self.assertIsNotNone(single)
+        self.assertGreater(single, many)  # fler tester straffar mer
+
 
 if __name__ == "__main__":
     unittest.main()

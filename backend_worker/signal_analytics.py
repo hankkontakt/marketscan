@@ -24,6 +24,8 @@ import psycopg2
 import psycopg2.extras
 import numpy as np
 
+from backend_worker.evidence_loop import purged_walk_forward, ic_with_purge
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -438,6 +440,20 @@ def compute_factor_metrics(dsn: str) -> int:
                 xs = np.array([p[0] for p in pts])
                 ys = np.array([p[1] for p in pts])
                 ic = _spearman(list(xs), list(ys))
+
+                # ROND 9: purged IC (López de Prado) för master-block — överlappande
+                # avkastningsfönster bryter oberoende-antagandet. Purge + embargo
+                # ger ärligare siffra (annars ser IC bättre ut än den är live).
+                ic_purged = None
+                if f in MASTER_FIELDS:
+                    rows_p = [{"scan_date": sd, "value": p[0], "fwd": p[1]}
+                              for sd, p in zip([r["scan_date"] for r in rows], pts)]
+                    folds = purged_walk_forward(rows_p, horizon=horizon, embargo=5)
+                    ic_purged = ic_with_purge(folds)
+                    if ic_purged is not None:
+                        ic = ic_purged
+                        logger.info("  %s/%dd: PURGED IC=%.3f (n=%d, %d folds)",
+                                    f, horizon, ic_purged, len(pts), len(folds))
 
                 decile_edges = np.percentile(xs, np.arange(10, 100, 10))
                 # np.digitize returnerar 0..9 för 9 kanter → +1 ger decil 1..10.

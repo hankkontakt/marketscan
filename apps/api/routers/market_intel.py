@@ -226,6 +226,7 @@ class MasterRankOut(BaseModel):
     exclusion_reason: str | None = None
     data_missing: list = []
     currency: str | None = None
+    insider_source: str | None = None
 
 
 def _master_out(r: dict) -> MasterRankOut:
@@ -263,6 +264,7 @@ def _master_out(r: dict) -> MasterRankOut:
         exclusion_reason=r.get("exclusion_reason"),
         data_missing=r.get("data_missing") or [],
         currency=r.get("currency"),
+        insider_source=r.get("insider_source"),
     )
 
 

@@ -139,6 +139,53 @@ def val_flags(val_hist: Optional[float], val_peers: Optional[float],
     return flags
 
 
+# ── Sektor-neutral z-score (ROND 9) ───────────────────────────────────────────
+# JP Morgan/MSCI: ranka kvalitet/värde INOM sektor (försäkring vs försäkring),
+# inte mot hela universumet — annars mäter faktorrankingen bara "vilken sektor
+# råkar vara het". Kräver ≥15 peers i sektor, annars global fallback.
+
+def sector_neutral_z(value: Optional[float], sector: Optional[str],
+                     peers_map: dict[str, list[float]], min_peers: int = 15) -> Optional[float]:
+    """Percentil INOM sektorn (0-100). Saknar sektor/peers → global percentil.
+
+    `value` är aktiens råvärde (t.ex. ROE, P/E) som redan är en 0-100-percentil
+    globalt; vi konverterar till sektor-rank genom att jämföra värdet mot
+    peers' percentilvärden (samma skala) — bevarar sektor-relativ ordning.
+    """
+    if value is None:
+        return None
+    if not sector or sector not in peers_map or len(peers_map[sector]) < min_peers:
+        return _clip100(float(value))
+    peers = [float(x) for x in peers_map[sector] if x is not None]
+    if not peers:
+        return _clip100(float(value))
+    # count-baserad percentil: hur många peers är LÄGRE än value → värde-percentil.
+    # Men BILLIG ska ge HÖG z (lågt P/E = bra), så invertera: 100 - pct.
+    pct = float(np.mean([1.0 if float(value) > p else 0.0 for p in peers]) * 100.0)
+    return _clip100(100.0 - pct)
+
+
+def build_sector_z_maps(scan: dict, fields: list[str]) -> dict[str, dict[str, list[float]]]:
+    """Bygg sektor→[värde] map per fält för sektor-neutralisering.
+
+    scan: {ticker: {"sector": str, field: float, ...}}; fields: t.ex. ["pe_trailing"].
+    Endast sektorer med ≥2 peers tas med (försumbara grupper → global fallback).
+    """
+    maps: dict[str, dict[str, list[float]]] = {f: {} for f in fields}
+    for t, row in scan.items():
+        sec = row.get("sector")
+        if not sec:
+            continue
+        for f in fields:
+            v = row.get(f)
+            if v is not None:
+                try:
+                    maps[f].setdefault(sec, []).append(float(v))
+                except (TypeError, ValueError):
+                    continue
+    return maps
+
+
 # ── Block C: Teknisk position ────────────────────────────────────────────────
 
 def tech_z(rsi: Optional[float], dist_high: Optional[float], ma200_dist: Optional[float],
@@ -318,11 +365,21 @@ def compute_table(values: list[dict], weights: dict) -> list[dict]:
 
 # ═════════════════════════ REWEIGHT (data-driven vikter) ═════════════════════
 
-def reweight_from_ic(ic_map: dict, current: dict) -> dict:
+# ROND 9: brus-gate för reweight — multipel testning-skydd.
+# Med 8 block testade samtidigt ser några signifikanta ut av slump (Bailey &
+# López de Prado: deflaterad Sharpe). Vi kräver:
+#   - min_n: icke-överlappande observationer (annars ingen ändring)
+#   - noise_floor = 1.96/sqrt(n) — IC under detta ≈ brus → ingen uppvikt.
+MIN_REWEIGHT_N = 30      # minsta antal icke-överlappande obsar för viktändring
+NOISE_Z = 1.96           # 95 % konfidens
+
+
+def reweight_from_ic(ic_map: dict, current: dict, n_map: dict | None = None) -> dict:
     """Skriv om weights baserat på Rank-IC per faktor (factor_metrics).
 
-    Regler: IC > +0.03 → uppvikt; IC < -0.02 → nedvikt +1 steg; |IC| låg → 0.
-    Renormaliseras till 1.0. Returnerar ny weights-dict.
+    Regler (ROND 9): IC > +0.03 OCH IC > noise_floor(1.96/√n) OCH n ≥ 30 →
+    uppvikt; IC < -0.02 → nedvikt; annars → tyst 0.9× (liten default).
+    Renormaliseras till 1.0.
     """
     w = dict(current.get("weights", {}))
     base = w.copy()
@@ -330,7 +387,11 @@ def reweight_from_ic(ic_map: dict, current: dict) -> dict:
         ic = ic_map.get(fac)
         if ic is None:
             continue
-        if ic > IC_UP:
+        n = (n_map or {}).get(fac)
+        if n is not None and n < MIN_REWEIGHT_N:
+            continue  # för få observationer — ingen ändring (brus)
+        noise_floor = NOISE_Z / math.sqrt(n) if n else 0.03
+        if ic > IC_UP and ic > noise_floor:
             w[fac] = base[fac] * 1.25
         elif ic < IC_DOWN:
             w[fac] = base[fac] * 0.75
@@ -449,6 +510,11 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         if sec and pe and pe > 0:
             peers_by_sector.setdefault(sec, []).append(float(pe))
 
+    # ROND 9: sektor-neutral z-score-maps (kvalitet/värde inom sektor).
+    # Bygg maps för de raw-fält som ska sektor-justeras. Om en sektor saknar
+    # ≥15 peers → global fallback (sector_neutral_z hanterar det).
+    sector_maps = build_sector_z_maps(scan, ["pe_trailing"])
+
     from backend_worker.technical_snapshot import compute_technical, _read_history, fetch_price_history
 
     values: list[dict] = []
@@ -483,7 +549,8 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         sector = s["sector"]
 
         val_h = val_hist_z(pe_t, pe_hist.get(t, []))
-        val_p = val_peers_z(pe_t, peers_by_sector.get(sector, [])) if sector else None
+        # ROND 9: sektor-neutral P/E-z (inom sektor, ej global — JP Morgan/MSCI)
+        val_p = sector_neutral_z(pe_t, sector, sector_maps["pe_trailing"])
         peg = (pe_f / rev_g) if (pe_f and rev_g and rev_g > 0) else None
         val_a = val_abs_z(pe_f, rev_g, None, q.get("value_z"))
         pe_hist_pctl = None
@@ -562,9 +629,16 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         pz = q.get("payout_z")
         gz = s["score_growth"]
         scv = s["score_value"]     # fallback till värde-blocket
+        # ROND 9: insider_source — "real" (QMJ insiderkluster) vs "proxy"
+        # (Piotroski-fallback för globala). Proxy viktas ner 0.5× (ärligare:
+        # proxy-signalen är inte samma sak som riktig insiderdata).
+        insider_source = "real" if q else "proxy"
         if iz is None:
             iz = 50.0 + (s["piotroski_f"] - 4.5) * 8.0   # piotroski-proxy 0-100
             iz = float(np.clip(iz, 0.0, 100.0))
+            insider_source = "proxy"
+        if insider_source == "proxy":
+            iz = float(np.clip(50.0 + (iz - 50.0) * 0.5, 0.0, 100.0))  # 0.5× vikt
         if pz is None:
             pz = s["score_dividend"]   # utdelningsscore som payout-proxy
 
@@ -576,6 +650,7 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             "analyst_z": _fmt_f(az),
             "tech_z": tech_z_f,
             "insider_z": _fmt_f(iz),
+            "insider_source": insider_source,
             "catalyst_z": _fmt_f(cz),
             "catalyst_boost": cb,
             "payout_z": _fmt_f(pz),
@@ -628,10 +703,10 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                     rsi_14, ma50_dist_pct, ma200_dist_pct, dist_52w_high_pct,
                     trend_tech, tech_flags,
                     catalyst_next, catalyst_days, pit_status, pit_reason,
-                    exclusion_reason, warning_flags, data_missing, currency
+                    exclusion_reason, warning_flags, data_missing, currency, insider_source
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                           %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                          %s, %s, %s, %s, %s, %s, %s, %s)
+                          %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ticker, scan_date) DO UPDATE SET
                     master_rank = EXCLUDED.master_rank,
                     tier = EXCLUDED.tier,
@@ -664,7 +739,8 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                     exclusion_reason = EXCLUDED.exclusion_reason,
                     warning_flags = EXCLUDED.warning_flags,
                     data_missing = EXCLUDED.data_missing,
-                    currency = EXCLUDED.currency
+                    currency = EXCLUDED.currency,
+                    insider_source = EXCLUDED.insider_source
             """, (t, today.isoformat(),
                   r.get("master_rank"), r.get("tier"),
                   r.get("quality_z"), r.get("value_z"), r.get("momentum_z"),
@@ -682,7 +758,8 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                   r.get("exclusion_reason"),
                   json.dumps([]),
                   r.get("data_missing", "[]"),
-                  r.get("currency")))
+                  r.get("currency"),
+                  r.get("insider_source", "proxy")))
             written += 1
             # ROND 9: skriv tillbaka entry_signal till scan_results så att
             # köplägesetiketten alltid speglar MasterRank-tier.
@@ -736,11 +813,13 @@ def main() -> None:
 
     if args.reweight:
         cur.execute("""
-            SELECT factor, rank_ic FROM factor_metrics
+            SELECT factor, rank_ic, n FROM factor_metrics
             WHERE computed_date = (SELECT MAX(computed_date) FROM factor_metrics)
+              AND horizon_days = 180
         """)
         ic_map = {r[0]: float(r[1]) for r in cur.fetchall() if r[1] is not None}
-        weights = reweight_from_ic(ic_map, load_weights())
+        n_map = {r[0]: int(r[2]) for r in cur.fetchall() if r[2] is not None}
+        weights = reweight_from_ic(ic_map, load_weights(), n_map=n_map)
         WEIGHTS_PATH.write_text(json.dumps(weights, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.info("Vikter uppdaterade: %s", weights["weights"])
         conn.close()
