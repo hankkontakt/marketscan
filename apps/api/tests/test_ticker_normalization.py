@@ -92,6 +92,13 @@ class RecordingQuery:
     def limit(self, *a, **k):
         return self
 
+    @property
+    def not_(self):
+        return self
+
+    def is_(self, *a, **k):
+        return self
+
     def execute(self):
         return SimpleNamespace(data=self._rows)
 
@@ -99,11 +106,15 @@ class RecordingQuery:
 class FakeSupabase:
     def __init__(self, rows):
         self._rows = rows
+        self.queries_by_table: dict[str, RecordingQuery] = {}
         self.last_query: RecordingQuery | None = None
 
     def table(self, name):
-        self.last_query = RecordingQuery(self._rows)
-        return self.last_query
+        q = RecordingQuery(self._rows if name == "scan_results" else [])
+        self.queries_by_table[name] = q
+        if name == "scan_results" or self.last_query is None:
+            self.last_query = q
+        return q
 
 
 _SCAN_ROWS = [
@@ -133,7 +144,8 @@ class TestScanDefaultSegments(unittest.TestCase):
         self._app.dependency_overrides.clear()
 
     def _segment_filters(self):
-        return [a for a in self._sb.last_query.in_calls if a[0] == "segment"]
+        q = self._sb.queries_by_table.get("scan_results") or self._sb.last_query
+        return [a for a in q.in_calls if a[0] == "segment"]
 
     def test_no_segments_param_returns_all_segments(self):
         resp = self._client.get("/api/scan")

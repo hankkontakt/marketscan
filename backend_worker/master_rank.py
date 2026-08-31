@@ -44,6 +44,11 @@ TIER_T1 = 75.0
 TIER_T2 = 65.0
 TIER_T3 = 50.0
 
+# ── Segment-relativa tiers (small/micro har tunnare data = lägre absolut rank) ──
+TIER_T1_SMALL = 62.0    # STARK-tröskel för small/micro (vs 75 för large)
+TIER_T2_SMALL = 50.0    # OK-tröskel (vs 65)
+TIER_T3_SMALL = 38.0    # VÄNTA-tröskel (vs 50)
+
 # ── Anti-bubbla-grind ─────────────────────────────────────────────────────────
 BUBBLE_CAP = 60.0           # max rank när EXTREME_OVERVAL + OVERBOUGHT
 PEG_EXTREME = 2.5           # pe_forward / revenue_growth > 2.5 → EXTREME_OVERVAL
@@ -287,16 +292,20 @@ def pit_status(fy_end: Optional[date], today: date) -> tuple[str, str]:
 
 # ── Fusion ───────────────────────────────────────────────────────────────────
 
-def tier_of(rank: Optional[float], excluded: bool, pit: str) -> str:
+def tier_of(rank: Optional[float], excluded: bool, pit: str, segment: str | None = None) -> str:
     if rank is None or excluded:
         return "EXCLUDED"
-    if pit == "PENDING" and rank >= TIER_T1:
+    is_small = segment in ("small_cap", "micro_cap")
+    t1 = TIER_T1_SMALL if is_small else TIER_T1
+    t2 = TIER_T2_SMALL if is_small else TIER_T2
+    t3 = TIER_T3_SMALL if is_small else TIER_T3
+    if pit == "PENDING" and rank >= t1:
         return "T2"          # PENDING kan aldrig nå T1 (kvalitetsdata saknas)
-    if rank >= TIER_T1:
+    if rank >= t1:
         return "T1"
-    if rank >= TIER_T2:
+    if rank >= t2:
         return "T2"
-    if rank >= TIER_T3:
+    if rank >= t3:
         return "T3"
     return "T4"
 
@@ -433,9 +442,13 @@ def fuse(row: dict, weights: dict) -> dict:
     # PENDING hämmas (kvalitetsdata väntar).
     n_valid = len([b for b in blocks if row.get(f"{b}_z") is not None])
     pit = row.get("pit_status", "READY")
-    if n_valid < 4 or (pit == "PENDING"):
+    is_small = row.get("segment") in ("small_cap", "micro_cap")
+    min_blocks = 3 if is_small else 4
+    if n_valid < min_blocks or (pit == "PENDING"):
         if rank is not None and rank >= TIER_T3:
-            rank = min(rank, 64.999)  # under T2-tröskeln
+            # Small/micro caps: cap vid T2-gränsen för segment; large: standard
+            thin_cap = 61.999 if is_small else 64.999
+            rank = min(rank, thin_cap)
             missing.append("thin_data")
 
     # PENDING: kvalitetsdel får 0 (inte 50); rank redan beräknad med det
@@ -443,7 +456,8 @@ def fuse(row: dict, weights: dict) -> dict:
         missing.append("pit_pending")
 
     rank = _fmt_f(rank)
-    tier = tier_of(rank, False, row.get("pit_status", "READY"))
+    segment = row.get("segment")
+    tier = tier_of(rank, False, row.get("pit_status", "READY"), segment=segment)
     # ROND 9: entry_signal härleds DETERMINISTISKT från MasterRank-tier så att
     # etiketten aldrig motsäger rank-siffran
     entry_signal = signal_from_tier(tier)
@@ -550,16 +564,17 @@ def load_inputs(cur, today: date) -> list[dict]:
     cur.execute("""
         SELECT ticker, score_total, score_quality, score_momentum, score_growth,
                score_value, score_dividend, price, pe_trailing, pe_forward, revenue_growth,
-               market_cap, sector, dividend_yield, piotroski_f, entry_signal
+               market_cap, sector, dividend_yield, piotroski_f, entry_signal, segment
         FROM scan_results
     """)
     scan = {}
-    for (ticker, st, sq, sm, sg, sv, sdiv, price, pe_t, pe_f, rev_g, mcap, sector, div_y, piot, esig) in cur.fetchall():
+    for (ticker, st, sq, sm, sg, sv, sdiv, price, pe_t, pe_f, rev_g, mcap, sector, div_y, piot, esig, segment) in cur.fetchall():
         scan[ticker] = {"score_total": st, "score_quality": sq, "score_momentum": sm,
                         "score_growth": sg, "score_value": sv, "score_dividend": sdiv,
                         "price": price, "pe_trailing": pe_t, "pe_forward": pe_f,
                         "revenue_growth": rev_g, "market_cap": mcap, "sector": sector,
-                        "dividend_yield": div_y, "piotroski_f": piot, "entry_signal": esig}
+                        "dividend_yield": div_y, "piotroski_f": piot, "entry_signal": esig,
+                        "segment": segment}
 
     cur.execute("""
         SELECT ticker, quality_z, momentum_z, value_z, payout_z, insider_z,
@@ -783,6 +798,7 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
 
         values.append({
             "ticker": t,
+            "segment": s.get("segment"),
             "quality_z": quality_z,
             "value_z": value_z,
             "momentum_z": momentum_z,
@@ -906,10 +922,9 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                   r.get("currency"),
                   r.get("insider_source", "proxy")))
             written += 1
-            # ROND 9+11: skriv tillbaka entry_signal till scan_results så att
-            # köplägesetiketten speglar MasterRank-tier — MEN respektera extern
-            # exkludering (BHP-fallet: stock-scanner satte EJ_AKTUELL; en T2-tier
-            # ska INTE överskriva den med OK — det skapade Bug 3).
+            # ROND 9+11: skriv tillbaka entry_signal + master_rank-data till scan_results
+            # så att screener-defaultvyn visar korrekt signal och rank.
+            # MEN respektera extern exkludering (BHP-fallet).
             try:
                 data_missing = json.loads(r.get("data_missing", "[]") or "[]")
                 if "external_exclusion" in data_missing and r.get("entry_signal") == "OK":

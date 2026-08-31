@@ -56,6 +56,55 @@ def _apply_common_filters(q, segments, sector, country, entry_signal, trend_sign
     return q
 
 
+def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
+    """Merge master_rank table data into scan_results rows.
+
+    Ensures ALL views (not just sort_by=master_rank) show rank, tier,
+    z-scores, and trend data — critical for small/micro caps whose
+    scan_results entry_signal is stale.
+    """
+    if not rows:
+        return rows
+    tickers = list({r["ticker"] for r in rows})
+    try:
+        mr_res = (
+            sb.table("master_rank")
+            .select("ticker, master_rank, tier, quality_z, value_z, momentum_z, "
+                    "analyst_z, analyst_upside, analyst_count, trend_tech, currency")
+            .in_("ticker", tickers)
+            .not_.is_("master_rank", "null")
+            .execute()
+        )
+        mr_by_ticker: dict[str, dict] = {}
+        for r in (mr_res.data or []):
+            t = r["ticker"]
+            # Keep highest master_rank per ticker (dedup if multiple scan_dates)
+            if t not in mr_by_ticker or (r.get("master_rank") or 0) > (mr_by_ticker[t].get("master_rank") or 0):
+                mr_by_ticker[t] = r
+    except Exception as e:
+        logger.warning("master_rank enrichment failed (non-fatal): %s", e)
+        return rows
+
+    for row in rows:
+        m = mr_by_ticker.get(row["ticker"], {})
+        if m:
+            row["master_rank"] = m.get("master_rank")
+            row["tier"] = m.get("tier")
+            row["quality_z"] = m.get("quality_z") or row.get("quality_z")
+            row["value_z"] = m.get("value_z") or row.get("value_z")
+            row["momentum_z"] = m.get("momentum_z") or row.get("momentum_z")
+            row["analyst_z"] = m.get("analyst_z")
+            row["analyst_upside"] = m.get("analyst_upside")
+            row["analyst_count"] = m.get("analyst_count")
+            row["trend_tech"] = m.get("trend_tech")
+            if m.get("currency"):
+                row["currency"] = m.get("currency")
+            # Derive entry_signal from tier (authoritative) instead of stale scan_results value
+            from backend_worker.master_rank import signal_from_tier
+            row["entry_signal"] = signal_from_tier(m.get("tier"))
+    return rows
+
+
 @router.get("", response_model=list[ScanRow])
 def get_scan(
     segments: list[str] | None = Query(default=None),
@@ -127,6 +176,9 @@ def get_scan(
                 row["trend_tech"] = m.get("trend_tech")
                 if m.get("currency"):
                     row["currency"] = m.get("currency")
+                # Derive entry_signal from tier (authoritative)
+                from backend_worker.master_rank import signal_from_tier
+                row["entry_signal"] = signal_from_tier(m.get("tier"))
                 enriched.append(row)
         return enriched
 
@@ -143,7 +195,11 @@ def get_scan(
                               piotroski_min, pe_max, roe_min, dividend_yield_min,
                               exclude_low_liquidity, mews_flag, search)
     result = q.execute()
-    return result.data
+    rows = result.data or []
+
+    # Enrich with master_rank data (same merge as sort_by=master_rank path)
+    rows = _enrich_with_master_rank(sb, rows)
+    return rows
 
 
 @router.get("/sectors", response_model=list[str])

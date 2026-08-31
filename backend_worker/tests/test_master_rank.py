@@ -219,6 +219,36 @@ class TestTier(unittest.TestCase):
         self.assertLess(f["master_rank"], 65.0)          # ej T2
         self.assertIn("forensic_t3_cap", f["data_missing"])
 
+    def test_tier_smallcap_thresholds(self):
+        """Småbolag har lägre trösklar — rank 62 = T1 (STARK) för small_cap."""
+        self.assertEqual(mr.tier_of(62.0, False, "READY", segment="small_cap"), "T1")
+        self.assertEqual(mr.tier_of(55.0, False, "READY", segment="small_cap"), "T2")
+        self.assertEqual(mr.tier_of(50.0, False, "READY", segment="small_cap"), "T2")
+        self.assertEqual(mr.tier_of(45.0, False, "READY", segment="small_cap"), "T3")
+        self.assertEqual(mr.tier_of(38.0, False, "READY", segment="small_cap"), "T3")
+        self.assertEqual(mr.tier_of(30.0, False, "READY", segment="small_cap"), "T4")
+
+    def test_tier_microcap_same_as_smallcap(self):
+        """Micro_cap använder samma trösklar som small_cap."""
+        self.assertEqual(mr.tier_of(62.0, False, "READY", segment="micro_cap"), "T1")
+        self.assertEqual(mr.tier_of(50.0, False, "READY", segment="micro_cap"), "T2")
+
+    def test_tier_largecap_unchanged(self):
+        """Large_cap behåller originaltrösklarna."""
+        self.assertEqual(mr.tier_of(70.0, False, "READY", segment="large_cap"), "T2")
+        self.assertEqual(mr.tier_of(74.0, False, "READY", segment="large_cap"), "T2")
+        self.assertEqual(mr.tier_of(75.0, False, "READY", segment="large_cap"), "T1")
+
+    def test_fuse_smallcap_thin_data_relaxed(self):
+        """Småbolag med 3 block (quality, value, momentum) ska inte stoppas av thin_data."""
+        row = {"quality_z": 75.0, "value_z": 70.0, "momentum_z": 65.0,
+               "val_flags": [], "tech_flags": [], "pit_status": "READY",
+               "segment": "small_cap"}
+        f = mr.fuse(row, WEIGHTS)
+        # 3 blocks filled: quality, value, momentum — should NOT be thin_data capped for small_cap
+        self.assertNotIn("thin_data", f.get("data_missing", []))
+        self.assertGreaterEqual(f["master_rank"], 50.0)
+
 
 class TestPitStatus(unittest.TestCase):
     def test_ready(self):
