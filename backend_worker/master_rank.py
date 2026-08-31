@@ -307,6 +307,20 @@ def fuse(row: dict, weights: dict) -> dict:
         rank = min(rank, BUBBLE_CAP)
         missing.append("bubble_triage")
 
+    # ROND 11 (Bugg 3): konsistens med DEN ANDRA motorn. Om stock-scanner har
+    # exkluderat aktien (entry_signal=EJ_AKTUELL) ELLER score_total föll under 50,
+    # måste master_rank röra sig i samma riktning — annars är MasterRank en separat
+    # siffra som inte reagerar på underliggande kvalitetskontroller (BHP-fallet:
+    # score_total 46 + EJ_AKTUELL men master_rank stod kvar på 65.8/T2).
+    ext_sig = row.get("entry_signal")
+    ext_score = row.get("score_total")
+    if ext_sig == "EJ_AKTUELL" or (ext_score is not None and float(ext_score) < 50):
+        if rank is not None and rank >= TIER_T3:
+            rank = min(rank, 64.999)  # under T2-tröskeln
+            missing.append("external_exclusion")
+            if ext_sig == "EJ_AKTUELL":
+                rank = min(rank, 59.999)  # under T3-tröskeln → T3 (neutral)
+
     # Datatäthet: T1 kräver ≥6/8 block. STALE-pit (QMJ ej rankad t.ex. globala
     # tickers) är INTE thin_data — det betyder bara "saknar QMJ-pelare".
     # PENDING hämmas (kvalitetsdata väntar). Thin data → max T3.
@@ -373,6 +387,25 @@ def compute_table(values: list[dict], weights: dict) -> list[dict]:
 MIN_REWEIGHT_N = 30      # minsta antal icke-överlappande obsar för viktändring
 NOISE_Z = 1.96           # 95 % konfidens
 
+# ROND 11: suffix → quote-valuta (fallback när analyst_estimates.currency saknas,
+# t.ex. PETR4.SA/2914.T/7733.T har ingen analyst-rad → tidigare visades "US$" felaktigt).
+_SUFFIX_CURRENCY: dict[str, str] = {
+    ".ST": "SEK", ".OL": "NOK", ".HE": "EUR", ".CO": "DKK",
+    ".T": "JPY", ".TW": "TWD", ".KS": "KRW", ".HK": "HKD",
+    ".SI": "SGD", ".SA": "BRL", ".L": "GBp", ".AS": "EUR",
+    ".TO": "CAD", ".DE": "EUR", ".PA": "EUR", ".MI": "EUR",
+}
+
+
+def currency_for(ticker: str, analyst_currency: Optional[str]) -> str:
+    """Bestäm quote-valuta: analyst-currency först, annars suffix-map, annars USD."""
+    if analyst_currency:
+        return analyst_currency
+    for suf, cur in _SUFFIX_CURRENCY.items():
+        if ticker.endswith(suf):
+            return cur
+    return "USD"
+
 
 def reweight_from_ic(ic_map: dict, current: dict, n_map: dict | None = None) -> dict:
     """Skriv om weights baserat på Rank-IC per faktor (factor_metrics).
@@ -410,16 +443,16 @@ def load_inputs(cur, today: date) -> list[dict]:
     cur.execute("""
         SELECT ticker, score_total, score_quality, score_momentum, score_growth,
                score_value, score_dividend, price, pe_trailing, pe_forward, revenue_growth,
-               market_cap, sector, dividend_yield, piotroski_f
+               market_cap, sector, dividend_yield, piotroski_f, entry_signal
         FROM scan_results
     """)
     scan = {}
-    for (ticker, st, sq, sm, sg, sv, sdiv, price, pe_t, pe_f, rev_g, mcap, sector, div_y, piot) in cur.fetchall():
+    for (ticker, st, sq, sm, sg, sv, sdiv, price, pe_t, pe_f, rev_g, mcap, sector, div_y, piot, esig) in cur.fetchall():
         scan[ticker] = {"score_total": st, "score_quality": sq, "score_momentum": sm,
                         "score_growth": sg, "score_value": sv, "score_dividend": sdiv,
                         "price": price, "pe_trailing": pe_t, "pe_forward": pe_f,
                         "revenue_growth": rev_g, "market_cap": mcap, "sector": sector,
-                        "dividend_yield": div_y, "piotroski_f": piot}
+                        "dividend_yield": div_y, "piotroski_f": piot, "entry_signal": esig}
 
     cur.execute("""
         SELECT ticker, quality_z, momentum_z, value_z, payout_z, insider_z,
@@ -673,7 +706,14 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             "catalyst_days": catalyst_days,
             "pit_status": pit,
             "pit_reason": pit_reason,
-            "currency": a.get("currency"),
+            # ROND 11: valutafallback — analyst-currency saknas för många tickers
+            # (PETR4/2914.T/7733.T); suffix-map ger korrekt BRL/JPY/... istället för USD.
+            "currency": currency_for(t, a.get("currency")),
+            # ROND 11 (Bugg 3): bär med den ANDRA motorns signaler så fuse kan
+            # reagera på exkluderingar (BHP: score_total 46 + EJ_AKTUELL men
+            # master_rank var oförändrat 65.8 — nu dra ner när dessa triggar).
+            "score_total": s.get("score_total"),
+            "entry_signal": s.get("entry_signal"),
             "exclusion_reason": q.get("exclusion_reason"),
         })
 
@@ -761,13 +801,20 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                   r.get("currency"),
                   r.get("insider_source", "proxy")))
             written += 1
-            # ROND 9: skriv tillbaka entry_signal till scan_results så att
-            # köplägesetiketten alltid speglar MasterRank-tier.
+            # ROND 9+11: skriv tillbaka entry_signal till scan_results så att
+            # köplägesetiketten speglar MasterRank-tier — MEN respektera extern
+            # exkludering (BHP-fallet: stock-scanner satte EJ_AKTUELL; en T2-tier
+            # ska INTE överskriva den med OK — det skapade Bug 3).
             try:
-                cur.execute("""
-                    UPDATE scan_results SET entry_signal = %s
-                    WHERE ticker = %s
-                """, (r.get("entry_signal", "EJ_AKTUELL"), t))
+                data_missing = json.loads(r.get("data_missing", "[]") or "[]")
+                if "external_exclusion" in data_missing and r.get("entry_signal") == "OK":
+                    # Extern motorn har exkluderat — behåll dess signal (EJ_AKTUELL)
+                    pass
+                else:
+                    cur.execute("""
+                        UPDATE scan_results SET entry_signal = %s
+                        WHERE ticker = %s
+                    """, (r.get("entry_signal", "EJ_AKTUELL"), t))
             except Exception as e:
                 logger.warning("backfill entry_signal %s misslyckades: %s", t, e)
         except Exception as e:

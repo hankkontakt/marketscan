@@ -74,7 +74,7 @@ export function ResultTable({ data, loading, onReset }: Props) {
   return (
     <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
       <div className="overflow-x-auto">
-        <table className="w-full text-xs border-collapse">
+        <table className="w-full min-w-[1150px] text-xs border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
               <Th label="Aktie" width="220px" />
