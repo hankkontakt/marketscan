@@ -90,18 +90,32 @@ def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
         if m:
             row["master_rank"] = m.get("master_rank")
             row["tier"] = m.get("tier")
-            row["quality_z"] = m.get("quality_z") or row.get("quality_z")
-            row["value_z"] = m.get("value_z") or row.get("value_z")
-            row["momentum_z"] = m.get("momentum_z") or row.get("momentum_z")
+            row["quality_z"] = m.get("quality_z") or row.get("quality_z") or row.get("score_quality")
+            row["value_z"] = m.get("value_z") or row.get("value_z") or row.get("score_value")
+            row["momentum_z"] = m.get("momentum_z") or row.get("momentum_z") or row.get("score_momentum")
             row["analyst_z"] = m.get("analyst_z")
             row["analyst_upside"] = m.get("analyst_upside")
             row["analyst_count"] = m.get("analyst_count")
-            row["trend_tech"] = m.get("trend_tech")
+            row["trend_tech"] = m.get("trend_tech") or row.get("trend_signal")
             if m.get("currency"):
                 row["currency"] = m.get("currency")
-            # Derive entry_signal from tier (authoritative) instead of stale scan_results value
+            # Derive entry_signal from tier (authoritative)
             from backend_worker.master_rank import signal_from_tier
             row["entry_signal"] = signal_from_tier(m.get("tier"))
+        else:
+            # Fallback for tickers not yet in master_rank table (e.g. newly scanned small/micro caps):
+            # Derive rank, tier & entry_signal from score_total and segment-aware thresholds
+            score = row.get("score_total")
+            seg = row.get("segment")
+            if score is not None:
+                from backend_worker.master_rank import tier_of, signal_from_tier
+                row["master_rank"] = round(float(score), 1)
+                row["tier"] = tier_of(float(score), False, "READY", segment=seg)
+                row["entry_signal"] = signal_from_tier(row["tier"])
+            row["quality_z"] = row.get("quality_z") or row.get("score_quality")
+            row["value_z"] = row.get("value_z") or row.get("score_value")
+            row["momentum_z"] = row.get("momentum_z") or row.get("score_momentum")
+            row["trend_tech"] = row.get("trend_tech") or row.get("trend_signal")
     return rows
 
 
@@ -125,70 +139,13 @@ def get_scan(
     limit: int = Query(default=500, ge=1, le=500),
     sb=Depends(get_supabase),
 ):
-    # ROND 8: master_rank ligger i EN SEPARAT tabell — om sort_by=master_rank,
-    # hämta först master_rank-ordningen, sen scan_results för de tickers som
-    # matchar filtren (bevarad ordning).
-    if sort_by == "master_rank":
-        try:
-            order_res = (
-                sb.table("master_rank")
-                .select("ticker, master_rank, tier, quality_z, value_z, momentum_z, analyst_z, analyst_upside, analyst_count, trend_tech, currency")
-                .not_.is_("master_rank", "null")
-                .order("master_rank", desc=True)
-                .limit(limit)
-                .execute()
-            )
-            master_by_ticker = {r["ticker"]: r for r in (order_res.data or [])}
-            ordered = [r["ticker"] for r in (order_res.data or [])]
-        except Exception as e:
-            logger.warning("master_rank query failed (falls back to score_total): %s", e)
-            master_by_ticker = {}
-            ordered = []
-
-        if not ordered:
-            return []
-
-        q = (
-            sb.table("scan_results")
-            .select("*")
-            .gte("score_total", score_min)
-            .lte("score_total", score_max)
-            .in_("ticker", ordered)
-        )
-        q = _apply_common_filters(q, segments, sector, country, entry_signal, trend_signal,
-                                  piotroski_min, pe_max, roe_min, dividend_yield_min,
-                                  exclude_low_liquidity, mews_flag, search)
-        result = q.execute()
-        by_ticker = {r["ticker"]: r for r in (result.data or [])}
-        enriched = []
-        for t in ordered:
-            if t in by_ticker:
-                row = dict(by_ticker[t])
-                m = master_by_ticker.get(t, {})
-                row["master_rank"] = m.get("master_rank")
-                row["tier"] = m.get("tier")
-                row["quality_z"] = m.get("quality_z") or row.get("quality_z")
-                row["value_z"] = m.get("value_z") or row.get("value_z")
-                row["momentum_z"] = m.get("momentum_z") or row.get("momentum_z")
-                row["analyst_z"] = m.get("analyst_z")
-                row["analyst_upside"] = m.get("analyst_upside")
-                row["analyst_count"] = m.get("analyst_count")
-                row["trend_tech"] = m.get("trend_tech")
-                if m.get("currency"):
-                    row["currency"] = m.get("currency")
-                # Derive entry_signal from tier (authoritative)
-                from backend_worker.master_rank import signal_from_tier
-                row["entry_signal"] = signal_from_tier(m.get("tier"))
-                enriched.append(row)
-        return enriched
-
+    db_sort = "mews_score" if sort_by == "mews_score" else "score_total"
     q = (
         sb.table("scan_results")
         .select("*")
         .gte("score_total", score_min)
         .lte("score_total", score_max)
-        # P0-fix: sort_by var död kod — hårdkodad score_total sorterade Mångdubblar-vyn fel
-        .order(sort_by, desc=True)
+        .order(db_sort, desc=True)
         .limit(limit)
     )
     q = _apply_common_filters(q, segments, sector, country, entry_signal, trend_signal,
@@ -197,8 +154,12 @@ def get_scan(
     result = q.execute()
     rows = result.data or []
 
-    # Enrich with master_rank data (same merge as sort_by=master_rank path)
+    # Enrich with master_rank data (authoritative rank, segment-aware tier & signals)
     rows = _enrich_with_master_rank(sb, rows)
+
+    if sort_by == "master_rank":
+        rows.sort(key=lambda r: float(r.get("master_rank") or r.get("score_total") or 0.0), reverse=True)
+
     return rows
 
 
