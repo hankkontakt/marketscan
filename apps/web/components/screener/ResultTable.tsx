@@ -9,6 +9,7 @@ import {
   formatPctChange,
   formatPrice,
   formatMarketCap,
+  formatPE,
   formatNumber,
   signalLabel,
   signalClass,
@@ -180,7 +181,7 @@ export function ResultTable({ data, loading, onReset }: Props) {
 
                 {/* MasterRank */}
                 <td className="px-4 py-3 text-right">
-                  <ScoreChip score={row.master_rank} />
+                  <MasterRankCell row={row} />
                 </td>
 
                 {/* Totalbetyg */}
@@ -210,16 +211,24 @@ export function ResultTable({ data, loading, onReset }: Props) {
                   {formatPctChange(row.change_pct)}
                 </td>
 
-                {/* Börsvärde */}
+                {/* Börsvärde — valutasuffix visar explicit valutabas */}
                 <td className="px-4 py-3 tabular text-right text-[var(--color-text-secondary)]">
-                  {formatMarketCap(row.market_cap)}
+                  {formatMarketCap(row.market_cap, row.currency ?? "USD")}
                 </td>
 
-                {/* P/E — visar RÅ värde (neutraliserad residual är intern) */}
+                {/* P/E — visar Trailing P/E med fallback till Forward P/E om tomt */}
                 <td className="px-4 py-3 tabular text-right text-[var(--color-text-secondary)]">
                   {(() => {
-                    const v = row.pe_trailing_raw ?? row.pe_trailing;
-                    return v != null && v > 0 ? formatNumber(v, 1) : "—";
+                    const pe = formatPE(
+                      row.pe_trailing_raw ?? row.pe_trailing,
+                      row.pe_forward_raw ?? row.pe_forward
+                    );
+                    return (
+                      <span className={cn(pe.isForward ? "text-[var(--color-text-muted)] text-[11px] italic" : "")}
+                            title={pe.isForward ? "Forward P/E (prognos)" : "Trailing P/E (senaste 12 mån)"}>
+                        {pe.text}
+                      </span>
+                    );
                   })()}
                 </td>
 
@@ -321,6 +330,36 @@ function ScoreChip({ score }: { score: number | null | undefined }) {
   return (
     <span className={cn("px-2 py-0.5 rounded font-mono font-semibold text-xs", cls)}>
       {Math.round(score)}
+    </span>
+  );
+}
+
+function MasterRankCell({ row }: { row: ScanRow }) {
+  if (row.master_rank == null) return <span className="text-[var(--color-text-muted)]">—</span>;
+  const cls =
+    row.master_rank >= 70
+      ? "score-chip-high"
+      : row.master_rank >= 50
+      ? "score-chip-mid"
+      : "score-chip-low";
+
+  const details = [
+    row.quality_z != null ? `Kvalitet: ${Math.round(row.quality_z)}` : null,
+    row.value_z != null ? `Värde: ${Math.round(row.value_z)}` : null,
+    row.momentum_z != null ? `Momentum: ${Math.round(row.momentum_z)}` : null,
+    row.analyst_z != null
+      ? `Analytiker: ${Math.round(row.analyst_z)}${row.analyst_upside != null ? ` (${row.analyst_upside > 0 ? "+" : ""}${row.analyst_upside.toFixed(0)}%)` : ""}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+
+  return (
+    <span
+      className={cn("px-2 py-0.5 rounded font-mono font-semibold text-xs cursor-help", cls)}
+      title={details || "MasterRank (0–100)"}
+    >
+      {Math.round(row.master_rank)}
     </span>
   );
 }

@@ -107,9 +107,14 @@ def extract_analyst(info: dict, price: Optional[float]) -> dict:
 def analyst_z(rec: dict) -> Optional[float]:
     """Analytiker-delscore 0-100. NULL om ingen data.
 
-    Kernregel: vikt skalar med täckning (min(1, count/10)) — en analytiker ger
-    max 10 % poäng. Upside percentilnormeras till 0-100 genom tanh med skala 0.35
-    (35 % uppsida ≈ max utväxling) och kombineras med rekommendationen.
+    Kärnregler:
+    - Vikt skalar med täckning (min(1, count/10)) — en analytiker ger max 10 % poäng.
+    - Upside percentilnormeras till 0-100 genom tanh med skala 0.35 (35 % uppsida ≈ max).
+    - Target Exhaustion: Om täckning ≥ 8 analytiker och uppsida ≤ 0 % (eller < 2 %),
+      dämpas delbetyget eftersom aktien redan nått sitt konsensusmål (BMY-fallet).
+    - High-Confidence Strong Buy: Om rec_mean ≤ 1.4 och täckning ≥ 15 analytiker,
+      erhåller aktien en konfidensförstärkning (MSFT, TSMC, MU).
+    - Hold/Sell Drag: Om rec_mean ≥ 2.8 dämpas poängen tydligt (Olympus-fallet).
     """
     if not rec or (rec.get("upside_pct") is None and rec.get("recommendation_mean") is None):
         return None
@@ -130,17 +135,44 @@ def analyst_z(rec: dict) -> Optional[float]:
         # OBS: negativa tanh-värden ** 1.1 blir komplexa — bevara tecken:
         # sign(x) * |x|^1.1 (x ∈ [-1,1]).
         t = float(np.tanh(upside / 35.0))
-        components.append(np.sign(t) * (abs(t) ** 1.1))
+        comp = np.sign(t) * (abs(t) ** 1.1)
+
+        # Target Exhaustion Penalty vid god analytikertäckning:
+        if cnt >= 8 and upside <= 1.0:
+            # Uppsidan är inprisad/negativ trots stor analytikerkår
+            comp = min(comp, -0.2)
+
+        components.append(comp)
         weights.append(0.6 * coverage)
     if rec_mean is not None:
         # yfinance recommendationMean: 1.0 (Strong Buy) - 5.0 (Strong Sell) → normera mot 3.0 (Hold/neutral)
         # 1.0 (Strong Buy) → +1.0, 2.0 (Buy) → +0.5, 3.0 (Hold) → 0.0, 4.0 (Underperform) → -0.5, 5.0 (Sell) → -1.0
-        components.append((3.0 - rec_mean) / 2.0)
+        rec_comp = (3.0 - rec_mean) / 2.0
+        components.append(rec_comp)
         weights.append(0.4 * coverage)
     if not weights or sum(weights) == 0:
         return None
     score = sum(c * w for c, w in zip(components, weights)) / sum(weights)
-    return float(np.clip(50.0 + score * 50.0, 0.0, 100.0))
+    base_z = float(np.clip(50.0 + score * 50.0, 0.0, 100.0))
+
+    # High-confidence Strong Buy booster:
+    if rec_mean is not None and rec_mean <= 1.4 and cnt >= 15:
+        base_z = min(100.0, base_z + 6.0)
+
+    # Hold/Neutral drag för svagt rekommenderade aktier:
+    if rec_mean is not None and rec_mean >= 2.8 and cnt >= 8:
+        base_z = max(0.0, min(base_z, 45.0))
+
+    # Earnings Revision Velocity integration (om tillgängligt):
+    if rec.get("revision_velocity_z") is not None:
+        try:
+            rev_z = float(rec["revision_velocity_z"])
+            rev_tilt = (rev_z - 50.0) * 0.10
+            base_z = base_z + rev_tilt
+        except (TypeError, ValueError):
+            pass
+
+    return float(np.clip(base_z, 0.0, 100.0))
 
 
 # ═════════════════════════ HÄMTNING + DB ═════════════════════════════════════

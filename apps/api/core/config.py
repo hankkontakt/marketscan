@@ -3,7 +3,7 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(".env", ".env.local"), extra="ignore")
 
     # Supabase
     SUPABASE_URL: str = ""
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # DeepSeek V4 Flash serveras via OpenRouter (env-var-namn behålls för kompatibilitet)
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_API_URL: str = "https://openrouter.ai/api/v1/chat/completions"
-    DEEPSEEK_MODEL: str = "deepseek/deepseek-v4-flash"
+    DEEPSEEK_MODEL: str = "deepseek/deepseek-v4-pro-0813"
     FINNHUB_API_KEY: str = ""
 
     # App

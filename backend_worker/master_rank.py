@@ -376,6 +376,8 @@ def fuse(row: dict, weights: dict) -> dict:
     # När hög kvalitet (≥70) samverkar med stark framåtblickande värdering
     qz = row.get("quality_z")
     vz = row.get("value_z")
+    gz = row.get("growth_z")
+    az_val = row.get("analyst_z")
     v_flags = row.get("val_flags", [])
     if rank is not None and qz is not None and (vz is not None or "CHEAP_PEG" in v_flags):
         qz_f = float(qz)
@@ -384,10 +386,27 @@ def fuse(row: dict, weights: dict) -> dict:
             qarp_bonus = min(5.0, ((qz_f - 70.0) / 30.0 + (vz_f - 65.0) / 35.0) * 2.5 + 2.0)
             rank = _clip100(rank + qarp_bonus)
 
+    # Elite Compounder Moat Synergy:
+    # Exceptionell kvalitet (≥90), hög tillväxt (≥75) och stark analytikerkonfidens (≥75)
+    # belönas med en vallgravsbonus för att säkerställa att globala marknadsledare (MSFT, TSMC, MU)
+    # intar toppen.
+    if rank is not None and qz and gz and az_val:
+        if float(qz) >= 90.0 and float(gz) >= 75.0 and float(az_val) >= 75.0:
+            elite_bonus = min(4.0, (float(qz) - 90.0) * 0.2 + (float(gz) - 75.0) * 0.1 + 1.5)
+            rank = _clip100(rank + elite_bonus)
+
     # Anti-bubbla-grind
     if "EXTREME_OVERVAL" in row.get("val_flags", []) and "OVERBOUGHT" in row.get("tech_flags", []):
         rank = min(rank, BUBBLE_CAP)
         missing.append("bubble_triage")
+
+    # Quality-Momentum Guard (Olympus-skyddet):
+    # Låg fundamental kvalitet (Quality < 60) kombinerat med svag värdering (Value < 50)
+    # får inte blåsas upp till T1/T2 enbart genom kortsiktigt tekniskt momentum.
+    if qz is not None and float(qz) < 60.0 and vz is not None and float(vz) < 50.0:
+        missing.append("quality_momentum_guard")
+        if rank is not None and rank >= TIER_T2:
+            rank = min(rank, 64.499)  # Capped till T3
 
     # Forensiskt Skydd (Sloan Accruals, Cash Runway, Dilution, FoU-larm)
     forensic_penalty = float(row.get("forensic_penalty", 0.0) or 0.0)

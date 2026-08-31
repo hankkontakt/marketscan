@@ -138,6 +138,79 @@ def run_discovery_scan(limit: int = 50) -> list[dict]:
     return sorted(results, key=lambda x: x["alpha_score"], reverse=True)
 
 
+def upsert_alpha_candidates(candidates: list[dict]) -> int:
+    """Upsertar hittade alpha-kandidater till Postgres-tabellen alpha_candidates."""
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn or not candidates:
+        logger.info("Ingen DATABASE_URL funnen eller inga kandidater att spara.")
+        return 0
+
+    try:
+        import psycopg2
+        from psycopg2.extras import execute_values
+        conn = psycopg2.connect(dsn)
+        cur = conn.cursor()
+
+        sql = """
+            INSERT INTO alpha_candidates (
+                ticker, company_name, country, sector, alpha_score, alpha_tier,
+                verdict, badges, thesis_memo, fcf_inflection_score, smart_money_score,
+                catalyst_score, analyst_surge_score, wyckoff_score, dilution_penalty,
+                warrant_overhang_flag, is_illiquid, subscores, updated_at
+            ) VALUES %s
+            ON CONFLICT (ticker) DO UPDATE SET
+                company_name = EXCLUDED.company_name,
+                alpha_score = EXCLUDED.alpha_score,
+                alpha_tier = EXCLUDED.alpha_tier,
+                verdict = EXCLUDED.verdict,
+                badges = EXCLUDED.badges,
+                thesis_memo = EXCLUDED.thesis_memo,
+                fcf_inflection_score = EXCLUDED.fcf_inflection_score,
+                smart_money_score = EXCLUDED.smart_money_score,
+                catalyst_score = EXCLUDED.catalyst_score,
+                analyst_surge_score = EXCLUDED.analyst_surge_score,
+                wyckoff_score = EXCLUDED.wyckoff_score,
+                dilution_penalty = EXCLUDED.dilution_penalty,
+                warrant_overhang_flag = EXCLUDED.warrant_overhang_flag,
+                is_illiquid = EXCLUDED.is_illiquid,
+                subscores = EXCLUDED.subscores,
+                updated_at = NOW();
+        """
+
+        rows = []
+        for c in candidates:
+            rows.append((
+                c["ticker"],
+                c.get("company_name", c["ticker"]),
+                c.get("country", "SE"),
+                c.get("sector"),
+                float(c.get("alpha_score") or 0.0),
+                c.get("alpha_tier", "NEUTRAL"),
+                c.get("verdict", ""),
+                json.dumps(c.get("badges", [])),
+                c.get("thesis_memo", ""),
+                float(c.get("fcf_inflection_score") or 50.0),
+                float(c.get("smart_money_score") or 50.0),
+                float(c.get("catalyst_score") or 50.0),
+                float(c.get("analyst_surge_score") or 50.0),
+                float(c.get("wyckoff_score") or 50.0),
+                float(c.get("dilution_penalty") or 0.0),
+                bool(c.get("warrant_overhang_flag", False)),
+                bool(c.get("is_illiquid", False)),
+                json.dumps(c.get("subscores", {})),
+            ))
+
+        execute_values(cur, sql, rows)
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.info("Sparade %d alpha-kandidater till databasen.", len(rows))
+        return len(rows)
+    except Exception as e:
+        logger.warning("Kunde inte spara alpha_candidates till databasen: %s", e)
+        return 0
+
+
 if __name__ == "__main__":
     import sys
     try:
@@ -156,6 +229,5 @@ if __name__ == "__main__":
         print(f"{c['ticker']:<12} | {c['company_name']:<18} | {str(c['alpha_score']):<12} | {c['alpha_tier']:<14} | {c['verdict']}")
         if c['badges']:
             print(f"   └── Taggar: {', '.join(c['badges'][:3])}")
-            
-    with open("alpha_candidates_output.json", "w", encoding="utf-8") as f:
-        json.dump(candidates, f, indent=2, ensure_ascii=False)
+
+    upsert_alpha_candidates(candidates)

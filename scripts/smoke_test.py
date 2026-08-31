@@ -26,6 +26,12 @@ import time
 import urllib.error
 import urllib.request
 
+if sys.stdout.encoding != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 DEFAULT_BASE = "https://marketscan-api.vercel.app"
 
 # (method, path, body|None)  — grouped by the status we EXPECT.

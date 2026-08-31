@@ -76,4 +76,11 @@ class ScanRow(BaseModel):
     quality_z: float | None = None
     momentum_z: float | None = None
     value_z: float | None = None
+    analyst_z: float | None = None
+    analyst_upside: float | None = None
+    analyst_count: int | None = None
+    trend_tech: str | None = None
+    currency: str | None = None
+    master_rank: float | None = None
+    tier: str | None = None
     stratum: str | None = None

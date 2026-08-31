@@ -1,0 +1,93 @@
+# 🤖 Kapitel 3: AI, LLM & RAG Synthesis Engine
+
+> **Domän:** LLM-arkitektur (DeepSeek/Claude), svensk finansiell dokumentintelligens, RAG, Re-ranking och Grounding.  
+> **Status:** Aktiv produktion.
+
+---
+
+## 1. Executive Summary & TL;DR
+
+AI-motorn i MarketScan syntetiserar kvantitativ data och ostrukturerad text (årsredovisningar, kvartalsrapporter, pressmeddelanden) för att ge förklarande sammanfattningar, analyskommitté-bedömningar och djupgående bolagsrapporter. Motorn drivs primärt av DeepSeek-V3 med strikta grounding- och cachingmekanismer.
+
+---
+
+## 2. Arkitektur & RAG-flöde
+
+```
+  ┌─────────────────────────┐          ┌─────────────────────────┐
+  │ PDF / Delårsrapporter   │          │ Cision Nyhetsflöde      │
+  └────────────┬────────────┘          └────────────┬────────────┘
+               │                                    │
+               ▼                                    ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │              backend_worker/rag/document_fetcher.py          │
+  │  • PDF-parsing (pdfplumber) & HTML extraktion                │
+  │  • Semantisk chunking (500–1000 tokens med överlapp)         │
+  └──────────────────────────────┬───────────────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │                 apps/api/core/reranker.py                    │
+  │  • Kors-enkoder (CrossEncoder) re-ranking av relevanta stycken│
+  └──────────────────────────────┬───────────────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │               apps/api/core/deepseek_client.py               │
+  │  • Prompt-injicering med kvantitativa siffror + textchunks    │
+  │  • Strikt JSON Schema-validering                             │
+  └──────────────────────────────┬───────────────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │                apps/api/core/grounding.py                    │
+  │  • Verifierar att LLM-svaret stöds av källtexten (Citations)  │
+  └──────────────────────────────┬───────────────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │                 apps/api/core/ai_cache.py                    │
+  │  • Cachning i Supabase (`ai_cache`) för kostnadskontroll     │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Kärnkomponenter & Modeller
+
+| Komponent | Modul / Fil | Syfte |
+|---|---|---|
+| **DeepSeek Klient** | `apps/api/core/deepseek_client.py` | Primär LLM-klient med OpenAI-kompatibelt gränssnitt mot DeepSeek-V3 |
+| **LLM Router & Fallback** | `apps/api/core/llm_client.py` | Fallback-orkestrering och token-budgetkontroll |
+| **Re-ranker** | `apps/api/core/reranker.py` | Väljer ut de mest relevanta textstyckena för given fråga |
+| **Grounding Validator** | `apps/api/core/grounding.py` | Kräver källhänvisningar och förhindrar hallucinationer |
+| **AI Caching** | `apps/api/core/ai_cache.py` | Hash-baserad caching i tabellen `ai_cache` |
+| **Rapportanalys** | `backend_worker/ai_report_analyzer.py` | Automatisk extraktion av VD-ord, risker och framtidsutsikter |
+
+---
+
+## 4. AI-Funktioner i API & Frontend
+
+1. **Analyskommittén (`POST /api/ai/committee`):** Simulerar tre distinkta analytikerperspektiv (Kvalitetsinvesteraren, Värdejägaren, Riskmanagern) och syntetiserar en balanserad rekommendation.
+2. **Aktiejämförelse (`POST /api/ai/compare`):** Djupgående semantisk jämförelse mellan två bolags affärsmodeller och vallgravar.
+3. **Smart Filter-tolk (`POST /api/ai/parse-filter`):** Översätter naturligt språk (t.ex. "lönsamma verkstadsbolag med låg skuld och bra utdelning") till strukturerade SQL/API-filter.
+4. **Mikrolektioner & Begreppsförklarare:** Genererar pedagogiska förklaringar anpassade för nybörjare.
+
+---
+
+## 5. Källkodskarta & Kodankare
+
+| Område | Fil | Funktioner |
+|---|---|---|
+| AI API Router | `apps/api/routers/ai.py` | `/api/ai/committee`, `/api/ai/compare`, `/api/ai/parse-filter` |
+| RAG Fetcher | `backend_worker/rag/document_fetcher.py` | `fetch_company_filings()`, `extract_pdf_text()` |
+| Grounding Check | `apps/api/core/grounding.py` | `require_citations()`, `validate_grounding()` |
+| AI Cache Helper | `apps/api/core/ai_cache.py` | `get_cached()`, `set_cache()` |
+
+---
+
+## 6. Säkerhets- och Kostnadsregler
+
+1. **Autentiseringskrav:** Alla publika LLM-endpoints kräver inloggad användare (`get_current_user`) för att förhindra DoS och oönskad API-kostnad.
+2. **Strikta JSON-kontrakt:** Inga fria textströmmar utan validering via Pydantic. Om modellen returnerar ogiltig JSON körs en automatisk retry med felmeddelandet injicerat.
+3. **Cachningspolicy:** Analyser för samma kvartalsrapport cachas i 7 dagar om inte användaren begär tvingad uppdatering.

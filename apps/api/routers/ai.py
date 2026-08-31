@@ -115,33 +115,31 @@ class CommitteeOutput(BaseModel):
 
 ANALYST_PROMPTS = {
     "teknisk": """Du är Teknisk Analytiker i en investeringskommitté.
-Analysera ENBART teknisk data: trend, momentum, RSI, MACD, MA50/200, volym, volatilitet.
-Ge ett tydligt omdöme (KÖPLÄGE STARKT/BRA/AVVAKTA/EJ AKTUELLT) med motivering (max 120 ord).
+Analysera teknisk struktur och prisdynamik: trend, momentum, RSI, MACD, glidande medelvärden (MA50/200), volymmönster och volatilitet.
+Ge ett tydligt omdöme (KÖPLÄGE STARKT/BRA/AVVAKTA/EJ AKTUELLT) med skarp motivering och konkreta nivåer.
 Slutsatsen ska vara handlingsbar. Inga generella disclaimers.""",
 
     "fundamental": """Du är Fundamental Analytiker i en investeringskommitté.
-Analysera ENBART fundamental data: värdering (P/E, P/B), lönsamhet (ROE, marginaler),
-tillväxt (intäkter, vinst), finansiell styrka (Piotroski, skuldsättning, likviditet).
-Ge ett tydligt omdöme (KÖPLÄGE STARKT/BRA/AVVAKTA/EJ AKTUELLT) med motivering (max 120 ord).
-Var konkret om vad som är attraktivt eller oroande.""",
+Analysera bolagets fundamentala kvalitet i detalj: värderingsmultiplar (P/E, EV/EBIT, P/B), lönsamhetsdynamik (ROE, brutto- och rörelsemarginaler),
+tillväxttakt (organisk vs förvärvad), kassaflödeskvalitet (FCF/EBIT) samt finansiell ställning (Piotroski F, nettoskuld och soliditet).
+Ge ett tydligt omdöme (KÖPLÄGE STARKT/BRA/AVVAKTA/EJ AKTUELLT) med konkret motivering av vad som motiverar eller hotar värderingen.""",
 
     "sentiment": """Du är Sentimentanalytiker i en investeringskommitté.
-Analysera ENBART mjuka faktorer: sektortrender, marknadsregim, relativ styrka mot index,
-nyhetssentiment, säsongsmönster.
-Ge ett tydligt omdöme (KÖPLÄGE STARKT/BRA/AVVAKTA/EJ AKTUELLT) med motivering (max 120 ord).
-Var specifik om vad som driver sentimentet just nu.""",
+Analysera marknadssentiment och strukturella drivkrafter: sektortrender, institutionellt ägande, blankningsnivåer, relativ styrka mot index,
+nyhetsflöde och säsongsmönster.
+Ge ett tydligt omdöme (KÖPLÄGE STARKT/BRA/AVVAKTA/EJ AKTUELLT) med fokus på marknadens förväntansbild.""",
 
-    "ordforande": """Du är Ordförande i Analyskommittén och ska göra ett slutgiltigt syntesomdöme.
-Du får tre analytikers omdömen. Väg dem mot varandra.
+    "ordforande": """Du är Ordförande i Analyskommittén och ska sammanställa ett institutionellt investeringsmemo.
+Du väger samman de tekniska, fundamentala och sentimentmässiga analyserna.
 Returnera JSON:
 {
   "verdict": "STARK"|"BRA"|"AVVAKTA"|"EJ_AKTUELLT",
   "confidence": 0-100,
-  "summary": "max 150 ord på svenska",
+  "summary": "Fullständigt institutionellt investeringsmemo med kärntes, Bull/Base/Bear-scenario och värderingsbedömning på flytande svenska",
   "disagreement": true|false,
-  "disagreement_note": "om oenighet: förklara kort vad analytikerna är oeniga om"|null
+  "disagreement_note": "om oenighet: förklara vad analytikerna är oeniga om"|null
 }
-Inga generella disclaimers. Var konkret.""",
+Inga generella disclaimers. Var konkret, datadriven och skarp.""",
 }
 
 
@@ -200,8 +198,8 @@ SENTIMENTANALYTIKER:
 """
     # L4 — Self-consistency: kör synthesis 2 ggr för att detektera oenighet
     syn_results = await asyncio.gather(
-        _call_ai(ANALYST_PROMPTS["ordforande"], chair_input, max_tokens=500),
-        _call_ai(ANALYST_PROMPTS["ordforande"], chair_input, max_tokens=500),
+        _call_ai(ANALYST_PROMPTS["ordforande"], chair_input, max_tokens=2500),
+        _call_ai(ANALYST_PROMPTS["ordforande"], chair_input, max_tokens=2500),
         return_exceptions=True,
     )
 
@@ -736,12 +734,12 @@ def _build_stock_context(ticker: str, data: dict) -> str:
     return "\n".join(lines)
 
 
-async def _call_ai(system_prompt: str, user_message: str, max_tokens: int = 500) -> str:
+async def _call_ai(system_prompt: str, user_message: str, max_tokens: int = 2500) -> str:
     """AI-provider: DeepSeek (OpenRouter) först; vid fel → Gemini free tier (ärligt
     fallback, aldrig 500). Om båda misslyckas → tydligt meddelande till användaren."""
     from apps.api.core.deepseek_client import call_deepseek
     try:
-        result = await call_deepseek(system_prompt, user_message, max_tokens=max_tokens, temperature=0.3)
+        result = await call_deepseek(system_prompt, user_message, max_tokens=max_tokens, temperature=0.2)
         if result and not result.startswith("(AI ej konfigurerad)"):
             return result
     except Exception as e:
@@ -753,11 +751,11 @@ async def _call_ai(system_prompt: str, user_message: str, max_tokens: int = 500)
     return "(AI-tjänsterna är tillfälligt otillgängliga — försök igen om någon minut.)"
 
 
-async def _call_ai_chat(system_prompt: str, context: str, messages: list[dict]) -> str:
+async def _call_ai_chat(system_prompt: str, context: str, messages: list[dict], max_tokens: int = 2500) -> str:
     """Call AI provider with chat history — DeepSeek, samma ärliga Gemini-fallback som _call_ai."""
     from apps.api.core.deepseek_client import call_deepseek_chat
     try:
-        result = await call_deepseek_chat(system_prompt, context, messages, max_tokens=600)
+        result = await call_deepseek_chat(system_prompt, context, messages, max_tokens=max_tokens)
         if result and not result.startswith("(AI ej konfigurerad)"):
             return result
     except Exception as e:

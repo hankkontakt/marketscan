@@ -479,3 +479,54 @@ def get_signal_analytics_detail(
         "label":    f"{from_signal} → {to_signal}",
         "field":    field,
     }
+
+
+# ─── Barbell Optimizer & Stress Lab Endpoints ───────────────────────────────
+
+from apps.api.core.portfolio_construction import build_barbell_portfolio, stress_test_portfolio
+
+
+class BarbellOptimizeRequest(BaseModel):
+    candidates: list[dict] | None = None
+    core_target: float = 0.60
+    satellite_target: float = 0.40
+    target_count: int = 10
+
+
+class StressTestRequest(BaseModel):
+    holdings: list[dict]
+
+
+@router.post("/api/strategy-lab/barbell-optimize")
+def optimize_barbell_portfolio(
+    body: BarbellOptimizeRequest,
+    sb=Depends(get_user_supabase),
+):
+    """Generates an institutional Barbell portfolio (Core 60% / Satellite 40%).
+    If candidates are omitted, automatically fetches the top MasterRank & scan candidates."""
+    candidates = body.candidates
+    if not candidates:
+        try:
+            res = sb.table("scan_results").select(
+                "ticker, name, segment, sector, score_total, pe_trailing, pe_forward, roe, fcf_yield, revenue_growth"
+            ).order("score_total", desc=True).limit(50).execute()
+            candidates = res.data or []
+        except Exception as e:
+            logger.warning("Failed to fetch candidates from DB: %s", e)
+            candidates = []
+
+    res = build_barbell_portfolio(
+        candidates=candidates,
+        core_target=body.core_target,
+        satellite_target=body.satellite_target,
+        target_holdings_count=body.target_count,
+    )
+    return res
+
+
+@router.post("/api/strategy-lab/stress-test")
+def run_portfolio_stress_test(
+    body: StressTestRequest,
+):
+    """Runs 4 crisis stress-tests (rate shock, tech drawdown, smallcap crunch, stagflation)."""
+    return stress_test_portfolio(body.holdings)

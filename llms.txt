@@ -1,0 +1,21 @@
+# MarketScan Codex (llms.txt)
+
+> Fullständig teknisk specifikation och systemkarta för AI-agenter som arbetar med MarketScan.
+
+## Huvudindex
+- [System Index](SYSTEM_INDEX.md): Det centrala AI-navet, snabbstartskort för olika roller och globala invariansregler.
+
+## Domänkapitel (docs/codex)
+- [00_SYSTEM_BLUEPRINT.md](docs/codex/00_SYSTEM_BLUEPRINT.md): Helikopterperspektiv, arkitekturinvarianter och end-to-end dataflöde.
+- [01_QUANT_MASTERRANK.md](docs/codex/01_QUANT_MASTERRANK.md): MasterRank, 8 vägda block, anti-bubbla-grindar, QMJ och Alpha Discovery.
+- [02_DATA_PIPELINE.md](docs/codex/02_DATA_PIPELINE.md): Datainhämtning, scrapers, Finansinspektionen, Cision, GitHub Actions och ingestion.
+- [03_AI_RAG_SYNTHESIS.md](docs/codex/03_AI_RAG_SYNTHESIS.md): DeepSeek LLM, svensk dokumentintelligens, embeddings, RAG och grounding.
+- [04_API_ARCHITECTURE.md](docs/codex/04_API_ARCHITECTURE.md): FastAPI serverless backend, routing, lokal JWT-auth och Supabase-klienter.
+- [05_DATABASE_SCHEMA.md](docs/codex/05_DATABASE_SCHEMA.md): Postgres scheman, relationer, RLS-policyer och databas-pooler.
+- [06_FRONTEND_STATE_UX.md](docs/codex/06_FRONTEND_STATE_UX.md): Next.js 15, React 18, TanStack Query, Tailwind v4 och UI-principer.
+- [07_PORTFOLIO_RISK.md](docs/codex/07_PORTFOLIO_RISK.md): HRP, ERC, Black-Litterman, VaR, CVaR och simulering.
+
+## Obligatoriska Underhållsregler
+- Alla kodändringar måste återspeglas in-place i motsvarande kapitel ovan.
+- Inga mikro-ändringsloggar i dokumenten — dokumenten beskriver 100% aktiv mark sanning (Ground Truth).
+- Kör alltid `python scripts/verify_codex.py` för att säkerställa att inga döda länkar skapas.

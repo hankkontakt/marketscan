@@ -18,8 +18,9 @@ from apps.api.core.request_id import RequestIDMiddleware, debug_router
 from apps.api.routers import (
     screener, stocks, portfolio, ai, admin, profile,
     watchlist, alerts, saved_screens, snapshots, markets, calendar,
-    options, prediction, smallcap, backtests, sector_rotation_router, paper_trading_router,
+    smallcap, paper_trading_router,
     notifications, transactions, macro_regime, insider, market_intel,
+    forensic_audit, rebalancer,
 )
 from apps.api.routers import risk, smart_alerts, strategy_lab, ml_performance
 from apps.api.routers import feedback as feedback_router
@@ -108,11 +109,7 @@ app.include_router(saved_screens.router)
 app.include_router(snapshots.router)
 app.include_router(markets.router, prefix="/api")
 app.include_router(calendar.router, prefix="/api")
-app.include_router(options.router, prefix="/api")
 app.include_router(paper_trading_router.router)
-app.include_router(prediction.router, prefix="/api")
-app.include_router(backtests.router, prefix="/api")
-app.include_router(sector_rotation_router.router, prefix="/api")
 app.include_router(smallcap.router, prefix="/api")
 app.include_router(notifications.router)
 app.include_router(transactions.router)
@@ -126,6 +123,8 @@ app.include_router(risk.router)            # /api/portfolio/analytics, /optimize
 app.include_router(smart_alerts.router)    # /api/alerts, /api/score-history, /api/signal-transitions
 app.include_router(strategy_lab.router)    # /api/strategies, /api/signal-analytics
 app.include_router(ml_performance.router, prefix="/api")  # /api/ml-performance/* (admin-only)
+app.include_router(forensic_audit.router)  # /api/ai/forensic-audit/{ticker}
+app.include_router(rebalancer.router)      # /api/portfolio/rebalance/*
 
 app.include_router(feedback_router.router)
 app.include_router(tracking_router.router)

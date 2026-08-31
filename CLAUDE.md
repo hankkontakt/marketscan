@@ -1,23 +1,21 @@
 # MarketScan
 
-> 🧭 **AI/Claude: läs `docs/AI_GUIDE.md` FÖRST.** Det är den operativa manualen —
-> hur du ska tänka, hela arkitekturen, alla verktyg (diagnostik, smoke-test,
-> db-helpers, router-mall), buggmönster och steg-för-steg för vanliga uppgifter.
-> `docs/SYSTEM_AI.md` är referens-uppslagsverket. `docs/CONTRIBUTING.md` är
-> konventioner + checklistor.
+> 🧭 **AI/Claude: läs `SYSTEM_INDEX.md` FÖRST.** Det är det centrala navet som pekar till systemets Living AI Codex i `docs/codex/`.
+> För operativ felsökning och buggmönster, se även `docs/AI_GUIDE.md` och `docs/CONTRIBUTING.md`.
 
 ## Prime directives
-1. **Felsök, gissa inte.** Kör verktygen i §3 av `AI_GUIDE.md` innan du teoretiserar.
+1. **Felsök, gissa inte.** Kör diagnostikverktygen innan du teoretiserar.
 2. **Anta inget — verifiera mot live/kod.** Proba med `curl`, kör smoke-testet.
 3. **Felet du ser är sällan rotorsaken.** Följ kedjan till botten.
 4. **Bevara säkerhet + datakorrekthet.** RLS, GRANTs, auth-dependencies är inte valfria.
-5. **Håll `SYSTEM_AI.md` (changelog) + `AI_GUIDE.md` uppdaterade.**
+5. **Underhåll Living AI Codex in-place.** Ändra alltid berörda kapitel i `docs/codex/` direkt när du ändrar kod. Inga mikro-changelogs i dokumenten — dokumenten beskriver 100% aktiv mark sanning (Ground Truth).
 
 ## Snabbreferens
 | Vad | Var |
 |---|---|
+| AI Master Index | `SYSTEM_INDEX.md` (och `llms.txt`) |
+| System Codex (Alla domäner) | `docs/codex/` |
 | Operativ AI-manual | `docs/AI_GUIDE.md` |
-| Referensdok | `docs/SYSTEM_AI.md` |
 | Konventioner/checklista | `docs/CONTRIBUTING.md` |
 | API-ingång | `apps/api/main.py` |
 | Tre Supabase-klienter | `apps/api/dependencies.py` |
@@ -25,17 +23,20 @@
 | Router-mall (nya features) | `apps/api/routers/_TEMPLATE.py` |
 | Djupdiagnostik | `GET /api/admin/diagnostics/deep` · `apps/api/core/diagnostics.py` |
 | Smoke-test | `python scripts/smoke_test.py` |
+| Codex-validerare | `python scripts/verify_codex.py` |
 | Frontend API-klient | `apps/web/lib/api.ts` |
 | Migrationer (körs manuellt) | `supabase/migrations/` |
 
 ## Verifiera före commit
 ```bash
+python scripts/verify_codex.py
 PYTHONPATH=. python -c "from apps.api.main import app; print(len(app.routes))"
 python scripts/smoke_test.py
 cd apps/web && npx tsc --noEmit
 ```
 
 ## Mest kritiska gotchas
+- **`backend_worker/` i `apps/api/` är FÖRBJUDET** → Vercel 500MB gräns. Inget pandas/xgboost i API.
 - **`42501 permission denied`** → kör `supabase/migrations/023_grant_table_privileges.sql`.
 - **"Nätverksfel"** → CORS-löst serverfel (global handler fixar) eller fel `API_BASE`.
 - **`def` inte `async def`** för synkrona Supabase-handlers (annars blockeras event-loopen).

@@ -69,12 +69,23 @@ export function pitLabel(pit: string | null | undefined): string {
   }
 }
 
-export function formatMarketCap(value: number | null | undefined): string {
+export function formatMarketCap(value: number | null | undefined, currency?: string): string {
   if (value == null) return "—";
-  if (value >= 1e12) return `${(value / 1e12).toFixed(1)} tn`;
-  if (value >= 1e9) return `${(value / 1e9).toFixed(1)} mdr`;
-  if (value >= 1e6) return `${(value / 1e6).toFixed(0)} M`;
-  return formatNumber(value);
+  const curSuffix = currency ? ` ${currency}` : "";
+  if (value >= 1e12) return `${(value / 1e12).toFixed(1)} tn${curSuffix}`;
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)} mdr${curSuffix}`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(0)} M${curSuffix}`;
+  return `${formatNumber(value)}${curSuffix}`;
+}
+
+export function formatPE(pe_trailing?: number | null, pe_forward?: number | null): { text: string; isForward: boolean } {
+  if (pe_trailing != null && pe_trailing > 0) {
+    return { text: formatNumber(pe_trailing, 1), isForward: false };
+  }
+  if (pe_forward != null && pe_forward > 0) {
+    return { text: `${formatNumber(pe_forward, 1)} fwd`, isForward: true };
+  }
+  return { text: "—", isForward: false };
 }
 
 export function formatScore(value: number | null | undefined): string {

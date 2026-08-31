@@ -375,6 +375,45 @@ class TestMasterRank2Upgrades(unittest.TestCase):
         self.assertLessEqual(f["master_rank"], 69.5)
         self.assertIn("soe_governance_risk", f["data_missing"])
 
+    def test_quality_momentum_guard_caps_low_quality(self):
+        """Olympus-skyddet: Låg kvalitet (<60) och svag värdering (<50) cappas till max T3 trots högt momentum."""
+        low_quality_high_momentum = {
+            "quality_z": 55.0, "value_z": 45.0, "momentum_z": 90.0,
+            "analyst_z": 50.0, "insider_z": 50.0, "catalyst_z": 50.0,
+            "payout_z": 50.0, "growth_z": 40.0,
+            "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(low_quality_high_momentum, WEIGHTS)
+        self.assertLess(f["master_rank"], 65.0)
+        self.assertEqual(f["tier"], "T3")
+        self.assertIn("quality_momentum_guard", f["data_missing"])
+
+    def test_elite_compounder_moat_bonus(self):
+        """Elite Compounders (Kvalitet ≥90, Tillväxt ≥75, Analytiker ≥75) erhåller vallgravsbonus."""
+        elite_stock = {
+            "quality_z": 95.0, "value_z": 60.0, "momentum_z": 85.0,
+            "analyst_z": 85.0, "insider_z": 70.0, "catalyst_z": 60.0,
+            "payout_z": 50.0, "growth_z": 85.0,
+            "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(elite_stock, WEIGHTS)
+        self.assertGreaterEqual(f["master_rank"], 78.0)
+        self.assertEqual(f["tier"], "T1")
+
+    def test_analyst_target_exhaustion_penalty(self):
+        """Analytikeruppsida ≤ 0% med stor analytikerkår (≥8) ger dämpat delbetyg."""
+        exhausted = {"upside_pct": -0.5, "recommendation_mean": 2.5, "target_count": 20}
+        az_exhausted = an.analyst_z(exhausted)
+        self.assertIsNotNone(az_exhausted)
+        self.assertLess(az_exhausted, 52.0)
+
+    def test_analyst_strong_buy_confidence_boost(self):
+        """Strong Buy (rec_mean ≤ 1.4) med många analytiker (≥15) ger konfidensförstärkning."""
+        strong_buy = {"upside_pct": 15.0, "recommendation_mean": 1.2, "target_count": 30}
+        az_strong = an.analyst_z(strong_buy)
+        self.assertIsNotNone(az_strong)
+        self.assertGreater(az_strong, 75.0)
+
 
 if __name__ == "__main__":
     unittest.main()

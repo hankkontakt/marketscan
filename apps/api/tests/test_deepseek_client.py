@@ -2,11 +2,14 @@ import unittest
 from apps.api.core.deepseek_client import _resolve_endpoint
 
 
+from apps.api.core.config import settings
+
+
 class TestResolveEndpoint(unittest.TestCase):
     def test_openrouter_key(self):
         url, model = _resolve_endpoint("sk-or-v1-abcdef123456")
         self.assertIn("openrouter.ai", url)
-        self.assertEqual(model, "deepseek/deepseek-v4-flash")
+        self.assertEqual(model, settings.DEEPSEEK_MODEL)
 
     def test_deepseek_platform_key(self):
         url, model = _resolve_endpoint("sk-1234567890abcdef0123456789abcdef")

@@ -1,12 +1,12 @@
 """
-Macro regime endpoint — market regime detection from scan results.
-The actual regime detection runs in the pipeline (core/macro_regime.py in stock-scanner-fix).
-This endpoint reads the stored regime from pipeline_runs metadata or a dedicated table.
+Macro regime endpoint — market regime detection & dynamic factor weights.
+Connects to backend_worker.macro_regime.
 """
 import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from apps.api.dependencies import get_supabase
+from apps.api.core.macro import derive_regime_from_scan, classify_macro_regime
 
 logger = logging.getLogger(__name__)
 
@@ -14,51 +14,32 @@ router = APIRouter(prefix="/markets", tags=["macro"])
 
 
 class RegimeOut(BaseModel):
-    regime: str = "neutral"
-    label: str = "Neutral"
-    description: str = "Ingen tydlig marknadsregim detekterad."
-    color: str = "neutral"
-
-
-REGIME_MAP = {
-    "bull": {"label": "Tjurmarknad", "description": "Positiv marknadsregim med stark momentum. Riskaptiten är hög.", "color": "green"},
-    "bear": {"label": "Björnmarknad", "description": "Negativ marknadsregim med svag momentum. Försiktighet rekommenderas.", "color": "red"},
-    "uncertain": {"label": "Osäker", "description": "Motstridiga signaler på marknaden. Ingen tydlig riktning.", "color": "amber"},
-}
+    regime: str = "NEUTRAL"
+    label: str = "Neutral / Balanserad"
+    description: str = "Balanserad marknadsregim utan extrema makroavvikelser."
+    color: str = "slate"
+    scores: dict[str, float] = {}
+    weights: dict[str, float] = {}
+    inputs: dict = {}
 
 
 @router.get("/regime", response_model=RegimeOut)
 def get_market_regime(sb=Depends(get_supabase)):
-    """Get current market regime (bull/bear/uncertain/neutral).
-    Based on the most recent pipeline run's macro analysis."""
+    """Get current market regime and dynamic factor weights.
+    Derives regime from scan_results aggregate breadth and momentum."""
     try:
-        # Derive regime from aggregate market data
-        # Use aggregate queries instead of fetching all rows
-        uptrend_res = sb.table("scan_results").select("ticker", count="exact").eq("trend_signal", "Upptrend").execute()
-        downtrend_res = sb.table("scan_results").select("ticker", count="exact").eq("trend_signal", "Nedtrend").execute()
-        stark_res = sb.table("scan_results").select("ticker", count="exact").eq("entry_signal", "STARK").execute()
-        total_res = sb.table("scan_results").select("ticker", count="exact").execute()
+        res = sb.table("scan_results").select("trend_signal, entry_signal, change_pct").execute()
+        rows = res.data or []
 
-        uptrend = uptrend_res.count or 0
-        downtrend = downtrend_res.count or 0
-        stark = stark_res.count or 0
-        total = total_res.count or 0
+        if rows:
+            regime, result = derive_regime_from_scan(rows)
+            return RegimeOut(**result)
 
-        uptrend_pct = uptrend / total if total > 0 else 0
-        downtrend_pct = downtrend / total if total > 0 else 0
-
-        if uptrend_pct > 0.35 and stark / total > 0.15:
-            regime = "bull"
-        elif downtrend_pct > 0.30:
-            regime = "bear"
-        elif abs(uptrend_pct - downtrend_pct) < 0.10:
-            regime = "uncertain"
-        else:
-            return RegimeOut()
-
-        info = REGIME_MAP[regime]
-        return RegimeOut(regime=regime, **info)
+        # Fallback to default neutral
+        _, default_res = classify_macro_regime()
+        return RegimeOut(**default_res)
 
     except Exception as e:
         logger.warning("Failed to detect market regime: %s", e)
-        return RegimeOut()
+        _, default_res = classify_macro_regime()
+        return RegimeOut(**default_res)

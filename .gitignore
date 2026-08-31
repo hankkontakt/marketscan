@@ -37,6 +37,7 @@ Thumbs.db
 
 .vercel
 .env*
+scratch/
 scratch_*
 alpha_candidates_output.json
 .commandcode/

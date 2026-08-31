@@ -76,22 +76,24 @@ def get_scan(
     limit: int = Query(default=500, ge=1, le=500),
     sb=Depends(get_supabase),
 ):
-    # ROND 8: master_rank ligger i EN SEPTAT tabell — om sort_by=master_rank,
+    # ROND 8: master_rank ligger i EN SEPARAT tabell — om sort_by=master_rank,
     # hämta först master_rank-ordningen, sen scan_results för de tickers som
     # matchar filtren (bevarad ordning).
     if sort_by == "master_rank":
         try:
             order_res = (
                 sb.table("master_rank")
-                .select("ticker, master_rank")
+                .select("ticker, master_rank, tier, quality_z, value_z, momentum_z, analyst_z, analyst_upside, analyst_count, trend_tech, currency")
                 .not_.is_("master_rank", "null")
                 .order("master_rank", desc=True)
                 .limit(limit)
                 .execute()
             )
+            master_by_ticker = {r["ticker"]: r for r in (order_res.data or [])}
             ordered = [r["ticker"] for r in (order_res.data or [])]
         except Exception as e:
             logger.warning("master_rank query failed (falls back to score_total): %s", e)
+            master_by_ticker = {}
             ordered = []
 
         if not ordered:
@@ -109,7 +111,24 @@ def get_scan(
                                   exclude_low_liquidity, mews_flag, search)
         result = q.execute()
         by_ticker = {r["ticker"]: r for r in (result.data or [])}
-        return [by_ticker[t] for t in ordered if t in by_ticker]
+        enriched = []
+        for t in ordered:
+            if t in by_ticker:
+                row = dict(by_ticker[t])
+                m = master_by_ticker.get(t, {})
+                row["master_rank"] = m.get("master_rank")
+                row["tier"] = m.get("tier")
+                row["quality_z"] = m.get("quality_z") or row.get("quality_z")
+                row["value_z"] = m.get("value_z") or row.get("value_z")
+                row["momentum_z"] = m.get("momentum_z") or row.get("momentum_z")
+                row["analyst_z"] = m.get("analyst_z")
+                row["analyst_upside"] = m.get("analyst_upside")
+                row["analyst_count"] = m.get("analyst_count")
+                row["trend_tech"] = m.get("trend_tech")
+                if m.get("currency"):
+                    row["currency"] = m.get("currency")
+                enriched.append(row)
+        return enriched
 
     q = (
         sb.table("scan_results")
