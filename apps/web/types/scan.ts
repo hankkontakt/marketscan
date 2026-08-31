@@ -33,6 +33,8 @@ export interface ScanRow {
   master_tier: string | null;
   trend_tech: "Upptrend" | "Sidled" | "Nedtrend" | null;
   analyst_flags: string[];
+  analyst_z?: number | null;
+  analyst_upside?: number | null;
   target_dispersion: number | null;
   currency: string | null;
 

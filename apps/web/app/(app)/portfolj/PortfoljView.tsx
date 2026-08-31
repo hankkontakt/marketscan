@@ -15,6 +15,7 @@ import {
 import { PieChart as RechartsPie, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { RebalanceView } from "@/components/portfolio/RebalanceView";
 
 export function PortfoljView() {
   const { data: portfolio, isLoading } = usePortfolio();
@@ -23,7 +24,7 @@ export function PortfoljView() {
   const removeFund = useRemoveFundHolding();
   const addHolding = useAddHolding();
   const resetPortfolio = useResetPortfolio();
-  const [tab, setTab] = useState<"aktier" | "fonder" | "total">("aktier");
+  const [tab, setTab] = useState<"aktier" | "fonder" | "total" | "rebalansera">("aktier");
 
   function handleResetPortfolio() {
     toast("Töm hela portföljen? Alla aktier, fonder och transaktioner raderas permanent.", {
@@ -171,8 +172,8 @@ export function PortfoljView() {
       {/* Tab switcher — only shown when there's something to switch between */}
       {(holdings.length > 0 || fundHoldings.length > 0) && (
         <div className="flex gap-1.5">
-          {(["aktier", "fonder", "total"] as const).map((t) => {
-            const count = t === "aktier" ? holdings.length : t === "fonder" ? fundHoldings.length : holdings.length + fundHoldings.length;
+          {(["aktier", "fonder", "total", "rebalansera"] as const).map((t) => {
+            const count = t === "aktier" ? holdings.length : t === "fonder" ? fundHoldings.length : t === "total" ? holdings.length + fundHoldings.length : null;
             return (
               <button
                 key={t}
@@ -184,8 +185,8 @@ export function PortfoljView() {
                     : "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]",
                 )}
               >
-                {t === "aktier" ? "Aktier" : t === "fonder" ? "Fonder" : "Totalt"}{" "}
-                <span className="opacity-70">({count})</span>
+                {t === "aktier" ? "Aktier" : t === "fonder" ? "Fonder" : t === "total" ? "Totalt" : "⚖️ Rebalansera"}{" "}
+                {count !== null && <span className="opacity-70">({count})</span>}
               </button>
             );
           })}
@@ -355,6 +356,11 @@ export function PortfoljView() {
             <FundTable funds={fundHoldings} onRemove={(id) => removeFund.mutate(id)} />
           )}
         </>
+      )}
+
+      {/* Rebalansera tab */}
+      {tab === "rebalansera" && (
+        <RebalanceView />
       )}
 
       {/* Allocation + Risk — shown on aktier/total tabs only */}

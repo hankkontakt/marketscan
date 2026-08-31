@@ -14,6 +14,7 @@ import { LevelSwitcher } from "@/components/stock/LevelSwitcher";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { FactorRadar } from "@/components/charts/FactorRadar";
 import { EarningsMemoCard } from "@/components/stock/EarningsMemoCard";
+import { ForensicAuditCard } from "@/components/stock/ForensicAuditCard";
 import { trackEvent, EVENT } from "@/lib/tracking";
 import { useExperience, NonExpertOnly, ExpertOnly } from "@/components/providers/ExperienceProvider";
 import dynamic from "next/dynamic";
@@ -869,6 +870,9 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
 
   return (
     <div className="space-y-5">
+      {/* 1-Click Forensic Interim Report Audit */}
+      <ForensicAuditCard ticker={ticker} companyName={stock.name} />
+
       {/* Earnings history */}
       <div className="rounded-xl border p-5 bg-[var(--color-bg-surface)] border-[var(--color-border)]">
         <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-primary)]">
@@ -1057,6 +1061,7 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
 function AITab({ stock }: { stock: ScanRow }) {
   return (
     <div className="space-y-4">
+      <ForensicAuditCard ticker={stock.ticker} companyName={stock.name} />
       <ExplainSection ticker={stock.ticker} stock={stock} />
       <EarningsMemoCard ticker={stock.ticker} />
       <div>

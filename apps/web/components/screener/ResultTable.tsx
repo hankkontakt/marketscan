@@ -10,7 +10,6 @@ import {
   formatPrice,
   formatMarketCap,
   formatPE,
-  formatNumber,
   signalLabel,
   signalClass,
   segmentLabel,
