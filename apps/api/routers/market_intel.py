@@ -230,8 +230,12 @@ class MasterRankOut(BaseModel):
 
 
 def _master_out(r: dict) -> MasterRankOut:
-    f = lambda v: float(v) if v is not None else None
-    fi = lambda v: int(v) if v is not None else None
+    def f(v):
+        return float(v) if v is not None else None
+
+    def fi(v):
+        return int(v) if v is not None else None
+
     return MasterRankOut(
         ticker=r["ticker"],
         master_rank=f(r.get("master_rank")),

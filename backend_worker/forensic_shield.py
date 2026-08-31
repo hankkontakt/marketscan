@@ -12,7 +12,6 @@ Deterministisk och 100% testbar utan nätverksberoenden.
 """
 from __future__ import annotations
 
-import math
 from typing import Optional
 
 

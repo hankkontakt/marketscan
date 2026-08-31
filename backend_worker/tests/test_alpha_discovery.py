@@ -2,8 +2,7 @@ import unittest
 from datetime import date
 from backend_worker.alpha_discovery import (
     WarrantSeries, audit_warrant_overhang, extract_warrant_mentions_from_text,
-    classify_press_release, extract_order_amount_msek,
-    HoldingChange, score_smart_money_cluster,
+    classify_press_release, HoldingChange, score_smart_money_cluster,
     AnalystReportItem, score_analyst_revisions,
     detect_wyckoff_divergence,
     evaluate_fcf_inflection,

@@ -1,6 +1,5 @@
-import json
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from backend_worker.sec_edgar_fetcher import get_sec_financial_summary
 
 

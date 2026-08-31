@@ -18,11 +18,10 @@ import argparse
 import json
 import logging
 import math
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)

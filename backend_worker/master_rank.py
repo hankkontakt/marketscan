@@ -28,7 +28,7 @@ import logging
 import math
 import os
 import time
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -278,7 +278,6 @@ def pit_status(fy_end: Optional[date], today: date) -> tuple[str, str]:
     """
     if fy_end is None:
         return "STALE", "senaste årsbokslut ej giltigt (fy_end+5mån ej känd)"
-    from calendar import month
     y, m = fy_end.year, fy_end.month
     due = date(y + (m + 5 - 1) // 12, ((m + 5 - 1) % 12) + 1, 1)
     if due > today:
@@ -769,7 +768,6 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         iz = q.get("insider_z")
         pz = q.get("payout_z")
         gz = s["score_growth"]
-        scv = s["score_value"]     # fallback till värde-blocket
         # ROND 9: insider_source — "real" (QMJ insiderkluster) vs "proxy"
         # (Piotroski-fallback för globala). Proxy viktas ner 0.5× (ärligare:
         # proxy-signalen är inte samma sak som riktig insiderdata).
@@ -839,7 +837,6 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
     written = 0
     for r in table:
         t = r["ticker"]
-        s = scan.get(t, {})
         try:
             cur.execute("""
                 INSERT INTO master_rank (
@@ -941,7 +938,6 @@ def main() -> None:
     if args.dry_run:
         # Demo med mock-data (tester)
         today = date.today()
-        from datetime import timedelta
         demo = [{
             "ticker": "DEMO-A", "quality_z": 88.0, "value_z": 20.0, "momentum_z": 95.0,
             "analyst_z": 70.0, "insider_z": 60.0, "catalyst_z": 80.0,

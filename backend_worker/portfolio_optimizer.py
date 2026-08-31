@@ -22,10 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
-from typing import Optional
 
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +65,6 @@ def build_barbell_portfolio(
     for c in candidates:
         seg = c.get("segment", "large_cap")
         rank = float(c.get("master_rank") or 0.0)
-        roe = float(c.get("roe") or 0.0)
 
         # Core kräver stabilitet: Large/Mid Cap och god kapitalavkastning
         if seg in ("large_cap", "mid_cap") and rank >= 65.0:

@@ -7,7 +7,7 @@ import logging
 from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from apps.api.core.security import get_current_user, User
 from apps.api.dependencies import get_supabase_admin

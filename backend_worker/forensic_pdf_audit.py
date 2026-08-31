@@ -16,10 +16,8 @@ import io
 import json
 import logging
 import os
-import re
 import time
 import urllib.request
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

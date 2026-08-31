@@ -18,6 +18,7 @@ from pydantic import BaseModel, field_validator
 
 from apps.api.dependencies import get_user_supabase
 from apps.api.core.security import get_current_user, User
+from apps.api.core.portfolio_construction import build_barbell_portfolio, stress_test_portfolio
 
 logger = logging.getLogger(__name__)
 
@@ -483,7 +484,6 @@ def get_signal_analytics_detail(
 
 # ─── Barbell Optimizer & Stress Lab Endpoints ───────────────────────────────
 
-from apps.api.core.portfolio_construction import build_barbell_portfolio, stress_test_portfolio
 
 
 class BarbellOptimizeRequest(BaseModel):

@@ -23,8 +23,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
-from datetime import date
 from typing import Optional
 
 import numpy as np
@@ -196,9 +194,6 @@ def derive_regime_from_scan(scan_rows: list[dict]) -> tuple[str, dict]:
 
     total = len(scan_rows)
     uptrends = sum(1 for r in scan_rows if r.get("trend_signal") == "Upptrend" or r.get("trend_tech") == "Upptrend")
-    downtrends = sum(1 for r in scan_rows if r.get("trend_signal") == "Nedtrend" or r.get("trend_tech") == "Nedtrend")
-    stark_count = sum(1 for r in scan_rows if r.get("entry_signal") == "STARK")
-
     breadth_pct = (uptrends / total) * 100.0 if total > 0 else 50.0
 
     # Approximerad volatilitetsindikator från beta/change

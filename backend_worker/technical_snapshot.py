@@ -15,9 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
-import time
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -75,7 +73,6 @@ def fetch_price_history(ticker: str) -> Optional[list[float]]:
     själv. Cachar returns_1y + close_last (samma format som qmj_scores) så att
     efterföljande körningar inte behöver nätverket. Thread-säker (per-fil skriv).
     """
-    import time
     try:
         import yfinance as yf
         y = yf.Ticker(ticker)

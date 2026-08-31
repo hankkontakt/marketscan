@@ -76,11 +76,9 @@ def generate_rebalance_plan(
         return {"success": False, "error": "Portföljen har inget värde att rebalansera."}
 
     target_funds_val = total_val * (target_funds_pct / 100.0)
-    target_stocks_val = total_val * (target_stocks_pct / 100.0)
 
     # Identifiera avvikelser
     funds_delta = round(target_funds_val - alloc["funds_value_sek"], 2)
-    stocks_delta = round(target_stocks_val - alloc["stocks_value_sek"], 2)
 
     # ─── LÄGE A: Smart Nysparande (Om insättning anges) ──────────────────────
     smart_deposit_actions = []

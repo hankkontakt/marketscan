@@ -1,8 +1,6 @@
 """Tester för MasterRank (ROND 8) — rena funktioner (ingen nätverk/DB)."""
-import json
 import unittest
 from datetime import date, timedelta
-from pathlib import Path
 
 import backend_worker.master_rank as mr
 import backend_worker.technical_snapshot as tech

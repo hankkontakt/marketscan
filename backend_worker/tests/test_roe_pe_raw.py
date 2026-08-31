@@ -5,7 +5,6 @@ Fångar median-neutraliserings-felet: neutralisering skriver om roe/pe IN PLACE
 Kända värden från granskning 2026-08-31 (stockanalysis.com/Gurufocus/m.m.).
 """
 import unittest
-from datetime import date, timedelta
 
 import pandas as pd
 

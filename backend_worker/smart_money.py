@@ -17,7 +17,6 @@ import argparse
 import json
 import logging
 import math
-from datetime import date, datetime
 from typing import Optional
 
 import numpy as np

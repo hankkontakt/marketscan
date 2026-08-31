@@ -17,14 +17,11 @@ import json
 import logging
 import os
 from datetime import date
-from typing import Optional
 
-import numpy as np
 import yfinance as yf
-import requests
 
 from backend_worker.alpha_discovery import (
-    WarrantSeries, audit_warrant_overhang,
+    audit_warrant_overhang,
     classify_press_release,
     HoldingChange, score_smart_money_cluster,
     AnalystReportItem, score_analyst_revisions,
@@ -83,7 +80,6 @@ def run_discovery_scan(limit: int = 50) -> list[dict]:
         
         rev_g = inf.get("revenueGrowth", 0.15)
         ebit_m = inf.get("operatingMargins", 0.12)
-        rec_mean = inf.get("recommendationMean")
         target_p = inf.get("targetMedianPrice")
         
         # 1. Fundamental FCF Inflection
