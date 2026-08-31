@@ -172,8 +172,8 @@ class TestAnalyst(unittest.TestCase):
 
     def test_analyst_z_coverage_scaling(self):
         """Fler analytiker → inte lägre z (coverage skalar upp, aldrig ned)."""
-        single = {"upside_pct": 20.0, "recommendation_mean": 4.0, "target_count": 1}
-        many = {"upside_pct": 20.0, "recommendation_mean": 4.0, "target_count": 10}
+        single = {"upside_pct": 20.0, "recommendation_mean": 1.5, "target_count": 1}
+        many = {"upside_pct": 20.0, "recommendation_mean": 1.5, "target_count": 10}
         z_single = an.analyst_z(single)
         z_many = an.analyst_z(many)
         self.assertIsNotNone(z_single)
@@ -313,6 +313,68 @@ class TestEvidenceLoop(unittest.TestCase):
         many = evidence_loop.deflated_sharpe_correction(0.05, n_tests=8, n_obs=100)
         self.assertIsNotNone(single)
         self.assertGreater(single, many)  # fler tester straffar mer
+
+
+class TestMasterRank2Upgrades(unittest.TestCase):
+    def test_compute_peg_unit_consistency(self):
+        """PEG hanterar både decimal (0.25) och procent (25.0) utan 100x fel."""
+        # 18.8 P/E och 66.9% tillväxt (decimal 0.669) -> PEG ≈ 0.28
+        peg_dec = mr.compute_peg(18.8, 0.669)
+        peg_pct = mr.compute_peg(18.8, 66.9)
+        self.assertIsNotNone(peg_dec)
+        self.assertIsNotNone(peg_pct)
+        self.assertAlmostEqual(peg_dec, 0.281, places=2)
+        self.assertAlmostEqual(peg_pct, 0.281, places=2)
+
+    def test_val_abs_z_rewards_low_peg_growth(self):
+        """Låg PEG (Peter Lynch tillväxt) ger hög absolut score (≥80)."""
+        z = mr.val_abs_z(pe_forward=18.8, revenue_growth=0.669, ev_ebitda=None, value_z_qmj=None)
+        self.assertIsNotNone(z)
+        self.assertGreater(z, 80.0)
+
+    def test_val_abs_z_forward_inflection_bonus(self):
+        """Forward P/E betydligt lägre än Trailing P/E ger turnaround-bonus."""
+        # Trailing P/E 50x, Forward P/E 18x
+        z_turnaround = mr.val_abs_z(pe_forward=18.0, revenue_growth=0.20, ev_ebitda=None, value_z_qmj=None, pe_trailing=50.0)
+        z_flat = mr.val_abs_z(pe_forward=18.0, revenue_growth=0.20, ev_ebitda=None, value_z_qmj=None, pe_trailing=18.0)
+        self.assertGreater(z_turnaround, z_flat)
+
+    def test_qarp_synergy_boosts_quality_value_stocks(self):
+        """QARP (Kvalitet ≥70 och Värde ≥65) ger icke-linjär synergibonus."""
+        high_q_high_v = {"quality_z": 85.0, "value_z": 80.0, "momentum_z": 70.0,
+                         "analyst_z": 70.0, "insider_z": 60.0, "catalyst_z": 60.0,
+                         "payout_z": 60.0, "growth_z": 70.0,
+                         "val_flags": [], "tech_flags": [], "pit_status": "READY"}
+        f_qarp = mr.fuse(high_q_high_v, WEIGHTS)
+
+        # Samma aktie fast med isolerat värde lägre än 65 (ej QARP-tröskel)
+        high_q_med_v = dict(high_q_high_v)
+        high_q_med_v["value_z"] = 55.0
+        f_non_qarp = mr.fuse(high_q_med_v, WEIGHTS)
+
+        # QARP-versionen ska ha en tydlig uppväxling
+        self.assertGreater(f_qarp["master_rank"], f_non_qarp["master_rank"] + 3.0)
+
+    def test_compounder_payout_protection(self):
+        """Högkvalitativ tillväxtcompounder straffas inte för låg utdelning."""
+        compounder_low_div = {"quality_z": 90.0, "value_z": 75.0, "momentum_z": 75.0,
+                              "analyst_z": 75.0, "insider_z": 50.0, "catalyst_z": 50.0,
+                              "payout_z": 10.0, "growth_z": 80.0,
+                              "val_flags": [], "tech_flags": [], "pit_status": "READY"}
+        f = mr.fuse(compounder_low_div, WEIGHTS)
+        # Ska inte dras ned under T1
+        self.assertGreaterEqual(f["master_rank"], 75.0)
+        self.assertEqual(f["tier"], "T1")
+
+    def test_soe_political_risk_moderation(self):
+        """SOE med politisk risk cappas från att ta #1-platsen."""
+        soe_stock = {"quality_z": 95.0, "value_z": 95.0, "momentum_z": 90.0,
+                     "analyst_z": 80.0, "insider_z": 70.0, "catalyst_z": 80.0,
+                     "payout_z": 95.0, "growth_z": 70.0,
+                     "val_flags": ["SOE_POLITICAL_RISK"], "tech_flags": [], "pit_status": "READY"}
+        f = mr.fuse(soe_stock, WEIGHTS)
+        self.assertLessEqual(f["master_rank"], 69.5)
+        self.assertIn("soe_governance_risk", f["data_missing"])
 
 
 if __name__ == "__main__":

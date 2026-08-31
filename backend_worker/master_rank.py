@@ -107,28 +107,80 @@ def val_peers_z(pe_trailing: Optional[float], peers: list[float]) -> Optional[fl
     return _clip100(float(100.0 - pct))
 
 
+def compute_peg(pe_forward: Optional[float], revenue_growth: Optional[float]) -> Optional[float]:
+    """Beräkna PEG-ratio med enhetskonsistens (hanterar decimal vs procent)."""
+    if pe_forward is None or revenue_growth is None:
+        return None
+    try:
+        pe_f = float(pe_forward)
+        g = float(revenue_growth)
+    except (TypeError, ValueError):
+        return None
+    if pe_f <= 0 or g <= 0:
+        return None
+    # Om tillväxt är decimal (t.ex. 0.25 för 25 %), konvertera till procent (25.0)
+    g_pct = g * 100.0 if g < 5.0 else g
+    if g_pct <= 0:
+        return None
+    return pe_f / g_pct
+
+
 def val_abs_z(pe_forward: Optional[float], revenue_growth: Optional[float],
-              ev_ebitda: Optional[float], value_z_qmj: Optional[float]) -> Optional[float]:
-    """PEG/EV-justerad absolutvärdering (0-100). Högt PEG → låg z."""
+              ev_ebitda: Optional[float], value_z_qmj: Optional[float],
+              pe_trailing: Optional[float] = None,
+              sector: Optional[str] = None) -> Optional[float]:
+    """PEG/EV/Forward-justerad absolutvärdering (0-100). Högt PEG → låg z.
+
+    Förbättringar:
+    - Enhetskonsistent PEG: Peter Lynch PEG < 1.0 ger 80-100 poäng.
+    - Forward Earnings Inflection: Om pe_forward < pe_trailing (vinsttillväxt/turnaround),
+      belönas framåtblickande värdering.
+    - Finansiella sektorer (bank/försäkring) slipper irrelevant EV/EBITDA-straff.
+    """
     comps: list[float] = []
-    if pe_forward and revenue_growth and revenue_growth > 0:
-        peg = pe_forward / revenue_growth
-        if peg <= PEG_EXTREME:
-            comps.append(float(np.clip(100.0 - 40.0 * peg, 0.0, 100.0)))
+
+    # 1. PEG-komponent
+    peg = compute_peg(pe_forward, revenue_growth)
+    if peg is not None:
+        if peg <= 1.0:
+            comps.append(float(np.clip(100.0 - 20.0 * peg, 80.0, 100.0)))
+        elif peg <= 2.0:
+            comps.append(float(np.clip(80.0 - 30.0 * (peg - 1.0), 50.0, 80.0)))
+        elif peg <= PEG_EXTREME:
+            comps.append(float(np.clip(50.0 - 40.0 * (peg - 2.0), 20.0, 50.0)))
         else:
             comps.append(0.0)
-    if ev_ebitda is not None and ev_ebitda > 0:
-        # EV/EBITDA 20x → 0; 5x → 100 (linjär, klämd)
+
+    # 2. Forward P/E absolut komponent
+    if pe_forward is not None and pe_forward > 0:
+        # P/E 8x → 99 poäng, 15x → 85 poäng, 20x → 75 poäng, 30x → 55 poäng, 50x+ → 15 poäng
+        fwd_score = float(np.clip(115.0 - pe_forward * 2.0, 10.0, 100.0))
+        comps.append(fwd_score)
+
+        # Turnaround / Growth acceleration bonus (pe_trailing > pe_forward)
+        if pe_trailing is not None and pe_trailing > 0:
+            if pe_trailing / pe_forward >= 1.25:
+                inflection_bonus = min(20.0, (pe_trailing / pe_forward - 1.0) * 15.0)
+                comps.append(float(np.clip(fwd_score + inflection_bonus, 10.0, 100.0)))
+
+    # 3. EV/EBITDA (endast för icke-finansiella sektorer)
+    is_financial = sector in ("Financial Services", "Financials", "Banks", "Insurance", "Banker", "Försäkring")
+    if not is_financial and ev_ebitda is not None and ev_ebitda > 0:
+        # EV/EBITDA 5x → 100, 20x → 0
         comps.append(float(np.clip(100.0 - (ev_ebitda - 5.0) / 15.0 * 100.0, 0.0, 100.0)))
+
+    # 4. QMJ Value
     if value_z_qmj is not None:
         comps.append(float(value_z_qmj))
+
     if not comps:
         return None
     return _clip100(float(np.mean(comps)))
 
 
 def val_flags(val_hist: Optional[float], val_peers: Optional[float],
-              val_abs: Optional[float], peg: Optional[float], pe_hist_pctl: Optional[float]) -> list[str]:
+              val_abs: Optional[float], peg: Optional[float], pe_hist_pctl: Optional[float],
+              ticker: Optional[str] = None) -> list[str]:
     flags: list[str] = []
     if peg is not None and peg > PEG_EXTREME:
         flags.append("EXTREME_OVERVAL")
@@ -136,6 +188,12 @@ def val_flags(val_hist: Optional[float], val_peers: Optional[float],
         flags.append("EXTREME_OVERVAL")
     if val_hist is not None and val_hist >= 80 and val_peers is not None and val_peers >= 80:
         flags.append("CHEAP")
+    elif peg is not None and peg <= 0.8:
+        flags.append("CHEAP_PEG")
+
+    # SOE Political & Governance risk flag
+    if ticker and any(ticker.startswith(soe) or ticker == soe for soe in ["PETR4", "PETR3", "ELET3", "ELET6", "2628.HK", "0941.HK"]):
+        flags.append("SOE_POLITICAL_RISK")
     return flags
 
 
@@ -250,20 +308,34 @@ def fuse(row: dict, weights: dict) -> dict:
     row: {quality_z, value_z, momentum_z, analyst_z, insider_z, catalyst_z,
           payout_z, growth_z, val_flags, tech_flags, pit_status, ...}
 
-    Regler (ROND 8 + Rond 5-beslut):
+    Regler (ROND 8 + ROND 12):
     - Renormalisering cap 1.5: saknade block uppväger ALDRIG mer än 1.5×
       kvarvarande vikt (annars 2-block → 100 % — tunna data ger topprank).
     - T1 kräver ≥6/8 giltiga block OCH pit_status=READY (annars T3-max).
+    - QARP-synergi: när hög kvalitet (≥70) samverkar med stark framåtblickande
+      värdering (≥65 eller CHEAP_PEG), adderas en icke-linjär synergibonus.
+    - Compounder Protection: kvalitativa tillväxtbolag (Quality ≥75 & Growth ≥65)
+      straffas inte för att de återinvesterar kassaflöde istället för hög utdelning.
     """
     blocks = ["quality", "value", "momentum", "analyst", "insider",
               "catalyst", "payout", "growth"]
     total_w = 0.0
     acc = 0.0
     missing: list[str] = []
-    w = weights.get("weights", {})
+    w = weights.get("weights", weights) if isinstance(weights, dict) else {}
     full_w = sum(float(w.get(b, 0.0)) for b in blocks)
+
+    # Compounder Payout Protection:
+    qz_val = row.get("quality_z")
+    gz_val = row.get("growth_z")
+    pz_val = row.get("payout_z")
+    effective_row = dict(row)
+    if qz_val and gz_val and float(qz_val) >= 75.0 and float(gz_val) >= 65.0:
+        if pz_val is not None and float(pz_val) < 50.0:
+            effective_row["payout_z"] = 50.0  # Neutral utdelningspåverkan för compounders
+
     for b in blocks:
-        v = row.get(f"{b}_z")
+        v = effective_row.get(f"{b}_z")
         if v is None:
             missing.append(b)
             continue
@@ -274,25 +346,23 @@ def fuse(row: dict, weights: dict) -> dict:
         acc += float(v) * bw
         total_w += bw
     if total_w == 0:
-        return {"master_rank": None, "data_missing": missing}
+        return {"master_rank": None, "tier": None, "entry_signal": "EJ_AKTUELL", "data_missing": missing}
 
     # Renormaliseringscap (Rond 5): aldrig mer än 1.5× uppviktning
     max_w = full_w * RENORM_CAP
     if total_w > max_w:
-        # Skala ned ACC så att effektiv vikt = max_w (reducerar tunna data)
         scale = max_w / total_w
         acc *= scale
         total_w = max_w
 
     # Cap: analyst aldrig > 15 % (nordisk small-cap-täckning tunn)
     analyst_raw = row.get("analyst_z")
-    if analyst_raw is not None:
-        analyst_contrib = float(analyst_raw) * float(w.get("analyst", 0.0))
-        max_contrib = 0.15 * acc
-        if analyst_contrib > max_contrib:
-            scale = (acc - analyst_contrib) / (acc - (analyst_contrib - max_contrib)) if acc > 0 else 1.0
-            acc = (acc - analyst_contrib) * scale + max_contrib
-            analyst_contrib = max_contrib
+    if analyst_raw is not None and total_w > 0:
+        eff_analyst_share = float(w.get("analyst", 0.0)) / total_w
+        if eff_analyst_share > ANALYST_MAX_SHARE:
+            excess_weight = float(w.get("analyst", 0.0)) - ANALYST_MAX_SHARE * total_w
+            acc -= float(analyst_raw) * excess_weight
+            total_w -= excess_weight
 
     rank = float(acc) / total_w if total_w > 0 else None
     rank = _clip100(rank)
@@ -302,16 +372,45 @@ def fuse(row: dict, weights: dict) -> dict:
     if boost > 0.0 and rank is not None:
         rank = _clip100(rank + float(boost))
 
+    # QARP Synergy (Quality at a Reasonable Price):
+    # När hög kvalitet (≥70) samverkar med stark framåtblickande värdering
+    qz = row.get("quality_z")
+    vz = row.get("value_z")
+    v_flags = row.get("val_flags", [])
+    if rank is not None and qz is not None and (vz is not None or "CHEAP_PEG" in v_flags):
+        qz_f = float(qz)
+        vz_f = float(vz) if vz is not None else 65.0
+        if qz_f >= 70.0 and (vz_f >= 65.0 or "CHEAP_PEG" in v_flags):
+            qarp_bonus = min(5.0, ((qz_f - 70.0) / 30.0 + (vz_f - 65.0) / 35.0) * 2.5 + 2.0)
+            rank = _clip100(rank + qarp_bonus)
+
     # Anti-bubbla-grind
     if "EXTREME_OVERVAL" in row.get("val_flags", []) and "OVERBOUGHT" in row.get("tech_flags", []):
         rank = min(rank, BUBBLE_CAP)
         missing.append("bubble_triage")
 
-    # ROND 11 (Bugg 3): konsistens med DEN ANDRA motorn. Om stock-scanner har
-    # exkluderat aktien (entry_signal=EJ_AKTUELL) ELLER score_total föll under 50,
-    # måste master_rank röra sig i samma riktning — annars är MasterRank en separat
-    # siffra som inte reagerar på underliggande kvalitetskontroller (BHP-fallet:
-    # score_total 46 + EJ_AKTUELL men master_rank stod kvar på 65.8/T2).
+    # Forensiskt Skydd (Sloan Accruals, Cash Runway, Dilution, FoU-larm)
+    forensic_penalty = float(row.get("forensic_penalty", 0.0) or 0.0)
+    forensic_bonus = float(row.get("forensic_bonus", 0.0) or 0.0)
+    if rank is not None and (forensic_penalty > 0 or forensic_bonus > 0):
+        rank = _clip100(rank - forensic_penalty + forensic_bonus)
+
+    tier_cap = row.get("tier_cap", "T1")
+    if tier_cap == "DISQUALIFIED" and rank is not None:
+        rank = min(rank, 29.999)
+        missing.append("forensic_disqualified")
+    elif tier_cap == "T3" and rank is not None and rank >= TIER_T3:
+        rank = min(rank, 59.999)
+        missing.append("forensic_t3_cap")
+
+    # SOE Political & Governance Discount:
+    # Statligt kontrollerade råvarubolag cappas från att dominera över privata kvalitetsbolag
+    if "SOE_POLITICAL_RISK" in row.get("val_flags", []):
+        if rank is not None and rank > 69.5:
+            rank = 69.499
+            missing.append("soe_governance_risk")
+
+    # ROND 11 (Bugg 3): konsistens med DEN ANDRA motorn.
     ext_sig = row.get("entry_signal")
     ext_score = row.get("score_total")
     if ext_sig == "EJ_AKTUELL" or (ext_score is not None and float(ext_score) < 50):
@@ -338,7 +437,7 @@ def fuse(row: dict, weights: dict) -> dict:
     rank = _fmt_f(rank)
     tier = tier_of(rank, False, row.get("pit_status", "READY"))
     # ROND 9: entry_signal härleds DETERMINISTISKT från MasterRank-tier så att
-    # etiketten aldrig motsäger rank-siffran (PETR4 71/T2 vs gammal "Avvakta").
+    # etiketten aldrig motsäger rank-siffran
     entry_signal = signal_from_tier(tier)
     return {"master_rank": rank, "tier": tier, "entry_signal": entry_signal,
             "data_missing": missing,
@@ -584,14 +683,14 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         val_h = val_hist_z(pe_t, pe_hist.get(t, []))
         # ROND 9: sektor-neutral P/E-z (inom sektor, ej global — JP Morgan/MSCI)
         val_p = sector_neutral_z(pe_t, sector, sector_maps["pe_trailing"])
-        peg = (pe_f / rev_g) if (pe_f and rev_g and rev_g > 0) else None
-        val_a = val_abs_z(pe_f, rev_g, None, q.get("value_z"))
+        peg = compute_peg(pe_f, rev_g)
+        val_a = val_abs_z(pe_f, rev_g, None, q.get("value_z"), pe_trailing=pe_t, sector=sector)
         pe_hist_pctl = None
         if pe_hist.get(t) and pe_t:
             valid = [x for x in pe_hist[t] if x > 0]
             if valid:
                 pe_hist_pctl = float(np.mean([1.0 if pe_t >= x else 0.0 for x in valid]) * 100.0)
-        vflags = val_flags(val_h, val_p, val_a, peg, pe_hist_pctl)
+        vflags = val_flags(val_h, val_p, val_a, peg, pe_hist_pctl, ticker=t)
 
         rsi = tech.get("rsi_14")
         dist_high = tech.get("dist_52w_high_pct")

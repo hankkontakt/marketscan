@@ -724,6 +724,16 @@ function FaktorerTab({ stock, ticker }: { stock: ScanRow; ticker: string }) {
                 <AlertTriangle size={10} /> Bubbla-triage: starkt bolag, priset har sprungit ikapp nyheterna
               </div>
             )}
+            {master.val_flags?.includes("SOE_POLITICAL_RISK") && (
+              <div className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded bg-[var(--color-warn-soft)] text-[var(--color-warn)]">
+                <AlertTriangle size={10} /> Statlig interventionsrisk (SOE): Rank cappas till max 69.5
+              </div>
+            )}
+            {master.val_flags?.includes("CHEAP_PEG") && (
+              <div className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded bg-[var(--color-success-soft)] text-[var(--color-success)]">
+                <CheckCircle2 size={10} /> QARP: Låg PEG-värdering och hög tillväxt
+              </div>
+            )}
           </div>
         ) : (
           <p className="text-xs text-[var(--color-text-muted)]">MasterRank ej tillgänglig ännu (uppdateras fredags)</p>

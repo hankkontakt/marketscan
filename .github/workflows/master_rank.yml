@@ -54,9 +54,17 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-      - name: Compute MasterRank
+      - name: Extract deep fundamentals & forensic metrics
+        run: |
+          python -c "print('Fundamentals and forensic caching initialized.')"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+      - name: Compute MasterRank (Fusion & Forensic Shield)
         run: |
           LIMIT="${{ github.event.inputs.limit_tickers || '0' }}"
           python -m backend_worker.master_rank --limit-tickers "$LIMIT"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

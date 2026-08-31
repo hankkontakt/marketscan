@@ -133,8 +133,9 @@ def analyst_z(rec: dict) -> Optional[float]:
         components.append(np.sign(t) * (abs(t) ** 1.1))
         weights.append(0.6 * coverage)
     if rec_mean is not None:
-        # recommendationMean 1 (stark sälj) - 5 (stark köp) → normera mot 3 (neutral)
-        components.append((rec_mean - 3.0) / 2.0)
+        # yfinance recommendationMean: 1.0 (Strong Buy) - 5.0 (Strong Sell) → normera mot 3.0 (Hold/neutral)
+        # 1.0 (Strong Buy) → +1.0, 2.0 (Buy) → +0.5, 3.0 (Hold) → 0.0, 4.0 (Underperform) → -0.5, 5.0 (Sell) → -1.0
+        components.append((3.0 - rec_mean) / 2.0)
         weights.append(0.4 * coverage)
     if not weights or sum(weights) == 0:
         return None

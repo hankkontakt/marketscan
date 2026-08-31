@@ -37,3 +37,6 @@ Thumbs.db
 
 .vercel
 .env*
+scratch_*
+.commandcode/
+.freebuff/

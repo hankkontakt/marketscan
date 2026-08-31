@@ -34,6 +34,11 @@ jobs:
         run: python -m backend_worker.news_events
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Cision MAR official press releases (real-time stream)
+        run: python -m backend_worker.news_stream_cision --dry-run
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       - name: Google News theme sweep (mention surge)
         run: python -m backend_worker.news_discovery
         env:
