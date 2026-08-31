@@ -87,9 +87,18 @@ def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
 
     for row in rows:
         m = mr_by_ticker.get(row["ticker"], {})
+        from backend_worker.master_rank import tier_of, signal_from_tier
+        seg = row.get("segment")
+
         if m:
             row["master_rank"] = m.get("master_rank")
-            row["tier"] = m.get("tier")
+            # Always re-evaluate tier and signal with live segment-aware thresholds
+            if row["master_rank"] is not None:
+                row["tier"] = tier_of(row["master_rank"], False, m.get("pit_status", "READY"), segment=seg)
+                row["entry_signal"] = signal_from_tier(row["tier"])
+            else:
+                row["tier"] = m.get("tier")
+                row["entry_signal"] = signal_from_tier(row["tier"])
             row["quality_z"] = m.get("quality_z") or row.get("quality_z") or row.get("score_quality")
             row["value_z"] = m.get("value_z") or row.get("value_z") or row.get("score_value")
             row["momentum_z"] = m.get("momentum_z") or row.get("momentum_z") or row.get("score_momentum")
@@ -99,16 +108,11 @@ def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
             row["trend_tech"] = m.get("trend_tech") or row.get("trend_signal")
             if m.get("currency"):
                 row["currency"] = m.get("currency")
-            # Derive entry_signal from tier (authoritative)
-            from backend_worker.master_rank import signal_from_tier
-            row["entry_signal"] = signal_from_tier(m.get("tier"))
         else:
             # Fallback for tickers not yet in master_rank table (e.g. newly scanned small/micro caps):
             # Derive rank, tier & entry_signal from score_total and segment-aware thresholds
             score = row.get("score_total")
-            seg = row.get("segment")
             if score is not None:
-                from backend_worker.master_rank import tier_of, signal_from_tier
                 row["master_rank"] = round(float(score), 1)
                 row["tier"] = tier_of(float(score), False, "READY", segment=seg)
                 row["entry_signal"] = signal_from_tier(row["tier"])
