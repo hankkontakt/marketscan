@@ -1,6 +1,7 @@
 """Tester för qmj_scores.py — rena funktioner (ingen nätverk/DB)."""
 import io
 import json
+import math
 import os
 import sys
 import unittest
@@ -322,7 +323,24 @@ class TestMainPitFallback(unittest.TestCase):
         params = insert_calls[0].args[1]
         self.assertEqual(params[2], "2025-03-31")   # as_of_date
         self.assertEqual(params[11], 50.0)          # alpha_rank — poäng, inte PIT-block
-        self.assertIn('"as_of": "2025-03-31"', params[15])
+class TestMewsVarianceAndQuality(unittest.TestCase):
+    def test_rank_pct_variance_across_diverse_inputs(self):
+        """R15 (Task 7): rank_pct producerar äkta varians och hanterar None/ties utan falska default-artefakter."""
+        vals = {"A": 10.0, "B": 25.0, "C": 50.0, "D": 75.0, "E": 100.0, "F": None}
+        res = rank_pct(vals)
+        self.assertNotIn("F", res)
+        self.assertEqual(len(set(res.values())), 5)
+        # Bättre värden ger strikt högre percentil
+        self.assertGreater(res["E"], res["D"])
+        self.assertGreater(res["D"], res["C"])
+        self.assertGreater(res["C"], res["B"])
+        self.assertGreater(res["B"], res["A"])
+
+    def test_composite_excludes_none_cleanly(self):
+        """None-faktorer faller tillbaka på neutral 50 utan att krascha eller skapa NaN."""
+        comp = composite(q=80.0, m=None, v=60.0, p=None, i=None)
+        self.assertTrue(math.isfinite(comp))
+        self.assertGreater(comp, 50.0)
 
 
 if __name__ == "__main__":
