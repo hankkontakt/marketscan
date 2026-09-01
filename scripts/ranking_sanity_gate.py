@@ -146,12 +146,32 @@ def main() -> int:
     seed_rows = [r for r in rows if (r.get("ticker") == "VOLV-B.ST" and r.get("score_total") == 84)]
     mews_flagged = [r.get("ticker") for r in rows if r.get("mews_flag")]
 
+    # ROND 14 Sanity-checks (D1-D8):
+    # 1. Inga kända mega-caps i small/micro
+    mega_caps = ["EQNR.OL", "SAP.DE", "MC.PA", "OR.PA", "BHP", "TSM", "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN"]
+    bad_mega = [t for t in mega_caps if t in by_ticker and by_ticker[t].get("segment") in ("small_cap", "micro_cap")]
+
+    # 2. Inga rader med NULL eller <=0 market_cap i small/micro (ska vara unknown)
+    bad_mc_small = [r["ticker"] for r in rows if r.get("segment") in ("small_cap", "micro_cap") and (r.get("market_cap") is None or (r.get("market_cap") or 0) <= 0)]
+
+    # 3. Varianskontroll på catalyst_z och mews_score (får inte vara flatline/mock)
+    mews_scores = [r.get("mews_score") for r in rows if r.get("mews_score") is not None]
+    mews_var = len(set(mews_scores)) > 1 if len(mews_scores) >= 10 else True
+
+    # 4. Inga large caps med likviditetsgrad E/F
+    large_illiquid = [r["ticker"] for r in rows if r.get("segment") == "large_cap" and r.get("liquidity_grade") in ("E", "F")]
+
     print(f"  {PASS if pe_bad == 0 else FAIL} globalt: pe<=1/>200 = {pe_bad} (förväntas 0)")
     print(f"  {PASS if de_neg == 0 else FAIL} globalt: debt_to_equity<0 = {de_neg} (förväntas 0)")
     print(f"  {WARN if price_null > 0 else PASS} globalt: price NULL = {price_null} (sjunker mot 0 efter pipeline)")
     print(f"  {PASS if not seed_rows else FAIL} globalt: seed-demo-rader kvar = {len(seed_rows)} ({[r['ticker'] for r in seed_rows]})")
     print(f"  {PASS} mews-flaggor: {sorted(mews_flagged)} (kontroll via radkoll ovan)")
-    if pe_bad > 0 or de_neg > 0 or seed_rows:
+    print(f"  {PASS if not bad_mega else FAIL} R14: mega-caps i small/micro = {len(bad_mega)} {bad_mega}")
+    print(f"  {PASS if not bad_mc_small else FAIL} R14: NULL/<=0 market_cap i small/micro = {len(bad_mc_small)}")
+    print(f"  {PASS if mews_var else FAIL} R14: MEWS score varians i universum = {len(set(mews_scores))} unika värden")
+    print(f"  {PASS if not large_illiquid else FAIL} R14: large caps med likviditetsgrad E/F = {len(large_illiquid)} {large_illiquid}")
+
+    if pe_bad > 0 or de_neg > 0 or seed_rows or bad_mega or bad_mc_small or not mews_var or large_illiquid:
         ok = False
 
     if baseline:

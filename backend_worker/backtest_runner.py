@@ -1,9 +1,10 @@
-"""Backtesting engine for strategy validation."""
+"""Backtesting engine for strategy validation & per-segment IC evaluation (ROND 14)."""
 import os
 import sys
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "stock-scanner"))
 
@@ -11,21 +12,52 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("backtest_runner")
 
 
-def run_backtest(strategy="momentum", tickers=None):
-    """Run a historical backtest for a given strategy.
+def evaluate_segment_ic(
+    scores: list[dict],
+    segment: Optional[str] = None,
+    forward_return_key: str = "forward_return_1m",
+    rank_key: str = "master_rank",
+) -> dict:
+    """Beräknar Rank Information Coefficient (IC) per segment.
 
-    Parameters
-    ----------
-    strategy : str
-        Strategy name (e.g. "momentum", "mean_reversion", "breakout").
-    tickers : list of str, optional
-        List of ticker symbols to backtest. Defaults to major tech tickers.
-
-    Returns
-    -------
-    dict
-        Backtest results including return, Sharpe, drawdown, and equity curve.
+    scores: list of dicts med `rank_key`, `forward_return_key`, och eventuellt `segment`.
     """
+    filtered = scores
+    if segment:
+        filtered = [s for s in scores if s.get("segment") == segment]
+
+    pairs = [
+        (float(s[rank_key]), float(s[forward_return_key]))
+        for s in filtered
+        if s.get(rank_key) is not None and s.get(forward_return_key) is not None
+    ]
+
+    n = len(pairs)
+    if n < 5:
+        return {"segment": segment or "all", "n": n, "rank_ic": None, "t_stat": None}
+
+    # Spearman rank correlation
+    try:
+        import numpy as np
+        from scipy.stats import spearmanr
+        ranks_x = [p[0] for p in pairs]
+        ranks_y = [p[1] for p in pairs]
+        ic, p_val = spearmanr(ranks_x, ranks_y)
+        t_stat = float(ic * np.sqrt((n - 2) / (1 - ic**2))) if abs(ic) < 1.0 else 0.0
+        return {
+            "segment": segment or "all",
+            "n": n,
+            "rank_ic": round(float(ic), 4),
+            "p_value": round(float(p_val), 4),
+            "t_stat": round(float(t_stat), 2),
+        }
+    except Exception as e:
+        logger.debug("Spearman IC calculation failed: %s", e)
+        return {"segment": segment or "all", "n": n, "rank_ic": None, "error": str(e)}
+
+
+def run_backtest(strategy="momentum", tickers=None):
+    """Run a historical backtest for a given strategy."""
     try:
         from backtesting.backtest import BacktestEngine
     except ImportError as e:
