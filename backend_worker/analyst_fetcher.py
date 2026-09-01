@@ -180,14 +180,21 @@ def analyst_z(rec: dict) -> Optional[float]:
 
 # ═════════════════════════ HÄMTNING + DB ═════════════════════════════════════
 
-def fetch_analyst(ticker: str) -> Optional[dict]:
+def fetch_analyst(ticker: str, retries: int = 2) -> Optional[dict]:
     """yfinance .info → analyst-data. None vid fel. Rate-limit sköts av anroparen."""
-    try:
-        import yfinance as yf
-        y = yf.Ticker(ticker)
-        info = y.info or {}
-    except Exception as e:
-        logger.debug("%s: .info misslyckades: %s", ticker, e)
+    info = {}
+    for attempt in range(retries + 1):
+        try:
+            import yfinance as yf
+            y = yf.Ticker(ticker)
+            info = y.info or {}
+            if info:
+                break
+        except Exception as e:
+            logger.debug("%s: .info försök %d misslyckades: %s", ticker, attempt + 1, e)
+            if attempt < retries:
+                time.sleep(1.0 * (attempt + 1))
+    if not info:
         return None
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     if price is None:
@@ -201,13 +208,21 @@ def fetch_analyst(ticker: str) -> Optional[dict]:
 
 
 def load_universe(cur) -> list[str]:
-    """Listade tickers ur registret — samma query som qmj_scores."""
+    """Listade tickers ur registret med fallback till scan_results."""
     cur.execute("""
         SELECT ticker FROM universe_registry
         WHERE ticker IS NOT NULL AND status = 'listed'
         ORDER BY ticker
     """)
-    return [r[0] for r in cur.fetchall() if r[0]]
+    res = [r[0] for r in cur.fetchall() if r[0]]
+    if not res:
+        cur.execute("""
+            SELECT DISTINCT ticker FROM scan_results
+            WHERE ticker IS NOT NULL
+            ORDER BY ticker
+        """)
+        res = [r[0] for r in cur.fetchall() if r[0]]
+    return res
 
 
 def upsert_analyst(cur, rows: list[dict], today: date):

@@ -37,19 +37,19 @@ def days_until(event_date: date, today: date) -> int:
     return (event_date - today).days
 
 
-def build_events(snapshots: list[dict], dividends: list[dict], today: date) -> list[dict]:
-    """snapshots: [{ticker, event_date, confidence}]; dividends: [{ticker, yield_pct}]."""
+def collect_events(cur, today: date) -> list[dict]:
+    """Slå ihop earnings-snapshots (hög konfidens) med dividend-proxys (låg konfidens)."""
+    surprises = load_surprises(cur, today)
+    dividends = load_dividends(cur)
     events: list[dict] = []
-    for s in snapshots:
-        d = s.get("event_date")
-        if not d:
-            continue
+    for s in surprises:
+        d = s["event_date"]
         events.append({
             "ticker": s["ticker"],
-            "event_type": "earnings",
+            "event_type": s.get("event_type", "earnings"),
             "event_date": d,
             "days_until": days_until(d, today),
-            "confidence": s.get("confidence", "medium"),
+            "confidence": s.get("confidence", "high"),
         })
     for d in dividends:
         # Utan ex-kursdata används grov uppskattning: nästkommande månadsskifte.
@@ -134,8 +134,8 @@ def load_surprises(cur, today: date) -> list[dict]:
             continue
         event_date = announce_at.date() if hasattr(announce_at, "date") else date.fromisoformat(str(announce_at)[:10])
         age = (today - (captured_at.date() if hasattr(captured_at, "date") else today)).days if captured_at else 999
-        conf = "medium" if age <= SNAPSHOT_MAX_AGE_DAYS else "low"
-        out.append({"ticker": ticker, "event_date": event_date, "confidence": conf})
+        conf = "high" if age <= SNAPSHOT_MAX_AGE_DAYS else "medium"
+        out.append({"ticker": ticker, "event_date": event_date, "confidence": conf, "event_type": "earnings"})
     return out
 
 
