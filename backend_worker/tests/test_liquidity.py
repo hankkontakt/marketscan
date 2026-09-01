@@ -1,4 +1,4 @@
-"""Unit tests for liquidity.py — segment turnover floors, FX conversion, and grades A–F."""
+"""Unit tests for liquidity.py — segment turnover floors, explicit FX rates, and grades A–F."""
 import unittest
 
 from backend_worker.liquidity import (
@@ -6,17 +6,15 @@ from backend_worker.liquidity import (
     compute_turnover_20d,
     turnover_to_sek,
     is_low_liquidity,
-    FX_TO_SEK,
 )
 
 
 class TestLiquidityEngine(unittest.TestCase):
-    def test_fx_to_sek_conversion(self):
-        self.assertEqual(turnover_to_sek(100.0, "SEK"), 100.0)
-        self.assertEqual(turnover_to_sek(100.0, "USD"), 100.0 * FX_TO_SEK["USD"])
-        self.assertEqual(turnover_to_sek(100.0, "EUR"), 100.0 * FX_TO_SEK["EUR"])
-        self.assertEqual(turnover_to_sek(100.0, "NOK"), 100.0 * FX_TO_SEK["NOK"])
-        self.assertIsNone(turnover_to_sek(None, "USD"))
+    def test_turnover_to_sek_uses_explicit_rate(self):
+        # Contract (Phase 4): the rate is passed in from fx_rates, never guessed.
+        self.assertEqual(turnover_to_sek(100.0, 9.58973), 958.973)
+        self.assertEqual(turnover_to_sek(100.0, 1.0), 100.0)
+        self.assertIsNone(turnover_to_sek(None, 9.58973))
 
     def test_unknown_when_turnover_none(self):
         self.assertEqual(compute_liquidity_grade(None, "large_cap"), "unknown")
@@ -74,9 +72,9 @@ class TestLiquidityEngine(unittest.TestCase):
     def test_compute_turnover_20d(self):
         closes = [10.0] * 20
         volumes = [1000.0] * 20  # 10 * 1000 = 10,000 native
-        med_sek, active = compute_turnover_20d(closes, volumes, "SEK")
+        med_sek, active = compute_turnover_20d(closes, volumes, fx_rate=9.58973)
         self.assertEqual(active, 20)
-        self.assertEqual(med_sek, 10000.0)
+        self.assertAlmostEqual(med_sek, 95897.3)
 
 
 if __name__ == "__main__":

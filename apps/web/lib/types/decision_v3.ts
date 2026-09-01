@@ -33,6 +33,9 @@ export interface DecisionProjectionV3 {
   segment?: string | null;
   price?: number | null;
   change_pct?: number | null;
+  fx_rate_sek?: number | null;
+  fx_rate_date?: string | null;
+  fx_source?: string | null;
 }
 
 export interface ScreenerProjectionV3 {

@@ -122,3 +122,9 @@ Samtliga V3-tabeller har RLS. Anonyma och inloggade klienter får endast `SELECT
 ### 7.3 Venue-policy i Security Master bootstrap
 
 Legacy-data saknar venue-fält per ticker. `bootstrap_security_master.py` följer därför en dokumenterad policy: verifierade suffix (.ST/.DE/...) → specifik MIC + ACTIVE; suffixlösa tickers → US-default (XNAS/USD) med state **UNKNOWN** (= NO_SIGNAL enligt planen) tills venue-verifiering finns. EFFECTIVE corporate actions styr initial-state direkt. Körningen är idempotent (befintliga listings dupliceras aldrig).
+
+### 7.4 FX & marknadskalender (migration 086–087, Phase 4)
+
+`fx_rates` (base=SEK, PK per currency+rate_date) är den enda källan för valuta→SEK. Seed = ECB eurofxref 2026-09-01; en schemalagd refresh ska lägga till nya rate_dates (seedet är en snapshot, inte live-feed). Lookup-kontraktet i `backend_worker/fx.py` (`rate_to_sek`): exakt datum → närmsta tidigare → `None` = karantän. **Ingen statisk FX-karta** får återinföras i beräkningsvägen (buggklassen bakom 059–061); `liquidity.py` tar kursen som explicit parameter. Den publicerade vyn `current_decisions_v3` bär `fx_rate_sek`/`fx_rate_date`/`fx_source` per listing.
+
+`backend_worker/market_calendar.py` är venue-sanningen för handelsdagar (is_trading_day/next/previous/half). Datakvalitet är explicit per MIC: VERIFIED (XSTO/XHEL/XCSE/XOSL/XNAS/XLON — 2026-helgdagar med käll-URLer), DOCUMENTED (XETR), WEEKEND_ONLY (XTKS/XWAR/XTSE/XASX — endast helger stängda, stale-detection får inte över-tro dem). Halvdagar räknas som handelsdagar (session finns).

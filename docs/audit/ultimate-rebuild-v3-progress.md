@@ -24,7 +24,7 @@
 | 1 — Security & migrationsgovernance | ✅ (083 levererar RLS/definer-fix; migrationsrensa) | baslinjen + `083` |
 | 2 — Security Master full-universe | ✅ Lokal E2E (9/9 listings, CPRX MERGED); 🟡 produktion kräver venue-källa + staging-ledger | 084 + bootstrap + E2E-bevis nedan |
 | 3 — Metric Catalog/units/PIT | ✅ Kontrakt + seed + worker-normalisering; 🟡 provider-adaptrar och live-unit-audit kvar | 084 + `metric_contracts.py` |
-| 4 — Likviditet/kalender/FX/events | ⬜ Ej påbörjad | |
+| 4 — Likviditet/kalender/FX/events | ✅ FX-kontrakt (086+087+fx.py), venue-kalender (market_calendar.py, 5 MICs VERIFIED), likviditet på explicita kurser; 🟡 riktiga volymdata + kalenderdriven stale-detection i pipelinen kvar | tester + live-smoke nedan |
 | 5 — Worker-pipeline + atomär publish | ✅ Lokal E2E (stage→publish→LAST_KNOWN_GOOD); 🟡 produktionsinkoppling via env-gate | `decision_publication.py` + E2E-bevis |
 | 6 — MasterRank/Setup/Risk vNext shadow | ⬜ Ej påbörjad | |
 | 7 — Decision API v3 | ✅ Komplett grund: screener/stock/history/evidence/changes/system-snapshot, flag-gates, TS-typer genererade från OpenAPI + sync-test | `decisions_v3.py` + `scripts/generate_v3_types.py` + tester |
@@ -69,6 +69,35 @@
 - [x] **Live-smoke (lokal stack, flagga ON):** uvicorn mot lokal Supabase → screener 200
       (sorterade rader), mid_cap-filter 200, tomt segment → explicit 404, stock VOLV-B.ST 200
       (pris 287.4 från vyn), **stock CPRX 404** (ingen publicerad decision), lowercase-alias 200.
+
+## Slice 3 — Phase 4: FX-kontrakt, venue-kalender, likviditet på riktiga kurser
+
+- [x] **086-migration:** `fx_rates` (base=SEK, PK per currency+rate_date, RLS: service-write/
+      anon-read) seedad med **ECB eurofxref 2026-09-01** (källa dokumenterad i SQL): USD 9.58973,
+      EUR 11.11450, NOK 1.02736, DKK 1.48693, GBP 12.97609, JPY 0.0598741, PLN 2.56614,
+      CAD 6.90501, AUD 6.84812. Statisk FX-karta i `liquidity.py` borttagen från beräkningsvägen.
+- [x] **backend_worker/fx.py:** `rate_to_sek(currency, as_of, cursor)` — exakt datum → närmsta
+      tidigare (dokumenterad) → `None` = karantän, aldrig gissning. SEK = identity utan DB-hit.
+- [x] **backend_worker/market_calendar.py:** venue-kalendrar för 11 MICs med explicit
+      datakvalitet per venue (VERIFIED/DOCUMENTED/WEEKEND_ONLY). 2026-helgdagar verifierade mot
+      källor: XSTO/XHEL (midsommarafton 6/19, trettondag 1/6, halvdagar 1/5, 4/2, 4/30, 5/13,
+      10/30), XCSE, XOSL, XNAS (Labor Day 9/7, Independence observed 7/3, early close 11/27+12/24),
+      XLON (Boxing observed 12/28, Summer Bank 8/31, **stänger INTE 1 maj**). XETR = DOCUMENTED;
+      XTKS/XWAR/XTSE/XASX = WEEKEND_ONLY (inte över-trott).
+- [x] **liquidity.py:** `turnover_to_sek(turnover, fx_rate)` med explicit kurs; statisk
+      FX_TO_SEK-karta borttagen (buggklassen bakom 059-061).
+- [x] **087-migration:** `current_decisions_v3` bär nu `fx_rate_sek`/`fx_rate_date`/`fx_source`
+      (LEFT JOIN LATERAL mot fx_rates ≤ published_at) → API + genererade TS-typer får
+      valuta-kontexten.
+- [x] **Live-bevis (lokal stack):** reset genom 087 + republish → `current_decisions_v3` visar
+      `fx_rate_sek=1.0, fx_source=ecb-eurofxref-2026-09-01` för SEK-listningar; API-smoke
+      oförändrat grön (8 manifests, CPRX 404).
+
+## Slice 3 — testbevis
+
+- [x] `pytest` (alla V3-arbetare + API + sync): **62 passed** (fx 6, kalender 11, likviditet 8,
+      övrig V3-svit 37).
+- [x] `scripts/generate_v3_types.py --check`: OK (fx-fält i genererade typer).
 
 ## Slice 2 — testbevis
 

@@ -36,6 +36,11 @@ class DecisionProjectionV3(BaseModel):
     segment: str | None = None
     price: float | None = None
     change_pct: float | None = None
+    # Dated, sourced FX context (Phase 4): SEK per 1 unit of the listing
+    # currency; NULL means no dated rate exists — never approximate.
+    fx_rate_sek: float | None = None
+    fx_rate_date: str | None = None
+    fx_source: str | None = None
 
 
 class ScreenerProjectionV3(BaseModel):

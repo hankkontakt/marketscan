@@ -20,6 +20,10 @@ Gradering:
   - unknown: saknar volymdata -> ingen straffavgift, badge "—"
 
 Flagga low_liquidity omdefinieras till: grade in ("D", "E", "F").
+
+FX (Phase 4): omräkning sker ALDRIG via statisk karta. Kursen skickas in
+explicit (hämtad från public.fx_rates via backend_worker/fx.py med as-of-datum).
+Saknad kurs = karantän, aldrig gissning.
 """
 from __future__ import annotations
 
@@ -30,29 +34,6 @@ from typing import Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-# Statiska approximativa valutakurser till SEK (uppdateras kvartalsvis)
-# Märk: dessa kurser är approximativa och avsedda för storleksordningsklassificering.
-FX_TO_SEK: dict[str, float] = {
-    "SEK": 1.0,
-    "USD": 10.5,
-    "EUR": 11.5,
-    "NOK": 1.0,
-    "DKK": 1.5,
-    "GBP": 13.5,
-    "JPY": 0.07,
-    "TWD": 0.33,
-    "KRW": 0.008,
-    "BRL": 2.0,
-    "AUD": 7.0,
-    "SGD": 8.0,
-    "CAD": 8.0,
-    "CHF": 12.0,
-    "NZD": 6.5,
-    "INR": 0.13,
-    "HKD": 1.35,
-}
 
 SEGMENT_FLOORS_SEK: dict[str, float] = {
     "micro_cap": 500_000.0,
@@ -63,19 +44,22 @@ SEGMENT_FLOORS_SEK: dict[str, float] = {
 }
 
 
-def turnover_to_sek(turnover_native: Optional[float], currency: Optional[str] = "USD") -> Optional[float]:
-    """Konvertera omsättning i nativ valuta till SEK med approximativ FX-karta."""
+def turnover_to_sek(turnover_native: Optional[float], fx_rate: float) -> Optional[float]:
+    """Convert native-currency turnover to SEK with an explicit FX rate.
+
+    ``fx_rate`` is SEK per 1 unit of the native currency, resolved from
+    ``public.fx_rates`` (see ``backend_worker/fx.py``). ``None`` turnover is
+    ``None``; a missing rate must quarantine the observation upstream.
+    """
     if turnover_native is None or not np.isfinite(turnover_native):
         return None
-    curr = (currency or "USD").upper().strip()
-    rate = FX_TO_SEK.get(curr, 10.5)  # standardfallback USD ~10.5 SEK
-    return float(turnover_native * rate)
+    return float(turnover_native * fx_rate)
 
 
 def compute_turnover_20d(
     closes: list[float],
     volumes: list[float],
-    currency: Optional[str] = "USD",
+    fx_rate: float,
 ) -> tuple[Optional[float], int]:
     """Beräkna 20-dagars medianomsättning i SEK samt antal aktiva handelsdagar.
 
@@ -101,7 +85,7 @@ def compute_turnover_20d(
         return None, 0
 
     med_native = float(np.median(daily_turnover_native))
-    med_sek = turnover_to_sek(med_native, currency)
+    med_sek = turnover_to_sek(med_native, fx_rate)
     return med_sek, active_days
 
 
@@ -154,21 +138,26 @@ def is_low_liquidity(grade: Optional[str]) -> bool:
 
 # ═════════════════════════ DB & HÄMTNING ══════════════════════════════════════
 
-def fetch_ticker_liquidity(ticker: str, segment: Optional[str], currency: Optional[str] = None) -> dict:
-    """Hämta 20d-historik och beräkna likviditet för en enskild ticker."""
+def fetch_ticker_liquidity(ticker: str, segment: Optional[str], currency: Optional[str] = None, fx_rate: Optional[float] = None) -> dict:
+    """Hämta 20d-historik och beräkna likviditet för en enskild ticker.
+
+    ``fx_rate`` (SEK per native enhet) MÅSTE komma från ``backend_worker/fx.py``
+    med as-of-datum. Utan kurs → ingen SEK-omsättning → grade 'unknown'.
+    """
     try:
         import yfinance as yf
         y = yf.Ticker(ticker)
         hist = y.history(period="1mo", interval="1d", auto_adjust=True)
         if hist is None or hist.empty or "Close" not in hist or "Volume" not in hist:
             return {"ticker": ticker, "liquidity_grade": "unknown", "turnover_20d_median": None, "low_liquidity": False}
+        if fx_rate is None or fx_rate <= 0:
+            return {"ticker": ticker, "liquidity_grade": "unknown", "turnover_20d_median": None, "low_liquidity": False}
 
         closes = list(hist["Close"].astype(float))
         volumes = list(hist["Volume"].astype(float))
         last_price = closes[-1] if closes else None
-        curr = currency or y.info.get("currency") if y.info else "USD"
 
-        med_sek, active = compute_turnover_20d(closes, volumes, curr)
+        med_sek, active = compute_turnover_20d(closes, volumes, fx_rate)
         grade = compute_liquidity_grade(med_sek, segment, active_days=active, price=last_price)
         return {
             "ticker": ticker,
@@ -187,17 +176,18 @@ def main():
     parser.add_argument("--limit-tickers", type=int, default=0)
     _args = parser.parse_args()
 
+    # Explicit dated rates (SEK per unit) — same contract as public.fx_rates.
     demo_cases = [
-        ("SAP.DE", "large_cap", 500_000_000.0, "EUR", 150.0),
-        ("EQNR.OL", "large_cap", 250_000_000.0, "NOK", 300.0),
-        ("SMALL1.ST", "small_cap", 5_000_000.0, "SEK", 25.0),
-        ("MICRO_ILLIQUID.ST", "micro_cap", 30_000.0, "SEK", 5.0),
-        ("PENNY.ST", "micro_cap", 1_000_000.0, "SEK", 0.5),
+        ("SAP.DE", "large_cap", 500_000_000.0, 11.1145, 150.0),   # EUR
+        ("EQNR.OL", "large_cap", 250_000_000.0, 1.02736, 300.0),  # NOK
+        ("SMALL1.ST", "small_cap", 5_000_000.0, 1.0, 25.0),       # SEK
+        ("MICRO_ILLIQUID.ST", "micro_cap", 30_000.0, 1.0, 5.0),
+        ("PENNY.ST", "micro_cap", 1_000_000.0, 1.0, 0.5),
     ]
 
     print("=== Liquidity Demo ===")
-    for tk, seg, turn, curr, pr in demo_cases:
-        t_sek = turnover_to_sek(turn, curr)
+    for tk, seg, turn, fx, pr in demo_cases:
+        t_sek = turnover_to_sek(turn, fx)
         grade = compute_liquidity_grade(t_sek, seg, active_days=20, price=pr)
         print(f"{tk:18} seg={seg:10} turnover={t_sek:12,.0f} SEK -> grade={grade} low_liquidity={is_low_liquidity(grade)}")
 
