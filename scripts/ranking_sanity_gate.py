@@ -157,9 +157,43 @@ def main() -> int:
     # 3. Varianskontroll på catalyst_z och mews_score (får inte vara flatline/mock)
     mews_scores = [r.get("mews_score") for r in rows if r.get("mews_score") is not None]
     mews_var = len(set(mews_scores)) > 1 if len(mews_scores) >= 10 else True
+    cat_scores = [r.get("catalyst_z") for r in rows if r.get("catalyst_z") is not None]
+    try:
+        mr_direct = get(base, "/api/market-intel/master/rank?limit=100")
+        if mr_direct and isinstance(mr_direct, list):
+            cat_direct = [r.get("catalyst_z") for r in mr_direct if r.get("catalyst_z") is not None]
+            if len(cat_direct) >= 5:
+                cat_scores.extend(cat_direct)
+    except Exception:
+        pass
+    cat_var = len(set(cat_scores)) > 1 if len(cat_scores) >= 10 else True
 
     # 4. Inga large caps med likviditetsgrad E/F
     large_illiquid = [r["ticker"] for r in rows if r.get("segment") == "large_cap" and r.get("liquidity_grade") in ("E", "F")]
+
+    # R15 Sanity-checks:
+    # 5. Stale-gate: max(scan_date) <= 3 dagar gammal
+    from datetime import date as dt_date
+    scan_dates = [r.get("scan_date") for r in rows if r.get("scan_date")]
+    max_scan_date = max(scan_dates) if scan_dates else None
+    stale_days = (dt_date.today() - dt_date.fromisoformat(str(max_scan_date)[:10])).days if max_scan_date else 999
+    stale_ok = stale_days <= 3
+
+    # 6. Pctl-täckning: andel av rader med master_rank non-null som har master_rank_pctl non-null >= 95%
+    mr_rows = [r for r in rows if r.get("master_rank") is not None]
+    pctl_rows = [r for r in mr_rows if r.get("master_rank_pctl") is not None]
+    pctl_pct = (len(pctl_rows) / len(mr_rows) * 100.0) if mr_rows else 0.0
+    pctl_ok = pctl_pct >= 95.0 if mr_rows else True
+
+    # 7. Signal-konsistens: inga rader med rank >= T2-tröskel som har EJ_AKTUELL signal
+    inconsistent_signals = []
+    for r in rows:
+        mr_val = r.get("master_rank")
+        sig = r.get("entry_signal")
+        seg = r.get("segment")
+        t2_thresh = 50.0 if seg in ("small_cap", "micro_cap") else 65.0
+        if mr_val is not None and mr_val >= t2_thresh and sig in ("EJ_AKTUELL", "Ej aktuellt"):
+            inconsistent_signals.append(f"{r.get('ticker')}({mr_val}>={t2_thresh}->{sig})")
 
     print(f"  {PASS if pe_bad == 0 else FAIL} globalt: pe<=1/>200 = {pe_bad} (förväntas 0)")
     print(f"  {PASS if de_neg == 0 else FAIL} globalt: debt_to_equity<0 = {de_neg} (förväntas 0)")
@@ -170,8 +204,12 @@ def main() -> int:
     print(f"  {PASS if not bad_mc_small else FAIL} R14: NULL/<=0 market_cap i small/micro = {len(bad_mc_small)}")
     print(f"  {PASS if mews_var else FAIL} R14: MEWS score varians i universum = {len(set(mews_scores))} unika värden")
     print(f"  {PASS if not large_illiquid else FAIL} R14: large caps med likviditetsgrad E/F = {len(large_illiquid)} {large_illiquid}")
+    print(f"  {PASS if stale_ok else FAIL} R15: stale-gate max(scan_date) = {max_scan_date} ({stale_days} d gammal, max 3 d)")
+    print(f"  {PASS if pctl_ok else WARN} R15: master_rank_pctl täckning = {pctl_pct:.1f}% ({len(pctl_rows)}/{len(mr_rows)})")
+    print(f"  {PASS if cat_var else FAIL} R15: catalyst_z varians i universum = {len(set(cat_scores))} unika värden")
+    print(f"  {PASS if not inconsistent_signals else FAIL} R15: inkonsistenta köpsignaler (rank>=T2 men EJ_AKTUELL) = {len(inconsistent_signals)} {inconsistent_signals[:5]}")
 
-    if pe_bad > 0 or de_neg > 0 or seed_rows or bad_mega or bad_mc_small or not mews_var or large_illiquid:
+    if pe_bad > 0 or de_neg > 0 or seed_rows or bad_mega or bad_mc_small or not mews_var or large_illiquid or not stale_ok or not cat_var or inconsistent_signals:
         ok = False
 
     if baseline:

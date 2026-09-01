@@ -197,6 +197,7 @@ def get_qmj_rank(sb=Depends(get_supabase)):
 class MasterRankOut(BaseModel):
     ticker: str
     master_rank: float | None = None
+    master_rank_pctl: float | None = None
     tier: str | None = None
     quality_z: float | None = None
     value_z: float | None = None
@@ -239,6 +240,7 @@ def _master_out(r: dict) -> MasterRankOut:
     return MasterRankOut(
         ticker=r["ticker"],
         master_rank=f(r.get("master_rank")),
+        master_rank_pctl=f(r.get("master_rank_pctl")),
         tier=r.get("tier"),
         quality_z=f(r.get("quality_z")),
         value_z=f(r.get("value_z")),
