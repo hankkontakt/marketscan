@@ -102,6 +102,7 @@ MarketScan använder Supabase Postgres i region `eu-north-1` (Stockholm). Databa
 | Likviditetskolumner | `supabase/migrations/081_liquidity_columns.sql` | Likviditetsgrader A–F och 20d medianomsättning |
 | V3 beslutskärna | `supabase/migrations/083_decision_manifest_foundation.sql` | Security Master, PIT-observationer, immutabla beslut och atomisk publiceringspekare |
 | Corporate actions & metric-kontrakt | `supabase/migrations/084_corporate_actions_metric_catalog.sql` | Corporate-action-lager (CPRX MERGED), enhetskontrakt i `metric_catalog`, listing-state-övergångar |
+| V3 Phase 9: diff + larm + portfölj | `supabase/migrations/088_phase9_alerts_portfolio.sql` | `decision_transitions` (worker-skriven diff-tabell, anon-läsbar), 5 nya alert_rules-typer, `triggered_alerts.decision_id`, `holdings.listing_id` + backfill (exakt-1 ACTIVE-träff) |
 
 ## 7. V3 Decision Manifest Foundation
 
@@ -126,5 +127,9 @@ Legacy-data saknar venue-fält per ticker. `bootstrap_security_master.py` följe
 ### 7.4 FX & marknadskalender (migration 086–087, Phase 4)
 
 `fx_rates` (base=SEK, PK per currency+rate_date) är den enda källan för valuta→SEK. Seed = ECB eurofxref 2026-09-01; en schemalagd refresh ska lägga till nya rate_dates (seedet är en snapshot, inte live-feed). Lookup-kontraktet i `backend_worker/fx.py` (`rate_to_sek`): exakt datum → närmsta tidigare → `None` = karantän. **Ingen statisk FX-karta** får återinföras i beräkningsvägen (buggklassen bakom 059–061); `liquidity.py` tar kursen som explicit parameter. Den publicerade vyn `current_decisions_v3` bär `fx_rate_sek`/`fx_rate_date`/`fx_source` per listing.
+
+### 7.5 Decision transitions & Phase 9-kopplingar (migration 088)
+
+`decision_transitions` är diff-lagret mellan publicerade snapshots: worker (`backend_worker/decision_transitions.py`, service-roll) skriver rader efter publikation — transition_type ∈ (thesis, setup, risk, data_grade, tradability, rank), reason_code deterministiskt (`thesis:BULLISH->CONSTRUCTIVE`, `rank_delta:+4.1`), rank-rad endast vid |Δ|≥5. Anon/authenticated läser; API:t (/changes, /transitions) läser ALDRIG snapshots direkt (RLS visar bara PUBLISHED + publish supersedear gamla — 083:281/237-238). `alert_rules.rule_type` accepterar 5 nya transition-typer; `triggered_alerts.decision_id` → `decision_manifests(decision_id)`; `holdings.listing_id` → `listings(listing_id)` backfillas endast vid exakt 1 ACTIVE-träff på upper(ticker) (CPRX=MERGED kan aldrig matcha).
 
 `backend_worker/market_calendar.py` är venue-sanningen för handelsdagar (is_trading_day/next/previous/half). Datakvalitet är explicit per MIC: VERIFIED (XSTO/XHEL/XCSE/XOSL/XNAS/XLON — 2026-helgdagar med käll-URLer), DOCUMENTED (XETR), WEEKEND_ONLY (XTKS/XWAR/XTSE/XASX — endast helger stängda, stale-detection får inte över-tro dem). Halvdagar räknas som handelsdagar (session finns).

@@ -134,13 +134,42 @@
       alert_rules-CHECK utökad med 5 transition-typer (DO-block + pg_constraint-koll,
       idempotent, alla 6 legacy bevarade), `triggered_alerts.decision_id`,
       `holdings.listing_id` + backfill (endast exakt-1 ACTIVE-träff, annars NULL+NOTICE,
-      CPRX=MERGED kan aldrig matcha). **migration-vakt-natt: APPROVED.** Ej applicerad.
+      CPRX=MERGED kan aldrig matcha). **migration-vakt-natt: APPROVED.** Ej applicerad mot produktion.
 - [x] **decision_transitions.py:** diffar 2 senaste publicerade snapshots (PUBLISHED+SUPERSEDED,
       published_at DESC) → transition-rader med reason codes (`thesis:BULLISH->CONSTRUCTIVE`,
       `setup:READY->WATCH`, `rank_delta:+4.1`; rank |Δ|≥5). Ny listing → from_state=NULL.
       CPRX-invariant: icke-ACTIVE-i-båda hoppas över helt. Idempotent (ON CONFLICT DO NOTHING).
-- [x] **Testbevis:** hela V3-sviten **86 passed** (72 + 14 nya `test_decision_transitions`).
-- [x] Commit `d6726e0` (Phase 9 foundation) + PLAN.md-commit.
+      E2E-fix: `ANY(%s::uuid[])` (uuid/text-typ-mismatch, hittad i live-körning).
+
+## Slice 6 — Phase 9: API-kontrakt + Briefing/Jämför/Larm/Portfölj (2026-09-01 natt)
+
+- [x] **API v3 (T1):** `GET /api/v3/decisions/changes` (läser decision_transitions,
+      0 rader → 200 tom lista, snapshot-meta), `GET /api/v3/decisions/transitions`
+      (normaliserad för larm), `POST /api/v3/decisions/compare` (samma snapshot,
+      0 träffar → 404, blandade snapshots → 409). 5 nya Pydantic-schemas (TOP_LEVEL),
+      TS-typer regenererade, klientfunktioner v3Changes/v3Transitions/v3Compare.
+- [x] **Briefing V3 (T3):** DagligBriefingViewV3 — "Vad ändrades?" från v3Changes
+      (state-transitioner + rank-movers med reason codes), snapshot-as-of, icke-score-
+      baserade sektioner behållna, MasterRankStrip/WatchlistStrip utelämnade (legacy).
+- [x] **Jämför V3 (T4):** JamforViewV3 — v3Compare samma snapshot, Thesis/Setup/Risk/Data
+      + drivare (expanderbar), decision_id synlig, AICompareCard exkluderad.
+- [x] **Larm (T5b+T6):** smart_alert_engine 5 nya transition-regeltyper läser
+      decision_transitions (legacy-grenar orörda), triggered_alerts.decision_id sätts;
+      VALID_RULE_TYPES utökad; BevakninarViewV3 (badges via v3StockByTicker, nya regeltyper,
+      decision_id-länk).
+- [x] **Portfölj (T7+T8):** `enrich_with_v3_decisions` (additiv, current_decisions_v3 via
+      ticker), get_portfolio + risk._get_holdings_with_prices kopplade, HoldingOut +10
+      optional-fält; PortfoljViewV3 (Thesis/Setup/Risk/Data-badges + MasterRank + decision-
+      länk, AI-coach skickar V3-dimensioner), RiskView + RebalanceView V3-badges.
+- [x] **E2E-bevis (lokal stack, 2 snapshots):** publish #1 → master_rank-mutation
+      (VOLV-B.ST 84→70, SAND.ST 77→88, NIBE-B.ST 62→66) → publish #2 →
+      `decision_transitions` skrev **exakt 2 rader** (SAND.ST +11.0, VOLV-B.ST -14.0,
+      decision_id satta; NIBE-B.ST Δ+4 < tröskel ingen rad; CPRX ingen rad) →
+      API-smoke: /changes 200 (2 rader, rätt snapshot_id), /transitions 200, /compare 200
+      (samma snapshot, CPRX tyst exkluderad), /compare-only-CPRX 404, current-snapshot 8 manifests.
+- [x] **Testbevis:** hela V3-sviten **114 passed** (86 + 14 transitions + 9 alert-transitions
+      + 5 v3-portfolio… se senaste körning). Frontend: tsc ren, vitest 25 passed, build OK (32/32).
+- [x] Commits: `d6726e0` (foundation), API, briefing/jämför, larm, portfolio, E2E-fix, docs.
 
 ## Slice 2 — testbevis
 

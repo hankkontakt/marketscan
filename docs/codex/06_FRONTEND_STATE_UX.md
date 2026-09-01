@@ -88,3 +88,13 @@ Klienten använder `apps/web/lib/api.ts` för alla API-anrop med automatisk JWT-
   }
   ```
 - **API URL Fallback:** Använd alltid `NEXT_PUBLIC_API_URL || "https://marketscan-api.vercel.app"` för att förhindra att tomma strängar leder till CORS-kollisioner mot samma origin.
+
+---
+
+## 7. V3-beslutsytor (Phase 8-9, 2026-09-01)
+
+- **Runtime-gate:** `NEXT_PUBLIC_DECISIONS_V3 === "true"` (lib/v3.ts) avgör per-sida vilken vy som renderas: `DECISIONS_V3_ENABLED ? <VyV3/> : <VyV1/>` (mönster: screener/topplistor/daglig-briefing/jamfor/bevakningar/portfolj page.tsx). V1 förblir orörd fallback vid flagg av.
+- **V3-klient:** lib/v3.ts — `v3Screener`, `v3StockByTicker`, `v3CurrentSnapshot`, `v3Changes`, `v3Transitions`, `v3Compare`. Typer: `lib/types/decision_v3.ts` (GENERERAD från OpenAPI — aldrig handredigera).
+- **V3-vyer:** `components/screener-v3/` (ScreenerViewV3, TopplistorViewV3, DecisionTableV3, badges.ts), `components/stock/DecisionHeaderV3.tsx`, `app/(app)/daglig-briefing/DagligBriefingViewV3.tsx` ("Vad ändrades?" via v3Changes), `app/(app)/jamfor/JamforViewV3.tsx` (v3Compare, AICompareCard exkluderad), `app/(app)/bevakningar/BevakninarViewV3.tsx` (V3-badges per bevakning, transition-regeltyper, decision_id-länk), `app/(app)/portfolj/PortfoljViewV3.tsx` (Thesis/Setup/Risk/Data-badges + MasterRank + decision-länk; AI-coach skickar V3-dimensioner).
+- **Regler:** inga emojis (Lucide-ikoner), InfoTooltip vid finansiella mått, inga "Köpläge"-semantik, färg aldrig ensamt informationsbärare (text+ikon), saknad V3-data → "—" explicit (aldrig fallback till score_total/entry_signal), 404/503 → explicit tomt tillstånd.
+- **Designsystem:** badges-konfig i `components/screener-v3/badges.ts` (THESIS_BAND/SETUP_STATE/RISK_STATE/DATA_GRADE-configs + `badgeFor`).

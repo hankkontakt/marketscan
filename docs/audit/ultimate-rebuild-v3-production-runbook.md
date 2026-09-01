@@ -90,11 +90,12 @@ Advisor. Avvikelse → STOPP, rapportera exakt utdata, applicera inte nästa.
 | Screener | ✅ klar | `NEXT_PUBLIC_DECISIONS_V3` | 6-kolumnstabell §27.1 |
 | Topplistor | ✅ klar | samma | DecisionTableV3 återanvänds |
 | Aktiesida header | ✅ klar | samma | Thesis/Setup/Risk/Data + drivare |
-| Daglig briefing | ⬜ | samma | kräver briefing-generator på V3-data |
-| Jämför | ⬜ | samma | kräver compare-sida mot V3-projektion |
-| Smarta larm | ⬜ | samma | larmregler ska läsa manifests, ej scan_results |
-| Portfölj | ⬜ | samma | rebalancer på V3-uppsättning |
+| Daglig briefing | ✅ klar (2026-09-01) | samma | "What changed?" från `decision_transitions` (v3Changes), snapshot-as-of, ej score-baserade sektioner behållna |
+| Jämför | ✅ klar (2026-09-01) | samma | v3Compare: samma snapshot, Thesis/Setup/Risk/Data + drivare, decision_id; AICompareCard exkluderad ur V3-vägen |
+| Smarta larm | ✅ klar (2026-09-01) | samma | 5 nya transition-regeltyper läser `decision_transitions` + manifests, `triggered_alerts.decision_id`; legacy-regler orörda |
+| Portfölj | ✅ klar (2026-09-01) | samma | Holdings + risk/rebalance visar Thesis/Setup/Risk/Data-badges (V3-join via `enrich_with_v3_decisions`); construct V3-mappning defer:ad (spec §0.3) |
 | Radar | ⬜ | samma | kräver Phase 4 event-inputs (nyhets-/eventkällor) |
+| Digest mailer | ⬜ | samma | egen task senare (utanför Phase 9) |
 
 ## 7. Kända brister att åtgärda i senare faser (ärligt läge)
 
