@@ -106,7 +106,11 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 width="85px"
                 align="right"
               />
-              <Th label="Köpläge" width="130px" />
+              <Th
+                label="Köpläge"
+                width="130px"
+                tip="Långsiktigt rankläge (T1–T3). Under v2-migrationen separeras detta i Thesis och kortsiktig Setup."
+              />
               <Th label="Trend" width="90px" />
               <Th
                 label="Kurs"
@@ -336,7 +340,7 @@ const COL_TIPS: Partial<Record<string, string>> = {
   MasterRank: "Kvantitativ faktormodell (0–100) kalibrerad per segment med datatäthets-tak och multi-faktor-regim. Till skillnad från Totalbetyg anpassas trösklarna för småbolag.",
   Pctl: "MasterRank-percentil (0–100) inom aktiens storlekssegment. Möjliggör direkt jämförelse mellan olika segment.",
   Totalbetyg: "Linjär sammanvägning av 8 delbetyg (0–100) från den breda scanning-motorn: Värde, Kvalitet, Momentum, Tillväxt, Risk, Storlek, Utdelning och Sentiment.",
-  Köpläge: "Köpsignalen baseras på tekniska faktorer: trend, momentum och marknadsläge. STARK = starka tekniska signaler. OK = neutralt. VÄNTA = avvakta.",
+  Köpläge: "Visar rankläge baserat på aktiens långsiktiga kvalitets-, tillväxt- och värderingsprofil (T1=Stark, T2=Bra, T3=Vänta). I MarketScan v2 separeras detta i Långsiktig Thesis och Kortsiktig Setup.",
   Trend: "Aktiens pristrend de senaste 3–6 månaderna. Upptrend = stigande mönster. Nedtrend = fallande. Sidled = utan tydlig riktning.",
   Börsvärde: "Aktiekursen multiplicerat med antalet aktier — hur mycket hela bolaget värderas till på börsen (normaliserat till USD).",
   "P/E": "Price/Earnings — aktiekursen delat med vinst per aktie (senaste 12 mån). Lägre = billigare relativt vinsten. Negativt = bolaget går med förlust.",

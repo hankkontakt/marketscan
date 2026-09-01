@@ -203,9 +203,45 @@ def _derive_segment(market_cap_usd: float | None, ticker: str | None = None) -> 
     return "micro_cap"
 
 
+def validate_scan_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Staging contract validator (Phase 0.2):
+    Validates scan dataframe before attempting DB insertion or COPY.
+    Rejects or cleans malformed rows and returns (cleaned_df, validation_warnings).
+    """
+    warnings = []
+    if df.empty:
+        return df, ["Dataframe is empty"]
+
+    cleaned = df.copy()
+    initial_count = len(cleaned)
+
+    # 1. Ticker must be non-empty string and not null
+    if "ticker" not in cleaned.columns:
+        raise ValueError("Missing required column: 'ticker'")
+
+    cleaned = cleaned[cleaned["ticker"].notna() & (cleaned["ticker"].astype(str).str.strip() != "")]
+    if len(cleaned) < initial_count:
+        dropped = initial_count - len(cleaned)
+        warnings.append(f"Dropped {dropped} rows with null/empty ticker")
+
+    # 2. Enforce valid segment values (large_cap, mid_cap, small_cap, micro_cap, unknown)
+    VALID_SEGMENTS = {"large_cap", "mid_cap", "small_cap", "micro_cap", "unknown"}
+    if "segment" in cleaned.columns:
+        invalid_segments = ~cleaned["segment"].isin(VALID_SEGMENTS)
+        if invalid_segments.any():
+            bad_count = invalid_segments.sum()
+            cleaned.loc[invalid_segments, "segment"] = "unknown"
+            warnings.append(f"Converted {bad_count} invalid segment rows to 'unknown'")
+
+    return cleaned, warnings
+
+
 def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
+    df, _ = validate_scan_dataframe(df)
     df = df.copy()
     df["scan_date"] = date.today().isoformat()
+
 
     # ROND 14 (P0): Always derive segment to guarantee segment integrity.
     # Stale/corrupt parquet segment values (e.g. null mc -> micro_cap) are overwritten with 'unknown' or 'large_cap'.

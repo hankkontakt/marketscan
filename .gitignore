@@ -22,7 +22,8 @@ venv/
 .pytest_cache/
 
 # Data (never commit market data)
-data/
+data/*
+!data/fixtures/
 *.parquet
 *.csv
 *.jsonl

@@ -15,10 +15,12 @@ from apps.api.core.config import settings
 _bearer = HTTPBearer(auto_error=False)
 
 
-def get_supabase() -> Client:
+def get_supabase() -> Client | None:
     """Public Supabase client (anon key, RLS enforced).
     Use only for fully public endpoints that need no user context.
     """
+    if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
+        return None
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
 
 

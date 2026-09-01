@@ -1,0 +1,134 @@
+{
+  "version": "1.0",
+  "created_at": "2026-09-01T18:00:00Z",
+  "description": "Masterplan Section 35 Benchmark stock regression cohort",
+  "cohort": [
+    {
+      "ticker": "2330.TW",
+      "name": "TSMC",
+      "expected_thesis": "STRONG",
+      "notes": "MR ~74 in v1 despite top quality/growth/analyst consensus. Long thesis should stay exceptional/strong, setup separate, high data grade."
+    },
+    {
+      "ticker": "6861.T",
+      "name": "Keyence",
+      "expected_thesis": "STRONG",
+      "notes": "High quality/value. No automatic 'Strong buy' label just because of rank tier; separate thesis and setup."
+    },
+    {
+      "ticker": "AOF.DE",
+      "name": "ATOSS Software",
+      "expected_thesis": "STRONG",
+      "notes": "Top smallcap, strong quality and analyst backing but premium valuation. Thesis strong, setup/risk governs timing."
+    },
+    {
+      "ticker": "HALO",
+      "name": "Halozyme Therapeutics",
+      "expected_thesis": "STRONG",
+      "notes": "High MR and strong trend after huge move. Strong thesis, but Setup=EXTENDED due to ATR extension."
+    },
+    {
+      "ticker": "PLTR",
+      "name": "Palantir",
+      "expected_thesis": "STRONG",
+      "notes": "High quality/growth/momentum, low value multiple, consensus near price. High thesis with visible valuation/expectation risk."
+    },
+    {
+      "ticker": "APP",
+      "name": "AppLovin",
+      "expected_thesis": "POSITIVE",
+      "notes": "High quality/value/growth fundamentals but sharp post-earnings drop. Strong long thesis with Setup=DAMAGED/PULLBACK."
+    },
+    {
+      "ticker": "GOOGL",
+      "name": "Alphabet",
+      "expected_thesis": "STRONG",
+      "notes": "Quality/value/growth strong. Thesis should not collapse due to short term momentum dip."
+    },
+    {
+      "ticker": "ASML.AS",
+      "name": "ASML",
+      "expected_thesis": "STRONG",
+      "notes": "High quality and analyst target upside. Thesis strong, setup evaluated separately."
+    },
+    {
+      "ticker": "BIOG-B.ST",
+      "name": "BioGaia",
+      "expected_thesis": "POSITIVE",
+      "notes": "High quality, target upside with sparse analyst count. Stable smallcap thesis; Street reliability medium."
+    },
+    {
+      "ticker": "MSAB-B.ST",
+      "name": "Micro Systemation",
+      "expected_thesis": "POSITIVE",
+      "notes": "#1 micro in v1, low analyst count, momentum 100. Should not over-rank purely on double-counted momentum."
+    },
+    {
+      "ticker": "TXT.WA",
+      "name": "Text S.A.",
+      "expected_thesis": "MIXED",
+      "notes": "v1 T1 'Strong buy' with declining revenue and trend down. v2 must NOT be Strong Buy. Thesis=MIXED/WEAK, Setup=DAMAGED."
+    },
+    {
+      "ticker": "PUUILO.HE",
+      "name": "Puuilo",
+      "expected_thesis": "POSITIVE",
+      "notes": "Solid smallcap, target upside ~0.6%, momentum high. Positive thesis, but visible valuation/exhaustion context."
+    },
+    {
+      "ticker": "HARVIA.HE",
+      "name": "Harvia",
+      "expected_thesis": "POSITIVE",
+      "notes": "Quality audit required. Generic sector normalization without named ticker branch."
+    },
+    {
+      "ticker": "NCAB.ST",
+      "name": "NCAB Group",
+      "expected_thesis": "MIXED",
+      "notes": "High growth, P/E ~55, quality_z ~37. Must not top thesis on momentum alone. Clear valuation/quality friction."
+    },
+    {
+      "ticker": "ASAN",
+      "name": "Asana",
+      "expected_thesis": "WEAK",
+      "notes": "Low quality, negative ROE, catalyst near 100 in v1 due to earnings date proximity. v2 removes proximity bonus; Thesis=WEAK, EventRisk=HIGH."
+    },
+    {
+      "ticker": "BOUV.OL",
+      "name": "Bouvet",
+      "expected_thesis": "MIXED",
+      "notes": "Growth ~10, high payout. Standalone dividend must not inflate thesis without growth."
+    },
+    {
+      "ticker": "OEM-B.ST",
+      "name": "OEM International",
+      "expected_thesis": "POSITIVE",
+      "notes": "Good operating growth, premium multiple, sparse analyst coverage. Middle/positive thesis."
+    },
+    {
+      "ticker": "DIOS.ST",
+      "name": "Diös Fastigheter",
+      "expected_thesis": "MIXED",
+      "notes": "Conflicting legacy trend vs trend_tech. Canonical Setup must be Damaged/Neutral; no dual truth."
+    },
+    {
+      "ticker": "AVGO",
+      "name": "Broadcom",
+      "expected_thesis": "STRONG",
+      "notes": "Catalyst ~98 in v1 from earnings proximity. v2 assigns EventRisk=HIGH without an artificial +5 MasterRank boost."
+    },
+    {
+      "ticker": "CPRX",
+      "name": "Catalyst Pharmaceuticals",
+      "expected_thesis": "INSUFFICIENT",
+      "expected_state": "DELISTED",
+      "notes": "Acquired security. Must be completely excluded from active screener and decision ranking."
+    },
+    {
+      "ticker": "SBB-B.ST",
+      "name": "Samhällsbyggnadsbolaget",
+      "expected_thesis": "WEAK",
+      "notes": "High debt, low quality, high dilution risk. Stays bottom/weak thesis."
+    }
+  ]
+}

@@ -76,22 +76,31 @@ def _fast_pipeline(report_dir: Path):
         logger.error("Loaded file is empty")
         return None
 
-    # 2. Update prices
+    # 2. Update prices for ALL tickers (paginated batch fetching)
     try:
         from core.data_fetcher import fetch_prices_only, update_scored_with_prices
-        tickers = [
+        all_tickers = [
             t for t in df["ticker"].dropna().unique().tolist()
             if not str(t).startswith("^")
-        ][:300]
-        logger.info("Fetching prices for %d tickers...", len(tickers))
-        price_data = fetch_prices_only(tickers, period="6mo", max_workers=12)
+        ]
+        logger.info("Fetching prices for full universe: %d tickers in chunks...", len(all_tickers))
+        price_data = {}
+        batch_size = 150
+        for i in range(0, len(all_tickers), batch_size):
+            batch = all_tickers[i:i + batch_size]
+            batch_prices = fetch_prices_only(batch, period="6mo", max_workers=12)
+            if batch_prices:
+                price_data.update(batch_prices)
+            logger.info("Progress: fetched %d/%d tickers", len(price_data), len(all_tickers))
+
         if price_data:
             df = update_scored_with_prices(df, price_data)
-            logger.info("Prices updated for %d tickers", len(price_data))
+            logger.info("Prices updated for %d/%d tickers", len(price_data), len(all_tickers))
         else:
             logger.warning("fetch_prices_only returned empty — using yesterday's prices")
     except Exception as exc:
         logger.warning("Price update failed (using stale prices): %s", exc)
+
 
     # 3. ML predictions — SKIPPED in fast pipeline.
     #    predict_returns_sector() fetches 1y of OHLCV history per ticker from

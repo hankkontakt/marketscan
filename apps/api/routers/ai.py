@@ -175,7 +175,20 @@ async def get_committee_analysis(
     if cached:
         return cached
 
-    context = _build_stock_context(ticker, body.stock_data)
+    # Phase 0.3 P0: Fetch canonical server-side data — request body cannot override canonical financial facts
+    canonical_data = dict(body.stock_data) if body.stock_data else {}
+    if sb is not None:
+        try:
+            res = sb.table("scan_results").select("*").eq("ticker", ticker).limit(1).execute()
+            if res.data and len(res.data) > 0:
+                canonical_row = res.data[0]
+                # Canonical server facts take absolute precedence
+                canonical_data.update(canonical_row)
+        except Exception as exc:
+            logger.debug("Server-side scan_results lookup skipped for %s: %s", ticker, exc)
+
+    context = _build_stock_context(ticker, canonical_data)
+
 
     # P2-4: return_exceptions=True so a single analyst timeout doesn't crash the whole committee
     results = await asyncio.gather(
