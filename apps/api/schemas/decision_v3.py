@@ -30,6 +30,12 @@ class DecisionProjectionV3(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     model_versions: dict[str, str] = Field(default_factory=dict)
     published_at: str
+    # Legacy-compat context joined into the published projection during the
+    # migration window (plan section 27: Kurs/Idag + segment columns).
+    name: str | None = None
+    segment: str | None = None
+    price: float | None = None
+    change_pct: float | None = None
 
 
 class ScreenerProjectionV3(BaseModel):
@@ -37,3 +43,14 @@ class ScreenerProjectionV3(BaseModel):
     as_of: str
     total_count: int
     rows: list[DecisionProjectionV3]
+
+
+class CurrentSnapshotV3(BaseModel):
+    current_snapshot_id: str | None = None
+    published_at: str | None = None
+    master_model_version: str | None = None
+    code_sha: str | None = None
+    manifest_count: int
+    actionable_count: int
+    excluded_count: int
+    quality_report: dict[str, Any] = Field(default_factory=dict)

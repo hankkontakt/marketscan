@@ -27,8 +27,8 @@
 | 4 — Likviditet/kalender/FX/events | ⬜ Ej påbörjad | |
 | 5 — Worker-pipeline + atomär publish | ✅ Lokal E2E (stage→publish→LAST_KNOWN_GOOD); 🟡 produktionsinkoppling via env-gate | `decision_publication.py` + E2E-bevis |
 | 6 — MasterRank/Setup/Risk vNext shadow | ⬜ Ej påbörjad | |
-| 7 — Decision API v3 | 🟡 Grund finns + flag-gate-test; TS-klient/kontraktstester saknas | `decisions_v3.py` + tester |
-| 8 — Core UI cutover | ⬜ Ej påbörjad | |
+| 7 — Decision API v3 | ✅ Komplett grund: screener/stock/history/evidence/changes/system-snapshot, flag-gates, TS-typer genererade från OpenAPI + sync-test | `decisions_v3.py` + `scripts/generate_v3_types.py` + tester |
+| 8 — Core UI cutover | 🟡 Screener V3 + aktie-Header bakom `NEXT_PUBLIC_DECISIONS_V3` (dual-render); resten av produktytorna (topplistor, briefing, compare, alert, portfölj…) kvar | `components/screener-v3/*`, `DecisionHeaderV3`, `lib/v3.ts` |
 | 9–12 — Produktflytt/AI/Research/Portfölj | ⬜ Ej påbörjad | |
 
 ## Avslutade enheter (bockas av löpande)
@@ -51,6 +51,34 @@
 - [x] **Lokal stack:** unika portar i `supabase/config.toml` (54331/54332/54333/54334/54337 —
       Budgetapp-stacken ligger på 54321–54327; filen är lokal/untracked). `supabase start` OK.
 - [x] **Lokal E2E:** reset genom 084 + seed → bootstrap → publish → alla gates gröna (nedan).
+
+## Slice 2 — Decision API v3 komplett + Screener/Stock UI-cutover (Phase 7 + 8-kärna)
+
+- [x] **085-migration:** `current_decisions_v3` utökad med name/segment/price/change_pct
+      (LEFT JOIN LATERAL mot senaste scan_results-raden, security_invoker kvar).
+- [x] **API:** `GET /api/v3/decisions/system/current-snapshot` (hälsoprojektion: pekare,
+      modellversion, manifest/actionable/excluded-räknare), stock-endpoint löser även
+      legacy-ticker-alias (inkl. lowercase), segment-filter i screener, alla routes
+      flag-gated och utan fallback-syntetik.
+- [x] **Kontrakt:** `scripts/generate_v3_types.py` genererar `apps/web/lib/types/decision_v3.ts`
+      från OpenAPI; `--check`-läge + pytest `test_v3_types_sync.py` = drift-gate.
+- [x] **Frontend:** `lib/v3.ts` (runtime-gate `NEXT_PUBLIC_DECISIONS_V3` + typad klient),
+      `components/screener-v3/*` (6-kolumnstabell enligt §27.1: Aktie/Thesis/Setup/Risk/Data/
+      Kurs-Idag, inga Köpläge-semantik, tradability-state explicit), screener-page gated,
+      `DecisionHeaderV3` (Thesis/Setup/Risk/Data-strip §28) i StockView ovanför VerdictHeader.
+- [x] **Live-smoke (lokal stack, flagga ON):** uvicorn mot lokal Supabase → screener 200
+      (sorterade rader), mid_cap-filter 200, tomt segment → explicit 404, stock VOLV-B.ST 200
+      (pris 287.4 från vyn), **stock CPRX 404** (ingen publicerad decision), lowercase-alias 200.
+
+## Slice 2 — testbevis
+
+- [x] API: `test_decision_v3_api.py` (10 tester inkl. enabled-sökvägar med fake-DB,
+      disabled 404, filter, ticker-alias, snapshot-räknare) + `test_v3_types_sync.py` → **9 passed**
+      (1 fail under arbete: `CurrentSnapshotV3` nullable-fält saknade default i Pydantic —
+      fixad, regenererad, omkörd grön).
+- [x] Frontend: `npx tsc --noEmit` ren; `vitest run lib/__tests__/v3.test.ts` 4/4;
+      `next build` OK (screener 10.7 kB).
+- [x] Worker-svit (slice 1): 29 passed (omkört oförändrat).
 
 ## Lokal E2E-bevis (2026-09-01, `supabase db reset --local` → manuell kedja)
 

@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, XCircle, Globe, Users, Building2, ChevronD
 import { useStock, usePriceHistory, useScoreHistory, useStockNews, useStockEarnings, usePiotroski, useSimilarStocks, useCompanyProfile, type SimilarStockItem, type CompanyProfile } from "@/hooks/useStock";
 import { useMarketIntelShorts, useMarketIntelQmjRank, useMarketIntelClusters, useMarketIntelMasterTicker } from "@/hooks/useMarketIntel";
 import { VerdictHeader } from "@/components/stock/VerdictHeader";
+import { DecisionHeaderV3 } from "@/components/stock/DecisionHeaderV3";
 import { VerdictCard } from "@/components/stock/VerdictCard";
 import { ExplainSection } from "@/components/stock/ExplainSection";
 import { MicroLesson } from "@/components/ui/MicroLesson";
@@ -187,6 +188,8 @@ export function StockView({ ticker }: Props) {
         <div className="-mx-8 -mt-6">
           {/* Sticky header block: VerdictHeader + tab bar as ONE sticky unit */}
           <div className="sticky top-0 z-30">
+            {/* V3 decision header (published snapshot; no-op when flag off) */}
+            <DecisionHeaderV3 ticker={ticker} />
             <VerdictHeader stock={stock} />
 
             {/* Level switcher — slim row between header and tab bar */}
