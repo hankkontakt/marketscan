@@ -42,7 +42,9 @@ export function ScreenerView() {
       const m = masterMap.get(row.ticker);
       return {
         ...row,
-        master_rank: m?.master_rank ?? null,
+        master_rank: m?.master_rank ?? row.master_rank ?? null,
+        master_rank_pctl: m?.master_rank_pctl ?? row.master_rank_pctl ?? null,
+        liquidity_grade: m?.liquidity_grade ?? row.liquidity_grade ?? null,
         master_tier: m?.tier ?? null,
         trend_tech: m?.trend_tech ?? null,
         analyst_flags: m?.analyst_flags ?? [],

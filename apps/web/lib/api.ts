@@ -161,6 +161,8 @@ export interface QmjRankItem {
 export interface MasterRankItem {
   ticker: string;
   master_rank: number | null;
+  master_rank_pctl: number | null;
+  liquidity_grade?: string | null;
   tier: string | null;                 // T1|T2|T3|T4|EXCLUDED
   quality_z: number | null;
   value_z: number | null;

@@ -28,8 +28,11 @@ export interface ScanRow {
   ml_rank: number | null;
   piotroski_f: number | null;
 
-  // MasterRank (ROND 8) — berikas från /market-intel/master/rank i ScreenerView
+  // MasterRank (ROND 8 / ROND 14) — berikas från /market-intel/master/rank i ScreenerView
   master_rank: number | null;
+  master_rank_pctl?: number | null;
+  liquidity_grade?: string | null;
+  turnover_20d_median?: number | null;
   master_tier: string | null;
   trend_tech: "Upptrend" | "Sidled" | "Nedtrend" | null;
   analyst_flags: string[];

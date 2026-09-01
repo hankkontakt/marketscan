@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, Droplet } from "lucide-react";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { cn } from "@/lib/utils";
 import {
@@ -24,7 +24,7 @@ interface Props {
   onReset?: () => void;
 }
 
-type SortKey = "master_rank" | "score_total" | "change_pct" | "price" | "market_cap" | "pe_trailing" | "roe";
+type SortKey = "master_rank" | "master_rank_pctl" | "score_total" | "change_pct" | "price" | "market_cap" | "pe_trailing" | "roe";
 type SortDir = "asc" | "desc";
 
 export function ResultTable({ data, loading, onReset }: Props) {
@@ -74,7 +74,7 @@ export function ResultTable({ data, loading, onReset }: Props) {
   return (
     <div className="rounded-xl overflow-hidden border border-[var(--color-border)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1150px] text-xs border-collapse whitespace-nowrap">
+        <table className="w-full min-w-[1200px] text-xs border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-[var(--color-bg-surface)]" style={{ borderBottom: "1px solid var(--color-border)" }}>
               <Th label="Aktie" width="220px" />
@@ -85,7 +85,16 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 sort={sort}
                 onSort={toggleSort}
                 tip="Kvantitativ faktormodell (0–100) kalibrerad per segment med datatäthets-tak och multi-faktor-regim"
-                width="90px"
+                width="85px"
+                align="right"
+              />
+              <Th
+                label="Pctl"
+                sortKey="master_rank_pctl"
+                sort={sort}
+                onSort={toggleSort}
+                tip="MasterRank-percentil (0–100) inom aktiens segment. Möjliggör direkt jämförelse mellan olika segment."
+                width="65px"
                 align="right"
               />
               <Th
@@ -94,7 +103,7 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 sort={sort}
                 onSort={toggleSort}
                 tip="Linjär sammanvägning av 8 delbetyg (0–100) från den breda scanning-motorn"
-                width="90px"
+                width="85px"
                 align="right"
               />
               <Th label="Köpläge" width="130px" />
@@ -167,8 +176,26 @@ export function ResultTable({ data, loading, onReset }: Props) {
                       </span>
                     )}
                     <div>
-                      <div className="font-semibold text-[var(--color-text-primary)] text-xs truncate max-w-36">
-                        {row.name}
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-[var(--color-text-primary)] text-xs truncate max-w-36">
+                          {row.name}
+                        </span>
+                        {row.liquidity_grade && row.liquidity_grade !== "unknown" && (
+                          <span
+                            className={cn(
+                              "px-1 py-0.2 rounded text-[10px] font-mono font-medium inline-flex items-center gap-0.5",
+                              row.liquidity_grade === "A" || row.liquidity_grade === "B"
+                                ? "bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
+                                : row.liquidity_grade === "C"
+                                ? "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
+                                : "bg-red-950/40 text-red-400 border border-red-800/40"
+                            )}
+                            title={`Likviditetsgrad ${row.liquidity_grade} (baserat på 20d medianomsättning mot segmentgolv)`}
+                          >
+                            <Droplet size={8} strokeWidth={1.5} />
+                            {row.liquidity_grade}
+                          </span>
+                        )}
                       </div>
                       <div className="font-mono text-[var(--color-text-muted)] text-[11px]">
                         {row.ticker}
@@ -185,6 +212,17 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 {/* MasterRank */}
                 <td className="px-4 py-3 text-right">
                   <MasterRankCell row={row} />
+                </td>
+
+                {/* Segment-Pctl */}
+                <td className="px-4 py-3 text-right tabular text-[var(--color-text-secondary)]">
+                  {row.master_rank_pctl != null ? (
+                    <span className="font-mono text-xs" title={`Percentil ${Math.round(row.master_rank_pctl)} i ${segmentLabel(row.segment)}`}>
+                      {Math.round(row.master_rank_pctl)}%
+                    </span>
+                  ) : (
+                    <span className="text-[var(--color-text-muted)]">—</span>
+                  )}
                 </td>
 
                 {/* Totalbetyg */}
@@ -296,6 +334,7 @@ export function ResultTable({ data, loading, onReset }: Props) {
 // U-8: Column header tooltips — explanations for each metric
 const COL_TIPS: Partial<Record<string, string>> = {
   MasterRank: "Kvantitativ faktormodell (0–100) kalibrerad per segment med datatäthets-tak och multi-faktor-regim. Till skillnad från Totalbetyg anpassas trösklarna för småbolag.",
+  Pctl: "MasterRank-percentil (0–100) inom aktiens storlekssegment. Möjliggör direkt jämförelse mellan olika segment.",
   Totalbetyg: "Linjär sammanvägning av 8 delbetyg (0–100) från den breda scanning-motorn: Värde, Kvalitet, Momentum, Tillväxt, Risk, Storlek, Utdelning och Sentiment.",
   Köpläge: "Köpsignalen baseras på tekniska faktorer: trend, momentum och marknadsläge. STARK = starka tekniska signaler. OK = neutralt. VÄNTA = avvakta.",
   Trend: "Aktiens pristrend de senaste 3–6 månaderna. Upptrend = stigande mönster. Nedtrend = fallande. Sidled = utan tydlig riktning.",
