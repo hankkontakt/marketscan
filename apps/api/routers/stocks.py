@@ -15,7 +15,7 @@ from apps.api.dependencies import get_supabase
 from apps.api.core.duckdb_r2 import query_score_history, query_price_history
 from apps.api.core.config import settings
 from apps.api.core.search_utils import safe_search
-from apps.api.core.segments import segment_from_finnhub_mcap, segment_from_market_cap
+from apps.api.core.segments import segment_from_finnhub_mcap
 from apps.api.schemas.scan import ScanRow
 
 logger = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
 
 
 @router.get("/{ticker}/profile")
-async def get_company_profile(ticker: str, sb=Depends(get_supabase)):
+def get_company_profile(ticker: str, sb=Depends(get_supabase)):
     """Company profile from yfinance: description, employees, website, 52-week range.
 
     Data is fetched by backend_worker/company_info_fetcher.py during weekly

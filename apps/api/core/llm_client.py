@@ -55,7 +55,7 @@ def _check_cache(cache_key: str, conn) -> Optional[dict]:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT response FROM ai_cache WHERE cache_key = %s AND created_at > NOW() - INTERVAL '30 days'",
+            "SELECT response_data FROM ai_cache WHERE cache_key = %s AND created_at > NOW() - INTERVAL '30 days'",
             (cache_key,),
         )
         row = cur.fetchone()
@@ -71,10 +71,10 @@ def _write_cache(cache_key: str, response: dict, conn):
     try:
         cur = conn.cursor()
         cur.execute(
-            """INSERT INTO ai_cache (cache_key, model, prompt, response, created_at)
-               VALUES (%s, %s, %s, %s, NOW())
+            """INSERT INTO ai_cache (cache_key, response_data, created_at)
+               VALUES (%s, %s, NOW())
                ON CONFLICT (cache_key) DO NOTHING""",
-            (cache_key, "llm_client", "", json.dumps(response)),
+            (cache_key, json.dumps(response)),
         )
         conn.commit()
     except Exception as e:

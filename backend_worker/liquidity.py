@@ -24,12 +24,7 @@ Flagga low_liquidity omdefinieras till: grade in ("D", "E", "F").
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import os
-import sys
-from datetime import date
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -190,7 +185,7 @@ def main():
     parser = argparse.ArgumentParser(description="Likviditetsmotor (grader A–F)")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit-tickers", type=int, default=0)
-    args = parser.parse_args()
+    _args = parser.parse_args()
 
     demo_cases = [
         ("SAP.DE", "large_cap", 500_000_000.0, "EUR", 150.0),

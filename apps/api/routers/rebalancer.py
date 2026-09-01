@@ -38,6 +38,27 @@ def _fetch_user_fund_holdings(sb, user_id: str) -> list[dict]:
     return []
 
 
+def _fetch_user_stock_holdings(sb, user_id: str) -> list[dict]:
+    """Fetch user stock holdings from portfolio_holdings, with fallback to holdings table."""
+    try:
+        res = sb.table("portfolio_holdings").select("*").eq("user_id", user_id).execute()
+        if res.data:
+            return res.data
+    except Exception as e:
+        logger.warning("Could not fetch portfolio_holdings: %s", e)
+
+    # Fallback to standard holdings via user's portfolio
+    try:
+        ports = sb.table("portfolios").select("id").eq("user_id", user_id).execute()
+        port_ids = [p["id"] for p in (ports.data or [])]
+        if port_ids:
+            res_h = sb.table("holdings").select("*").in_("portfolio_id", port_ids).execute()
+            return res_h.data or []
+    except Exception as e:
+        logger.warning("Could not fetch fallback holdings: %s", e)
+    return []
+
+
 @router.post("/plan")
 def create_rebalance_plan(
     body: RebalancePlanRequest,
@@ -50,12 +71,7 @@ def create_rebalance_plan(
 
     # Hämta från databasen om inte anroparen skickade med egna innehav
     if stock_holdings is None:
-        try:
-            res = sb.table("portfolio_holdings").select("*").eq("user_id", user.id).execute()
-            stock_holdings = res.data or []
-        except Exception as e:
-            logger.warning("Could not fetch portfolio_holdings: %s", e)
-            stock_holdings = []
+        stock_holdings = _fetch_user_stock_holdings(sb, user.id)
 
     if fund_holdings is None:
         fund_holdings = _fetch_user_fund_holdings(sb, user.id)
@@ -78,13 +94,7 @@ def get_rebalance_overview(
     sb=Depends(get_user_supabase),
 ):
     """Snabböversikt av aktuell fördelning mellan basfonder och aktier."""
-    try:
-        res = sb.table("portfolio_holdings").select("*").eq("user_id", user.id).execute()
-        stock_holdings = res.data or []
-    except Exception as e:
-        logger.warning("Could not fetch portfolio_holdings: %s", e)
-        stock_holdings = []
-
+    stock_holdings = _fetch_user_stock_holdings(sb, user.id)
     fund_holdings = _fetch_user_fund_holdings(sb, user.id)
 
     alloc = calculate_portfolio_allocation(stock_holdings, fund_holdings)

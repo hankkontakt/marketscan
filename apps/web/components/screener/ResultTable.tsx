@@ -48,9 +48,9 @@ export function ResultTable({ data, loading, onReset }: Props) {
     }));
   }
 
-  function openStock(ticker: string) {
+  const openStock = useCallback((ticker: string) => {
     router.push(`/aktie/${ticker}`);
-  }
+  }, [router]);
 
   // Keyboard navigation
   const onKeyDown = useCallback(
@@ -66,7 +66,7 @@ export function ResultTable({ data, loading, onReset }: Props) {
         setFocusedRow(Math.max(index - 1, 0));
       }
     },
-    [sorted.length],
+    [openStock, sorted.length],
   );
 
   if (loading) return <TableSkeleton />;

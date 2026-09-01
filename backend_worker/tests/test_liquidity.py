@@ -7,7 +7,6 @@ from backend_worker.liquidity import (
     turnover_to_sek,
     is_low_liquidity,
     FX_TO_SEK,
-    SEGMENT_FLOORS_SEK,
 )
 
 
@@ -24,8 +23,7 @@ class TestLiquidityEngine(unittest.TestCase):
         self.assertEqual(compute_liquidity_grade(float("nan"), "small_cap"), "unknown")
 
     def test_large_cap_grades(self):
-        # Large cap floor = 20M SEK
-        floor = SEGMENT_FLOORS_SEK["large_cap"]  # 20_000_000
+        # Large cap floor = 20M SEK (SEGMENT_FLOORS_SEK['large_cap'])
         # A: >= 20x floor = 400M
         self.assertEqual(compute_liquidity_grade(450_000_000, "large_cap"), "A")
         # B: >= 5x floor = 100M

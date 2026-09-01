@@ -1,6 +1,5 @@
 """Tests for segment classification, unit guards, and downstream consumer safety."""
 import unittest
-import pandas as pd
 from apps.api.core.segments import (
     segment_from_market_cap,
     segment_from_finnhub_mcap,

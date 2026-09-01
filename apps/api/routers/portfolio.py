@@ -735,7 +735,7 @@ def construct_portfolio(
         )
         if not HAS_NUMPY_SCIPY:
             raise ImportError("NumPy/SciPy saknas i denna serverless-miljö")
-    except (ImportError, NotImplementedError) as e:
+    except (ImportError, NotImplementedError):
         raise HTTPException(
             status.HTTP_501_NOT_IMPLEMENTED,
             "Portföljkonstruktion (Black-Litterman/ERC) kräver numeriska bibliotek som inte är aktiverade i denna serverless-miljö.",

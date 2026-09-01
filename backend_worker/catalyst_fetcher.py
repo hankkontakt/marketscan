@@ -181,10 +181,30 @@ def main() -> None:
 
     if args.dry_run:
         today = date.today()
-        snaps = [{"ticker": "SEB-A.ST", "event_date": today + timedelta(days=12), "confidence": "medium"},
-                 {"ticker": "NOKIA.HE", "event_date": today + timedelta(days=5), "confidence": "high"}]
+        snaps = [
+            {"ticker": "SEB-A.ST", "event_date": today + timedelta(days=12), "confidence": "medium"},
+            {"ticker": "NOKIA.HE", "event_date": today + timedelta(days=5), "confidence": "high"},
+        ]
         divs = [{"ticker": "VOLV-B.ST", "yield_pct": 3.8}]
-        events = build_events(snaps, divs, today)
+        events = []
+        for s in snaps:
+            d = s["event_date"]
+            events.append({
+                "ticker": s["ticker"],
+                "event_type": "earnings",
+                "event_date": d,
+                "days_until": days_until(d, today),
+                "confidence": s.get("confidence", "high"),
+            })
+        for d in divs:
+            approx = today.replace(day=15) + timedelta(days=32)
+            events.append({
+                "ticker": d["ticker"],
+                "event_type": "dividend_ex",
+                "event_date": approx,
+                "days_until": days_until(approx, today),
+                "confidence": "low",
+            })
         for e in events:
             print(e)
         print("catalyst_z =", catalyst_z(events, today), "boost =", catalyst_boost(events, today))

@@ -45,7 +45,7 @@ function PortfolioHero() {
   const { data: funds = [],  isLoading: loadingFunds }    = useFundHoldings();
   const { data: history,     isLoading: loadingHistory }  = usePortfolioHistory();
 
-  const holdings = portfolio?.holdings ?? [];
+  const holdings = useMemo(() => portfolio?.holdings ?? [], [portfolio?.holdings]);
 
   const stockValue = useMemo(
     () => holdings.reduce((s, h) => s + h.shares * (h.price ?? 0), 0),

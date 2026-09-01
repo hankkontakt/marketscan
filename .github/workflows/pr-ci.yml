@@ -71,3 +71,19 @@ jobs:
       - run: npm ci
       - run: npm run type-check
       - run: npm test -- --run
+
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r backend_worker/requirements.txt
+          pip install pytest pytest-mock
+      - name: Run Python tests
+        run: pytest apps/api/tests backend_worker/tests -o addopts=""

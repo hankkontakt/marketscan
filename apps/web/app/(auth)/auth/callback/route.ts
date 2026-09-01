@@ -5,7 +5,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const type = searchParams.get("type");
-  const next = searchParams.get("next") ?? (type === "recovery" ? "/installningar?tab=losenord" : "/oversikt");
+  const rawNext = searchParams.get("next");
+  const defaultNext = type === "recovery" ? "/installningar?tab=losenord" : "/oversikt";
+  // Säkra mot Open Redirect: måste börja med / och inte // eller /\
+  const isSafePath = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.startsWith("/\\");
+  const next = isSafePath ? rawNext : defaultNext;
 
   if (!code) {
     return NextResponse.redirect(new URL("/login?error=auth_callback", request.url));
