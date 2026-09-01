@@ -92,7 +92,7 @@ Alla endpoints är registrerade i `apps/api/main.py`:
 | `smallcap.py` | `/api/smallcap` | `""`, `/sectors` (MEWS- och småbolagsscreening) | `get_supabase` |
 | `snapshots.py` | `/api/snapshots` | `""`, `/capture`, `/latest` | `get_current_user` |
 | `stocks.py` | `/api/stocks` | `""`, `/search`, `/{ticker}`, `/{ticker}/similar`, `/{ticker}/financials` | `get_supabase` |
-| `strategy_lab.py` | `/api/strategies`, `/api/signal-analytics` | `/api/strategies`, `/api/strategies/{id}/run`, `/api/signal-analytics` | `get_current_user` |
+| `strategy_lab.py` | `/api/strategies`, `/api/signal-analytics`, `/api/strategy-lab` | `/api/strategies`, `/api/strategies/{id}/run`, `/api/signal-analytics`, `/api/strategy-lab/barbell-optimize` | `get_current_user` |
 | `tracking.py` | `/api/tracking` | `/pageview`, `/event`, `/session` | `get_optional_user` |
 | `transactions.py`| `/api/transactions` | `""`, `/{transaction_id}` | `get_current_user` |
 | `watchlist.py` | `/api/watchlist` | `""`, `/{ticker}` | `get_current_user` |

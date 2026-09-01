@@ -11,6 +11,12 @@ import os
 import sys
 import json
 
+if sys.stdout.encoding != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # Allow running from project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,7 +32,7 @@ RESET = "\033[0m"
 
 
 def check(name: str, ok: bool, detail: str = ""):
-    icon = f"{GREEN}✓{RESET}" if ok else f"{RED}✗{RESET}"
+    icon = f"{GREEN}[OK]{RESET}" if ok else f"{RED}[FAIL]{RESET}"
     status = f"{GREEN}OK{RESET}" if ok else f"{RED}FAIL{RESET}"
     detail_str = f" — {detail}" if detail else ""
     print(f"  {icon} {status}  {name}{detail_str}")

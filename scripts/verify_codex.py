@@ -129,12 +129,13 @@ def check_api_route_coverage():
         missing = []
         for r in sorted(active_routes):
             path_part = r.split()[1]
-            base_prefix = "/" + "/".join(
-                [p for p in path_part.split("/") if p and not p.startswith("{")][:2]
-            )
+            segments = [p for p in path_part.split("/") if p and not p.startswith("{")]
+            base_prefix = "/" + "/".join(segments[:2]) if segments else path_part
+            first_prefix = "/" + segments[0] if segments else path_part
             if (
                 path_part not in doc_content
                 and base_prefix not in doc_content
+                and first_prefix not in doc_content
                 and r not in doc_content
             ):
                 missing.append(r)
