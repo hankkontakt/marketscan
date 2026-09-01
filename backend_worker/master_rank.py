@@ -429,10 +429,67 @@ def fuse(row: dict, weights: dict) -> dict:
     qz_val = row.get("quality_z")
     gz_val = row.get("growth_z")
     pz_val = row.get("payout_z")
+    vz_val = row.get("value_z")
     effective_row = dict(row)
     if qz_val and gz_val and float(qz_val) >= 75.0 and float(gz_val) >= 65.0:
         if pz_val is not None and float(pz_val) < 50.0:
             effective_row["payout_z"] = 50.0  # Neutral utdelningspåverkan för compounders
+
+    # Street-Paritet Korrigeringar (R15):
+    # 1. Intäktsförfall (S1/BMY Bristol Myers Squibb):
+    # Negativ intäktstillväxt parat med vinstspike (>50%) indikerar engångsvinster/patentklipp.
+    rev_g = row.get("revenue_growth")
+    earn_g = row.get("earnings_growth")
+    if rev_g is not None and earn_g is not None:
+        try:
+            rev_g_f = float(rev_g)
+            earn_g_f = float(earn_g)
+            rev_ratio = rev_g_f / 100.0 if abs(rev_g_f) > 5.0 else rev_g_f
+            earn_ratio = earn_g_f / 100.0 if abs(earn_g_f) > 5.0 else earn_g_f
+            if rev_ratio < 0.0 and earn_ratio > 0.50:
+                gz_curr = effective_row.get("growth_z")
+                if gz_curr is not None:
+                    effective_row["growth_z"] = min(float(gz_curr), 45.0)
+                missing.append("earnings_spike_watch")
+        except (TypeError, ValueError):
+            pass
+
+    # 2. Value-trap-guard (S1/Olympus, S2/Text S.A., FPG):
+    # Mycket hög värderingsscore (≥85) vid fallande intäkter dämpas till 65.0.
+    if vz_val is not None and float(vz_val) >= 85.0 and rev_g is not None:
+        try:
+            rev_g_f = float(rev_g)
+            rev_ratio = rev_g_f / 100.0 if abs(rev_g_f) > 5.0 else rev_g_f
+            if rev_ratio < 0.0:
+                effective_row["value_z"] = min(float(vz_val), 65.0)
+                missing.append("value_trap_watch")
+        except (TypeError, ValueError):
+            pass
+
+    # 3. Cykeltopp-justering (S1/MU Micron Technology):
+    # Minneschip och cykliska råvarubolag har ofta topp-ROE (>50% eller sektor-p90+) och
+    # låg forward P/E (<10) vid cykeltoppen precis innan vinstkollaps. Detta ska dämpas
+    # och inte belönas som en "billig compounder".
+    pe_f = row.get("pe_forward")
+    roe_raw_val = row.get("roe_raw") or row.get("roe")
+    is_cycle_peak = bool(row.get("cycle_peak"))
+    if not is_cycle_peak and pe_f is not None and roe_raw_val is not None:
+        try:
+            pe_f_val = float(pe_f)
+            roe_val = float(roe_raw_val)
+            roe_ratio = roe_val / 100.0 if roe_val > 5.0 else roe_val
+            if pe_f_val > 0 and pe_f_val < 10.0 and roe_ratio > 0.50:
+                is_cycle_peak = True
+        except (TypeError, ValueError):
+            pass
+    if is_cycle_peak:
+        qz_curr = effective_row.get("quality_z")
+        if qz_curr is not None:
+            effective_row["quality_z"] = min(float(qz_curr), 75.0)
+        vz_curr = effective_row.get("value_z")
+        if vz_curr is not None and float(vz_curr) > 65.0:
+            effective_row["value_z"] = 65.0
+        missing.append("cycle_peak")
 
     for b in blocks:
         v = effective_row.get(f"{b}_z")
@@ -472,18 +529,39 @@ def fuse(row: dict, weights: dict) -> dict:
     if boost > 0.0 and rank is not None:
         rank = _clip100(rank + float(boost))
 
-    # QARP Synergy (Quality at a Reasonable Price):
-    # När hög kvalitet (≥70) samverkar med stark framåtblickande värdering
-    qz = row.get("quality_z")
-    vz = row.get("value_z")
-    gz = row.get("growth_z")
-    az_val = row.get("analyst_z")
-    v_flags = row.get("val_flags", [])
-    if rank is not None and qz is not None and (vz is not None or "CHEAP_PEG" in v_flags):
+    # QARP Synergy (Quality at a Reasonable Price) & QARP Relief (S2/ATOSS):
+    # När hög kvalitet (≥70) samverkar med stark framåtblickande värdering.
+    # För exceptionella compounders (Quality ≥85, ROE ≥40%, PEG ≤3) dämpas value-straffet i synergin.
+    qz = effective_row.get("quality_z")
+    vz = effective_row.get("value_z")
+    gz = effective_row.get("growth_z")
+    az_val = effective_row.get("analyst_z")
+    v_flags = effective_row.get("val_flags", [])
+
+    peg_val = effective_row.get("peg")
+    if peg_val is None and effective_row.get("pe_forward") is not None and effective_row.get("revenue_growth") is not None:
+        peg_val = compute_peg(effective_row.get("pe_forward"), effective_row.get("revenue_growth"))
+
+    is_qarp_relief = False
+    if qz is not None and float(qz) >= 85.0 and roe_raw_val is not None:
+        try:
+            roe_val = float(roe_raw_val)
+            roe_ratio = roe_val / 100.0 if roe_val > 5.0 else roe_val
+            if roe_ratio >= 0.40 and (peg_val is not None and float(peg_val) <= 3.0):
+                is_qarp_relief = True
+                missing.append("qarp_relief")
+        except (TypeError, ValueError):
+            pass
+
+    if rank is not None and qz is not None and (vz is not None or "CHEAP_PEG" in v_flags or is_qarp_relief):
         qz_f = float(qz)
         vz_f = float(vz) if vz is not None else 65.0
-        if qz_f >= 70.0 and (vz_f >= 65.0 or "CHEAP_PEG" in v_flags):
+        if is_qarp_relief:
+            vz_f = max(vz_f, 50.0)
+        if qz_f >= 70.0 and (vz_f >= 65.0 or "CHEAP_PEG" in v_flags or (is_qarp_relief and vz_f >= 50.0)):
             qarp_bonus = min(5.0, ((qz_f - 70.0) / 30.0 + (vz_f - 65.0) / 35.0) * 2.5 + 2.0)
+            if is_qarp_relief:
+                qarp_bonus = max(qarp_bonus, 2.0)
             rank = _clip100(rank + qarp_bonus)
 
     # Elite Compounder Moat Synergy:
@@ -762,17 +840,19 @@ def load_inputs(cur, today: date) -> list[dict]:
     cur.execute("""
         SELECT ticker, score_total, score_quality, score_momentum, score_growth,
                score_value, score_dividend, price, pe_trailing, pe_forward, revenue_growth,
-               market_cap, sector, dividend_yield, piotroski_f, entry_signal, segment
+               market_cap, sector, dividend_yield, piotroski_f, entry_signal, segment,
+               roe_raw, earnings_growth, gross_margin
         FROM scan_results
     """)
     scan = {}
-    for (ticker, st, sq, sm, sg, sv, sdiv, price, pe_t, pe_f, rev_g, mcap, sector, div_y, piot, esig, segment) in cur.fetchall():
+    for (ticker, st, sq, sm, sg, sv, sdiv, price, pe_t, pe_f, rev_g, mcap, sector, div_y, piot, esig, segment, roe_r, earn_g, gm) in cur.fetchall():
         scan[ticker] = {"score_total": st, "score_quality": sq, "score_momentum": sm,
                         "score_growth": sg, "score_value": sv, "score_dividend": sdiv,
                         "price": price, "pe_trailing": pe_t, "pe_forward": pe_f,
                         "revenue_growth": rev_g, "market_cap": mcap, "sector": sector,
                         "dividend_yield": div_y, "piotroski_f": piot, "entry_signal": esig,
-                        "segment": segment}
+                        "segment": segment, "roe_raw": roe_r, "earnings_growth": earn_g,
+                        "gross_margin": gm}
 
     cur.execute("""
         SELECT ticker, quality_z, momentum_z, value_z, payout_z, insider_z,
@@ -864,8 +944,9 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             peers_by_sector.setdefault(sec, []).append(float(pe))
 
     # ROND 9 + ROND 14: sektor-neutral & segment×sektor z-score-maps (D3)
-    sector_maps = build_sector_z_maps(scan, ["pe_trailing"])
-    seg_sector_maps = build_seg_sector_z_maps(scan, ["pe_trailing"])
+    # ROND 9 + ROND 14 + R15: sektor-neutral & segment×sektor z-score-maps (D3, S1)
+    sector_maps = build_sector_z_maps(scan, ["pe_trailing", "roe_raw", "gross_margin"])
+    seg_sector_maps = build_seg_sector_z_maps(scan, ["pe_trailing", "roe_raw", "gross_margin"])
 
     # Smallcap Runway & Dilution Shield data wiring (F8)
     smallcap_data: dict[str, dict] = {}
@@ -1022,6 +1103,25 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         if pz is None:
             pz = s["score_dividend"]   # utdelningsscore som payout-proxy
 
+        roe_raw_val = s.get("roe_raw")
+        gm_val = s.get("gross_margin")
+        is_cycle_peak = False
+        if sector and sector in sector_maps.get("roe_raw", {}):
+            peers_roe = sector_maps["roe_raw"][sector]
+            if len(peers_roe) >= 5 and roe_raw_val is not None:
+                p90 = float(np.percentile(peers_roe, 90))
+                if float(roe_raw_val) >= p90 and pe_f is not None and float(pe_f) < 15.0:
+                    is_cycle_peak = True
+        if pe_f is not None and roe_raw_val is not None:
+            try:
+                pe_f_val = float(pe_f)
+                roe_f = float(roe_raw_val)
+                roe_ratio = roe_f / 100.0 if roe_f > 5.0 else roe_f
+                if pe_f_val > 0 and pe_f_val < 10.0 and roe_ratio > 0.50:
+                    is_cycle_peak = True
+            except (TypeError, ValueError):
+                pass
+
         sc_info = smallcap_data.get(t, {})
         values.append({
             "ticker": t,
@@ -1058,6 +1158,12 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             "cash_runway_months": sc_info.get("cash_runway_months") or s.get("cash_runway_months"),
             "insider_buying": sc_info.get("insider_buying") or s.get("insider_buying"),
             "liquidity_grade": s.get("liquidity_grade"),
+            "cycle_peak": is_cycle_peak,
+            "pe_forward": pe_f,
+            "revenue_growth": rev_g,
+            "earnings_growth": s.get("earnings_growth"),
+            "roe_raw": roe_raw_val,
+            "gross_margin": gm_val,
             # ROND 11: valutafallback — analyst-currency saknas för många tickers
             # (PETR4/2914.T/7733.T); suffix-map ger korrekt BRL/JPY/... istället för USD.
             "currency": currency_for(t, a.get("currency")),
@@ -1086,7 +1192,7 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
         try:
             cur.execute("""
                 INSERT INTO master_rank (
-                    ticker, scan_date, master_rank, tier,
+                    ticker, scan_date, master_rank, master_rank_pctl, tier,
                     quality_z, value_z, momentum_z, analyst_z, tech_z, insider_z,
                     catalyst_z, payout_z, growth_z,
                     val_hist_z, val_peers_z, val_abs_z, val_flags,
@@ -1095,11 +1201,12 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                     trend_tech, tech_flags,
                     catalyst_next, catalyst_days, pit_status, pit_reason,
                     exclusion_reason, warning_flags, data_missing, currency, insider_source
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                           %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                           %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ticker, scan_date) DO UPDATE SET
                     master_rank = EXCLUDED.master_rank,
+                    master_rank_pctl = EXCLUDED.master_rank_pctl,
                     tier = EXCLUDED.tier,
                     quality_z = EXCLUDED.quality_z,
                     value_z = EXCLUDED.value_z,
@@ -1133,7 +1240,7 @@ def upsert_master(cur, table: list[dict], today: date, scan: dict) -> int:
                     currency = EXCLUDED.currency,
                     insider_source = EXCLUDED.insider_source
             """, (t, today.isoformat(),
-                  r.get("master_rank"), r.get("tier"),
+                  r.get("master_rank"), r.get("master_rank_pctl"), r.get("tier"),
                   r.get("quality_z"), r.get("value_z"), r.get("momentum_z"),
                   r.get("analyst_z"), r.get("tech_z"), r.get("insider_z"), r.get("catalyst_z"),
                   r.get("payout_z"), r.get("growth_z"),

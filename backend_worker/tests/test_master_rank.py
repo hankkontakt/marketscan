@@ -617,6 +617,106 @@ class TestMasterRank2Upgrades(unittest.TestCase):
         self.assertIn("weights", merged)
 
 
+class TestMasterRankR15StreetParity(unittest.TestCase):
+    def test_bmy_revenue_decline_earnings_spike_guard(self):
+        """BMY-fall: intäkter faller (-3%) medan vinst rusar (+137%) pga engångseffekter -> earnings_spike_watch & growth_z <= 45."""
+        bmy_row = {
+            "ticker": "BMY", "segment": "large_cap",
+            "quality_z": 75.0, "value_z": 60.0, "momentum_z": 55.0,
+            "analyst_z": 50.0, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 60.0,
+            "growth_z": 78.0, "revenue_growth": -0.03, "earnings_growth": 1.37,
+            "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(bmy_row, WEIGHTS)
+        self.assertIn("earnings_spike_watch", f["data_missing"])
+        # Check against baseline with growth_z=45
+        bmy_baseline = dict(bmy_row)
+        bmy_baseline["growth_z"] = 45.0
+        f_base = mr.fuse(bmy_baseline, WEIGHTS)
+        self.assertEqual(f["master_rank"], f_base["master_rank"])
+
+    def test_text_olympus_value_trap_guard(self):
+        """Value trap (Olympus/Text S.A.): value_z >= 85 parat med negativ tillväxt -> value_trap_watch & value_z <= 65."""
+        trap_row = {
+            "ticker": "TXT.WA", "segment": "small_cap",
+            "quality_z": 70.0, "value_z": 92.0, "momentum_z": 45.0,
+            "analyst_z": 50.0, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 80.0, "growth_z": 40.0,
+            "revenue_growth": -0.05, "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(trap_row, WEIGHTS)
+        self.assertIn("value_trap_watch", f["data_missing"])
+        # With value_z dampened to 65, master_rank is bounded
+        trap_baseline = dict(trap_row)
+        trap_baseline["value_z"] = 65.0
+        f_base = mr.fuse(trap_baseline, WEIGHTS)
+        self.assertEqual(f["master_rank"], f_base["master_rank"])
+
+    def test_atoss_qarp_relief(self):
+        """ATOSS-fall: exceptionell kvalitet (Quality 89, ROE 66%, PEG <= 3) -> qarp_relief ger synergibonus."""
+        atoss_row = {
+            "ticker": "AOF.DE", "segment": "small_cap",
+            "quality_z": 89.0, "value_z": 22.0, "momentum_z": 60.0,
+            "analyst_z": 43.5, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 65.0, "growth_z": 55.0,
+            "roe_raw": 0.66, "pe_forward": 26.6, "revenue_growth": 0.13,
+            "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(atoss_row, WEIGHTS)
+        self.assertIn("qarp_relief", f["data_missing"])
+        # Without relief (e.g. roe_raw not provided), rank would be lower
+        atoss_no_relief = dict(atoss_row)
+        atoss_no_relief["roe_raw"] = None
+        f_no_relief = mr.fuse(atoss_no_relief, WEIGHTS)
+        self.assertGreater(f["master_rank"], f_no_relief["master_rank"])
+
+    def test_mu_cycle_peak_moderation(self):
+        """MU-fall: cykeltopp med ROE > 50% och låg forward P/E (<10) -> cycle_peak dämpar quality och neutraliserar value-bonus."""
+        mu_row = {
+            "ticker": "MU", "segment": "large_cap",
+            "quality_z": 96.0, "value_z": 88.0, "momentum_z": 75.0,
+            "analyst_z": 75.0, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 50.0, "growth_z": 75.0,
+            "pe_forward": 8.5, "roe_raw": 0.67,
+            "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(mu_row, WEIGHTS)
+        self.assertIn("cycle_peak", f["data_missing"])
+        # Quality capped to 75 and value to 65
+        mu_baseline = dict(mu_row)
+        mu_baseline["quality_z"] = 75.0
+        mu_baseline["value_z"] = 65.0
+        f_base = mr.fuse(mu_baseline, WEIGHTS)
+        self.assertEqual(f["master_rank"], f_base["master_rank"])
+
+    def test_upsert_master_sql_contains_pctl(self):
+        """Verifiera att upsert_master inkluderar master_rank_pctl i SQL och bindings."""
+        executed_sqls = []
+        executed_params = []
+
+        class MockCursor:
+            def execute(self, sql, params=None):
+                executed_sqls.append(sql)
+                executed_params.append(params)
+
+        cur = MockCursor()
+        table = [{
+            "ticker": "AOF.DE", "master_rank": 52.0, "master_rank_pctl": 88.5,
+            "tier": "T2", "quality_z": 89.0, "value_z": 22.0, "momentum_z": 60.0,
+            "analyst_z": 43.5, "tech_z": 50.0, "insider_z": 50.0, "catalyst_z": 50.0,
+            "payout_z": 65.0, "growth_z": 55.0, "val_hist_z": None, "val_peers_z": None,
+            "val_abs_z": None, "val_flags": [], "analyst_upside": 19.3, "analyst_count": 8,
+            "analyst_flags": [], "rsi_14": 55.0, "ma50_dist_pct": 2.0, "ma200_dist_pct": 5.0,
+            "dist_52w_high_pct": -5.0, "trend_tech": "Upptrend", "tech_flags": [],
+            "catalyst_next": None, "catalyst_days": None, "pit_status": "READY",
+            "pit_reason": "", "exclusion_reason": None, "data_missing": "[]",
+            "currency": "EUR", "insider_source": "proxy", "entry_signal": "OK"
+        }]
+        written = mr.upsert_master(cur, table, date.today(), {})
+        self.assertEqual(written, 1)
+        self.assertIn("master_rank_pctl", executed_sqls[0])
+        self.assertIn("EXCLUDED.master_rank_pctl", executed_sqls[0])
+        self.assertEqual(executed_params[0][2], 52.0)    # master_rank
+        self.assertEqual(executed_params[0][3], 88.5)    # master_rank_pctl
+
+
 if __name__ == "__main__":
     unittest.main()
 
