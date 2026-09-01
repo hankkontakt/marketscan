@@ -25,7 +25,7 @@
 | Smoke-test | `python scripts/smoke_test.py` |
 | Codex-validerare | `python scripts/verify_codex.py` |
 | Frontend API-klient | `apps/web/lib/api.ts` |
-| Migrationer (körs manuellt) | `supabase/migrations/` |
+| Migrationer | `supabase/migrations/` (appliceras direkt med `supabase db push --linked`) |
 
 ## Verifiera före commit
 ```bash

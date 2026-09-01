@@ -215,8 +215,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON my_table TO authenticated;
 ```
 - **Publik läs-tabell:** `FOR SELECT USING (true)` + `GRANT SELECT … TO anon`.
 - **Backend-only:** RLS på, ingen policy → endast service_role kommer åt.
-- Lägg in tabellen i `apps/api/core/diagnostics.py` (`USER_TABLES`/`MIGRATION_MARKERS`).
-- Migrationen körs **manuellt** i Supabase SQL Editor. Säg till användaren.
+- Migrationen appliceras **direkt** med `supabase db push --linked`. Lämna inte migreringar eller fixar manuellt till användaren om de kan lösas direkt.
 
 ### 6.3 Lägg till en frontend-sida/data
 1. Backend-endpoint klart (6.1).

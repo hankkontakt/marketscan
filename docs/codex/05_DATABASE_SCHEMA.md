@@ -70,8 +70,8 @@ MarketScan använder Supabase Postgres i region `eu-north-1` (Stockholm). Databa
 
 1. **Session Pooler (Port 6543):**
    - **MÅSTE användas i produktion** för `DATABASE_URL` på grund av Vercels serverless arkitektur. Varje serverless request kan skapa en ny anslutning, vilket gör att PgBouncer/Supabase Pooler krävs för att inte spräcka Postgres max-connections.
-2. **Direct Connection (Port 5432):**
-   - Används endast för manuella SQL-migrationer i Supabase Dashboard SQL Editor eller tunga batch-skript utanför Vercel.
+2. **Direct Connection & CLI Migrations:**
+   - Migrationer appliceras direkt via `supabase db push --linked` med Supabase CLI. Direct connection (Port 5432) används för tunga batch-skript och migrationskörningar.
 
 ---
 
