@@ -177,6 +177,11 @@ def val_abs_z(pe_forward: Optional[float], revenue_growth: Optional[float],
       belönas framåtblickande värdering.
     - Finansiella sektorer (bank/försäkring) slipper irrelevant EV/EBITDA-straff.
     """
+    pe_forward = _fmt_f(pe_forward)
+    revenue_growth = _fmt_f(revenue_growth)
+    ev_ebitda = _fmt_f(ev_ebitda)
+    value_z_qmj = _fmt_f(value_z_qmj)
+    pe_trailing = _fmt_f(pe_trailing)
     comps: list[float] = []
 
     # 1. PEG-komponent
@@ -988,10 +993,10 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         evs = cat_map.get(t, [])
         tech = tech_cache.get(t, {})
 
-        pe_t = s["pe_trailing"]
-        pe_f = s["pe_forward"]
-        rev_g = s["revenue_growth"]
-        sector = s["sector"]
+        pe_t = _fmt_f(s.get("pe_trailing"))
+        pe_f = _fmt_f(s.get("pe_forward"))
+        rev_g = _fmt_f(s.get("revenue_growth"))
+        sector = s.get("sector")
         segment = s.get("segment")
 
         val_h = val_hist_z(pe_t, pe_hist.get(t, []))
