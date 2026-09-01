@@ -103,6 +103,24 @@ class TestRawPreservation(unittest.TestCase):
         self.assertEqual(db_loader._derive_segment(65_000_000_000), "large_cap")   # GSK.L $65B
         self.assertEqual(db_loader._derive_segment(220_000_000_000), "large_cap")  # SAP.DE $220B
 
+    def test_segment_integrity_guards(self):
+        """Saknat eller icke-positivt mc ska ge unknown (om ej känd large cap)."""
+        self.assertEqual(db_loader._derive_segment(None), "unknown")
+        self.assertEqual(db_loader._derive_segment(None, ticker="XYZ.ST"), "unknown")
+        self.assertEqual(db_loader._derive_segment(-500.0), "unknown")
+        self.assertEqual(db_loader._derive_segment(0.0), "unknown")
+        # Kända storbolag ska alltid ge large_cap även vid null mc
+        self.assertEqual(db_loader._derive_segment(None, ticker="SAP.DE"), "large_cap")
+        self.assertEqual(db_loader._derive_segment(None, ticker="EQNR.OL"), "large_cap")
+        # Standardtrösklar
+        self.assertEqual(db_loader._derive_segment(15_000_000_000), "large_cap")
+        self.assertEqual(db_loader._derive_segment(5_000_000_000), "mid_cap")
+        self.assertEqual(db_loader._derive_segment(500_000_000), "small_cap")
+        self.assertEqual(db_loader._derive_segment(50_000_000), "micro_cap")
+        # Miljonskaling: 50 -> 50_000_000 -> micro_cap, 500 -> 500_000_000 -> small_cap
+        self.assertEqual(db_loader._derive_segment(50), "micro_cap")
+        self.assertEqual(db_loader._derive_segment(500), "small_cap")
+
 
 class TestBackfillRoeModule(unittest.TestCase):
     def test_import_backfill_module(self):

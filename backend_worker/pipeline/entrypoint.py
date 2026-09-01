@@ -26,12 +26,14 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _segment_from_market_cap(market_cap_millions: float | None) -> str:
+def _segment_from_market_cap(market_cap_millions: float | None, ticker: str | None = None) -> str:
     """Determine segment from Finnhub marketCapitalization (in USD millions)."""
+    from backend_worker.db_loader import _derive_segment, KNOWN_LARGE_CAPS
     if market_cap_millions is None or market_cap_millions <= 0:
+        if ticker and ticker in KNOWN_LARGE_CAPS:
+            return "large_cap"
         return "unknown"
-    from backend_worker.db_loader import _derive_segment
-    return _derive_segment(float(market_cap_millions) * 1_000_000)
+    return _derive_segment(float(market_cap_millions) * 1_000_000, ticker=ticker)
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +227,7 @@ def supplement_user_requested_tickers(dsn: str) -> None:
                 market_cap = profile.get("marketCapitalization")
                 price      = quote.get("c")
                 change_pct = quote.get("dp")
-                segment    = _segment_from_market_cap(market_cap)
+                segment    = _segment_from_market_cap(market_cap, ticker=ticker)
 
                 if not price and not profile.get("name"):
                     logger.warning("Finnhub returned no data for %s — skipping", ticker)

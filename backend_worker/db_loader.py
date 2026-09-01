@@ -200,18 +200,14 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["scan_date"] = date.today().isoformat()
 
-    if "segment" not in df.columns:
-        # ROND 6 (2026-08-30): parquetens market_cap är REDAN USD (data_fetcher.
-        # _sanity_check konverterar currency != USD via _FX_TO_USD). Att köra
-        # _to_usd här dubbelkonverterar (6098.T 167.9B USD x 0.0066 = 1.1B USD
-        # i DB). Använd mcap direkt; > 1e12 = nästan säkert nativ valuta -> som
-        # storleksordning ändå "large_cap" via _derive_segment (ingen FX).
-        tickers = df.get("ticker", pd.Series(dtype=str))
-        mcaps = df.get("market_cap", pd.Series(dtype=float))
-        df["segment"] = [
-            _derive_segment(mc, tk)
-            for mc, tk in zip(mcaps, tickers)
-        ]
+    # ROND 14 (P0): Always derive segment to guarantee segment integrity.
+    # Stale/corrupt parquet segment values (e.g. null mc -> micro_cap) are overwritten with 'unknown' or 'large_cap'.
+    tickers = df.get("ticker", pd.Series(dtype=str))
+    mcaps = df.get("market_cap", pd.Series(dtype=float))
+    df["segment"] = [
+        _derive_segment(mc, tk)
+        for mc, tk in zip(mcaps, tickers)
+    ]
 
     # ROND 5 (2026-08-30) — KORRIGERAD 2026-08-30 (ROND 6):
     # market_cap är redan USD-normaliserad av stock-scanner data_fetcher._sanity_check
