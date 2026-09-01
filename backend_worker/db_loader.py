@@ -294,6 +294,29 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
         # Båda finns → behåll äkta price, fallback till current_price
         df["price"] = df["price"].fillna(df["current_price"])
 
+    # R15 (Task 6): change_pct-populering från cache / prishistorik om saknas
+    if "change_pct" in df.columns:
+        c_pct = pd.to_numeric(df["change_pct"], errors="coerce")
+        # Sanera om det levererats i procentform (t.ex. 1.5 för 1.5% -> 0.015)
+        c_pct.loc[c_pct.abs() > 1.0] = c_pct.loc[c_pct.abs() > 1.0] / 100.0
+        df["change_pct"] = c_pct
+    else:
+        df["change_pct"] = None
+
+    if df["change_pct"].isna().mean() > 0.5:
+        try:
+            from backend_worker.technical_snapshot import get_latest_change_pct
+            new_changes = []
+            for tk, cur_cp in zip(df["ticker"], df["change_pct"]):
+                if pd.notna(cur_cp):
+                    new_changes.append(cur_cp)
+                else:
+                    ch = get_latest_change_pct(str(tk))
+                    new_changes.append(ch)
+            df["change_pct"] = new_changes
+        except Exception as e:
+            logger.debug("change_pct cache population skipped: %s", e)
+
     # ROND 5 (2026-08-30): sista försvarslinjen — sanera omöjliga/%-värden innan de
     # skrivs till DB. Skyddar mot gamla parquet-filer och yfinance-rådata.
     df = _apply_sanity(df)

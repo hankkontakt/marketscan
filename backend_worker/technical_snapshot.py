@@ -66,6 +66,28 @@ def _read_history(ticker: str) -> Optional[list[float]]:
     return closes
 
 
+TICKER_PRICE_FALLBACKS: dict[str, list[str]] = {
+    "PUILO.HE": ["PUUILO.HE"],
+    "AOF.DE": ["AOF.F", "AOF.SG"],
+}
+
+
+def get_latest_change_pct(ticker: str) -> Optional[float]:
+    """Hämta senaste dagsförändring som decimal (t.ex. 0.015 för +1.5%)."""
+    path = _cache_path(ticker)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        rets = data.get("returns_1y")
+        if rets and isinstance(rets, list) and len(rets) > 0:
+            last_ret = float(rets[-1])
+            return last_ret if np.isfinite(last_ret) else None
+    except Exception:
+        return None
+    return None
+
+
 def fetch_price_history(ticker: str) -> Optional[list[float]]:
     """Hämta 1y-prishistorik från yfinance och cacha i qmj_raw-format.
 
@@ -75,8 +97,17 @@ def fetch_price_history(ticker: str) -> Optional[list[float]]:
     """
     try:
         import yfinance as yf
-        y = yf.Ticker(ticker)
-        hist = y.history(period="1y", interval="1d", auto_adjust=True)
+        syms = [ticker] + TICKER_PRICE_FALLBACKS.get(ticker, [])
+        hist = None
+        for sym in syms:
+            try:
+                y = yf.Ticker(sym)
+                hist = y.history(period="1y", interval="1d", auto_adjust=True)
+                if hist is not None and not hist.empty and "Close" in hist and len(hist) >= 5:
+                    break
+            except Exception:
+                continue
+
         if hist is None or hist.empty or "Close" not in hist:
             logger.debug("%s: ingen prishistorik från yfinance", ticker)
             return None

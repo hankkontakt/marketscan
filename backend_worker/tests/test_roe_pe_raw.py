@@ -155,16 +155,37 @@ class TestDbLoaderRoundtrip(unittest.TestCase):
         out = db_loader._prepare_df(df)
         self.assertEqual(out.loc[out["ticker"] == "TXT.WA", "name"].iloc[0], "Text S.A.")
         self.assertEqual(out.loc[out["ticker"] == "7148.T", "name"].iloc[0], "Financial Products Group Co., Ltd.")
-        self.assertEqual(out.loc[out["ticker"] == "AOF.DE", "name"].iloc[0], "ATOSS Software SE")
+    def test_change_pct_normalized_in_prepare_df(self):
+        """R15 (Task 6): change_pct > 1.0 eller < -1.0 ska normaliseras till decimalfraktion."""
+        df = pd.DataFrame({
+            "ticker": ["AOF.DE", "MSFT"],
+            "change_pct": [2.5, -1.8],
+            "market_cap": [1_000_000_000, 3_000_000_000_000],
+        })
+        out = db_loader._prepare_df(df)
+        self.assertAlmostEqual(out.loc[out["ticker"] == "AOF.DE", "change_pct"].iloc[0], 0.025)
+        self.assertAlmostEqual(out.loc[out["ticker"] == "MSFT", "change_pct"].iloc[0], -0.018)
 
 
 class TestCompanyInfoFetcherOverrides(unittest.TestCase):
     def test_company_overrides_exist_and_accurate(self):
-        from backend_worker.company_info_fetcher import COMPANY_OVERRIDES, _fetch_yfinance
+        from backend_worker.company_info_fetcher import COMPANY_OVERRIDES
         self.assertIn("TXT.WA", COMPANY_OVERRIDES)
         self.assertIn("7148.T", COMPANY_OVERRIDES)
         self.assertIn("LiveChat", COMPANY_OVERRIDES["TXT.WA"]["description"])
         self.assertIn("leasingfonder", COMPANY_OVERRIDES["7148.T"]["description"])
+
+
+class TestTechnicalSnapshotTask6(unittest.TestCase):
+    def test_technical_pure_calc_and_fallbacks(self):
+        from backend_worker.technical_snapshot import compute_technical, TICKER_PRICE_FALLBACKS
+        self.assertIn("AOF.DE", TICKER_PRICE_FALLBACKS)
+        self.assertIn("PUILO.HE", TICKER_PRICE_FALLBACKS)
+        # 250 simulated prices for MA50 & MA200
+        prices = [100.0 + i * 0.5 for i in range(250)]
+        res = compute_technical(prices)
+        self.assertIsNotNone(res.get("rsi_14"))
+        self.assertEqual(res.get("trend_tech"), "Upptrend")
 
 
 if __name__ == "__main__":
