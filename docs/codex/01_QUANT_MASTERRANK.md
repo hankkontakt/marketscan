@@ -69,9 +69,13 @@ För att förhindra att aktier med fantastisk historisk kvalitet men extremt öv
 - **Cyklisk & Noll-Tillväxt Guard:** Vid negativ eller nära-noll tillväxt ($\le 0.5\%$) är PEG matematiskt odefinierat och ignoreras helt. Grinden förlitar sig då uteslutande på historisk percentil ($PE_{p90}$) och sektorpeers så att cykliska bolag inte slinker förbi.
 
 ### Regler för Datatäthet (Thin Data), Analytikerspridning och PIT
-- **T1-Krav:** Kräver giltiga värden för **minst 6 av 8 block**. Aktier med glesa data begränsas automatiskt till max Tier 3 med flaggan `thin_data`.
-- **Analytiker-Tak & Spridning (Dispersion):** Analytikerblocket skalas ned om antalet analytiker är $< 3$. Dessutom appliceras ett avdrag på upp till 35% om riktkursspridningen ($IQR/Median > 0.4$) är hög, så att extrem oenighet mellan banker straffar konfidensen.
-- **Segment-Normalisering (`master_rank_pctl`):** Vid sidan av rå MasterRank beräknas en segment-relativ percentil (0–100) för att möjliggöra rättvis jämförelse mellan småbolag ($T1 \ge 62$) och storbolag ($T1 \ge 75$).
+- **T1-Krav:** Kräver giltiga värden för minst 4 av 8 block för stora/medelstora bolag och minst 3 av 8 block för små/mikrobolag. Aktier med färre giltiga block begränsas automatiskt till max Tier 3 med flaggan `thin_data` (cap 64.999 för stora, 61.999 för småbolag).
+- **Analytiker-Tak, Täckningsskalning & Spridning (D6):** Analytikerblocket skalas ned om antalet analytiker är 1–2 genom linjär krympning mot neutral 50: $az = 50.0 + (az - 50.0) \cdot \frac{N}{3}$. Dessutom appliceras ett avdrag på upp till 50% om riktkursspridningen är hög, så att extrem oenighet mellan banker straffar konfidensen.
+- **Segment×Sektor-Normalisering (D3):** P/E normaliseras inom (segment, sektor) vid $\ge 5$ peers, med fallback till sektor vid $\ge 15$ peers och global percentil som sista steg (`group_percentile_z`).
+- **Momentum Segment-Percentil (D3):** Momentum-z rankas om som inom-segment-percentil när segmentet har $\ge 10$ bolag för att undvika strukturell snedvridning mellan illikvida och likvida segment.
+- **Segment-Normalisering (`master_rank_pctl`):** Vid sidan av rå MasterRank beräknas en segment-relativ percentil (0–100) för att möjliggöra direkt jämförelse mellan småbolag ($T1 \ge 62$) och storbolag ($T1 \ge 75$).
+- **Kvalitets-Junk-Gate (D2):** Små/mikrobolag med fundamental kvalitet $quality\_z < 55.0$ kan aldrig nå Tier 1 och cappas strikt till max $61.999$ med flaggan `junk_gate`.
+- **Likviditetsmotor & Grader A–F (D5):** `backend_worker/liquidity.py` graderar aktier A–F baserat på 20-dagars medianomsättning mot segmentens golv (Micro 500k, Small 2M, Mid 10M, Large 20M SEK). Grader E/F i små/mikrobolag cappas till max $49.999$ (`liquidity_gate`). Låg likviditet (`low_liquidity`) definieras som grad D, E eller F.
 - **PIT Soft-Block:** Bolag med fördröjd bokslutsdata (PENDING) tillåts delta på tekniska/analytiska signaler men kan aldrig uppnå Tier 1 förrän bokslutet verifierats.
 
 ---
@@ -83,6 +87,7 @@ Specialiserade signal- och skyddsmoduler som körs i `backend_worker/alpha_disco
 | Modul | Fil | Strategi |
 |---|---|---|
 | **Makroregim & EMA-tröghet** | `backend_worker/macro_regime.py` | 60-dagars EMA-utjämning (`compute_smoothed_regime_weights`) för flimmerfri regimstyrning |
+| **Likviditetsmotor & Gradering** | `backend_worker/liquidity.py` | Beräknar 20d medianomsättning i SEK och delar in i segmentanpassade likviditetsgrader A–F (`compute_liquidity_grade`) |
 | **Forensisk Sköld & Tillväxt-Sloan** | `backend_worker/forensic_shield.py` | Tillväxtjusterad Sloan Accrual $\Delta \text{Accruals} / \Delta \text{Sales}$ + utspädningsskydd |
 | **Warrant Detector (TO-Radar)** | `backend_worker/alpha_discovery/warrant_detector.py` | Identifierar teckningsoptioner (TO1-TO9), utspädningsandel och lösenfönster |
 | **Offentliga Upphandlingar** | `backend_worker/alpha_discovery/tenders_tracker.py` | Spårar offentliga ramavtal (TED/Doffin) för IT- och försvarskonsulter (`score_public_tenders`) |
@@ -98,7 +103,8 @@ Specialiserade signal- och skyddsmoduler som körs i `backend_worker/alpha_disco
 
 | Komponent | Fil | Kärnmetoder |
 |---|---|---|
-| MasterRank Beräkning | `backend_worker/master_rank.py` | `fuse()`, `tier_of()`, `master_rank_run()`, `compute_peg()`, `load_weights()` |
+| MasterRank Beräkning | `backend_worker/master_rank.py` | `fuse()`, `tier_of()`, `master_rank_run()`, `group_percentile_z()`, `resolve_weights()`, `load_weights()` |
+| Likviditetsmotor | `backend_worker/liquidity.py` | `compute_liquidity_grade()`, `compute_turnover_20d()`, `is_low_liquidity()` |
 | Forensisk Revision | `backend_worker/forensic_shield.py` | `audit_company_forensics()`, `SLOAN_ACCRUAL_THRESHOLD` |
 | Makro & Faktorregimer | `backend_worker/macro_regime.py` | `classify_macro_regime()`, `compute_smoothed_regime_weights()`, `derive_regime_from_scan()` |
 | QMJ & Kvalitet | `backend_worker/qmj_scores.py` | `extract_metrics()`, `composite()`, `compute_sector_value()`, `stratum_of()` |
@@ -111,7 +117,7 @@ Specialiserade signal- och skyddsmoduler som körs i `backend_worker/alpha_disco
 ## 7. Recept för Ändringar & Felsökning
 
 ### Justera en faktorvikt:
-1. Redigera `backend_worker/resources/weights.json`.
+1. Redigera `backend_worker/resources/weights.json` (respektera v2 schema och `segment_overrides`).
 2. Kör historisk validering: `python backend_worker/backtest_runner.py`.
 3. Verifiera ranking-distributionen: `python scripts/ranking_sanity_gate.py`.
 4. Uppdatera vikttabellen i sektion 3 ovan *in-place*.
@@ -121,9 +127,10 @@ Specialiserade signal- och skyddsmoduler som körs i `backend_worker/alpha_disco
 ## 8. Småbolag & Kända Begränsningar
 
 1. **Segment-relativ kalibrering & Percentiler:** Småbolag (`small_cap`, `micro_cap`) har glesare data och lägre analytikertäckning. MasterRank anpassar tier-trösklarna (T1 $\ge 62.0$, T2 $\ge 50.0$, T3 $\ge 38.0$) och beräknar `master_rank_pctl` inom segmentet.
-2. **Smallcap Runway & Nyemissions-sköld:** Olönsamma småbolag med kort kassa ($< 12$ månader) och svagt kassaflöde/kvalitet ($< 60$) cappas till max $48.0$ (Tier 4 / EJ_AKTUELL).
-3. **Compounder & MEWS-synergi:** Kapitaleffektiva småbolag ($Quality \ge 75$) med insiderköp eller stark MEWS-accelerering erhåller nisch-vallgravsbonus (Harvia, ATOSS, Bouvet).
-4. **Vinstvolatilitet & Leasing-rabatt:** Finansiella aktörer med hög intäktsvolatilitet eller engångsavgifter (t.ex. FPG 7148.T) cappas vid max 58.0 för att inte förväxlas med stabila compounders.
-5. **Datatäthet & Thin-Data Tak:** Vid färre än 3 giltiga kärnblock begränsas ranken automatiskt (`thin_cap = 61.999` för småbolag resp $64.999$ för stora bolag).
-6. **Likviditetsflagga (`low_liquidity`):** Graderas av extern scanner baserat på omsättning; visas med varningstriangel i UI.
-7. **ROE Kontrakt (Rå vs Residual):** UI och screener-filter använder uteslutande `roe_raw`. Den neutraliserade sektorresidualen `roe` är strikt intern för faktorberäkning.
+2. **Kvalitets-Junk-Gate (D2):** Småbolag med $quality\_z < 55.0$ stoppas vid max 61.999 (`junk_gate`).
+3. **Likviditetsgate (D5):** Småbolag med likviditetsgrad E eller F stoppas vid max 49.999 (`liquidity_gate`).
+4. **Smallcap Runway & Nyemissions-sköld:** Olönsamma småbolag med kort kassa ($< 12$ månader) och svagt kassaflöde/kvalitet ($< 60$) cappas till max $48.0$ (Tier 4 / EJ_AKTUELL).
+5. **Compounder & MEWS-synergi:** Kapitaleffektiva småbolag ($Quality \ge 75$) med insiderköp eller stark MEWS-accelerering erhåller nisch-vallgravsbonus (Harvia, ATOSS, Bouvet).
+6. **Vinstvolatilitet & Leasing-rabatt:** Finansiella aktörer med hög intäktsvolatilitet eller engångsavgifter (t.ex. FPG 7148.T) cappas vid max 58.0 för att inte förväxlas med stabila compounders.
+7. **Datatäthet & Thin-Data Tak:** Vid färre än 3 giltiga kärnblock för småbolag (4 för stora) begränsas ranken automatiskt (`thin_cap = 61.999` för småbolag resp $64.999$ för stora bolag).
+8. **ROE Kontrakt (Rå vs Residual):** UI och screener-filter använder uteslutande `roe_raw`. Den neutraliserade sektorresidualen `roe` är strikt intern för faktorberäkning.
