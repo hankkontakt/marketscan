@@ -5,6 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
 import { ShieldCheck, ArrowRight, Sparkles, Scale, RefreshCw, CheckCircle2, Loader2 } from "lucide-react";
+import {
+  THESIS_BAND_CONFIG, SETUP_STATE_CONFIG, RISK_STATE_CONFIG, DATA_GRADE_CONFIG,
+  badgeFor, type BadgeStyle,
+} from "@/components/screener-v3/badges";
 import { cn } from "@/lib/utils";
 
 interface ActionItem {
@@ -15,6 +19,11 @@ interface ActionItem {
   shares?: number;
   amount_sek: number;
   reason: string;
+  // V3 champion-data (T7, additiv — saknas → "—")
+  thesis_band?: string | null;
+  setup_state?: string | null;
+  risk_state?: string | null;
+  data_grade?: string | null;
 }
 
 interface RebalancePlanResponse {
@@ -47,6 +56,57 @@ interface RebalancePlanResponse {
     estimated_max_drawdown_after_pct: number;
   };
   summary_swedish: string;
+}
+
+// ─── V3 champion-data badges (T7, additiv) ────────────────────────────────────
+// thesis_band/setup_state/risk_state/data_grade när publicerad snapshot finns.
+// Saknad data → "—" (aldrig syntetiska värden).
+
+const MISSING_BADGE: BadgeStyle = {
+  label: "—",
+  bg: "bg-zinc-500/10 dark:bg-zinc-500/20",
+  text: "text-zinc-500 dark:text-zinc-400",
+  border: "border-zinc-500/20",
+};
+
+function V3Badges({ thesis_band, setup_state, risk_state, data_grade }: {
+  thesis_band?: string | null;
+  setup_state?: string | null;
+  risk_state?: string | null;
+  data_grade?: string | null;
+}) {
+  const thesis = badgeFor(THESIS_BAND_CONFIG, thesis_band, MISSING_BADGE);
+  const setup = badgeFor(SETUP_STATE_CONFIG, setup_state, MISSING_BADGE);
+  const risk = badgeFor(RISK_STATE_CONFIG, risk_state, MISSING_BADGE);
+  const grade = data_grade ? DATA_GRADE_CONFIG[data_grade] : null;
+  return (
+    <div className="flex items-center gap-1 flex-wrap mt-1">
+      <span
+        title="Thesis"
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${thesis.bg} ${thesis.text} ${thesis.border}`}
+      >
+        {thesis.label}
+      </span>
+      <span
+        title="Setup"
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${setup.bg} ${setup.text} ${setup.border}`}
+      >
+        {setup.label}
+      </span>
+      <span
+        title="Risk"
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${risk.bg} ${risk.text} ${risk.border}`}
+      >
+        {risk.label}
+      </span>
+      <span
+        title="Datakvalitet"
+        className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold ${grade?.bg ?? "bg-zinc-500/15"} ${grade?.text ?? "text-zinc-500"}`}
+      >
+        {grade?.label ?? "—"}
+      </span>
+    </div>
+  );
 }
 
 export function RebalanceView() {
@@ -235,6 +295,12 @@ export function RebalanceView() {
                             {act.name} {act.shares ? `(${act.shares} st)` : ""}
                           </div>
                           <div className="text-[11px] text-[var(--color-text-muted)]">{act.reason}</div>
+                          <V3Badges
+                            thesis_band={act.thesis_band}
+                            setup_state={act.setup_state}
+                            risk_state={act.risk_state}
+                            data_grade={act.data_grade}
+                          />
                         </div>
                       </div>
                       <div className="font-mono font-bold text-sm text-[var(--color-text-primary)]">
@@ -279,6 +345,12 @@ export function RebalanceView() {
                             {ord.name} {ord.shares ? `(${ord.shares} st)` : ""}
                           </div>
                           <div className="text-[11px] text-[var(--color-text-muted)]">{ord.reason}</div>
+                          <V3Badges
+                            thesis_band={ord.thesis_band}
+                            setup_state={ord.setup_state}
+                            risk_state={ord.risk_state}
+                            data_grade={ord.data_grade}
+                          />
                         </div>
                       </div>
                       <div className={cn(

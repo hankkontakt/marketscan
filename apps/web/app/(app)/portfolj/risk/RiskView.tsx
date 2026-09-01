@@ -8,13 +8,17 @@ import {
 } from "lucide-react";
 import {
   useRiskAnalytics, useFactorExposure, useCorrelationMatrix,
-  useOptimizedWeights, useRebalanceSuggestions,
+  useOptimizedWeights, useRebalanceSuggestions, usePortfolio,
   type FactorExposure,
 } from "@/hooks/usePortfolio";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
 } from "recharts";
+import {
+  THESIS_BAND_CONFIG, SETUP_STATE_CONFIG, RISK_STATE_CONFIG, DATA_GRADE_CONFIG,
+  badgeFor, type BadgeStyle,
+} from "@/components/screener-v3/badges";
 import { cn } from "@/lib/utils";
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
@@ -47,6 +51,59 @@ function SectionHeader({ icon: Icon, title, sub }: { icon: React.ElementType; ti
         <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h2>
         {sub && <p className="text-xs text-[var(--color-text-muted)]">{sub}</p>}
       </div>
+    </div>
+  );
+}
+
+// ─── V3 champion-data badges ──────────────────────────────────────────────────
+// Additiv V3-berikning (T7): thesis_band/setup_state/risk_state/data_grade när
+// publicerad snapshot finns. Saknad data → "—" (aldrig syntetiska värden).
+
+interface V3Fields {
+  thesis_band?: string | null;
+  setup_state?: string | null;
+  risk_state?: string | null;
+  data_grade?: string | null;
+}
+
+const MISSING_BADGE: BadgeStyle = {
+  label: "—",
+  bg: "bg-zinc-500/10 dark:bg-zinc-500/20",
+  text: "text-zinc-500 dark:text-zinc-400",
+  border: "border-zinc-500/20",
+};
+
+function V3Badges({ thesis_band, setup_state, risk_state, data_grade }: V3Fields) {
+  const thesis = badgeFor(THESIS_BAND_CONFIG, thesis_band, MISSING_BADGE);
+  const setup = badgeFor(SETUP_STATE_CONFIG, setup_state, MISSING_BADGE);
+  const risk = badgeFor(RISK_STATE_CONFIG, risk_state, MISSING_BADGE);
+  const grade = data_grade ? DATA_GRADE_CONFIG[data_grade] : null;
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      <span
+        title="Thesis"
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${thesis.bg} ${thesis.text} ${thesis.border}`}
+      >
+        {thesis.label}
+      </span>
+      <span
+        title="Setup"
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${setup.bg} ${setup.text} ${setup.border}`}
+      >
+        {setup.label}
+      </span>
+      <span
+        title="Risk"
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${risk.bg} ${risk.text} ${risk.border}`}
+      >
+        {risk.label}
+      </span>
+      <span
+        title="Datakvalitet"
+        className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold ${grade?.bg ?? "bg-zinc-500/15"} ${grade?.text ?? "text-zinc-500"}`}
+      >
+        {grade?.label ?? "—"}
+      </span>
     </div>
   );
 }
@@ -191,30 +248,41 @@ function RebalanceDriftView() {
       )}
 
       <div className="space-y-2">
-        {data.holdings.map(h => (
-          <div key={h.ticker} className="flex items-center gap-3 text-sm">
-            <span className="w-14 font-mono text-[var(--color-text-secondary)]">{h.ticker}</span>
-            <div className="flex-1 relative h-6 rounded bg-[var(--color-bg-elevated)] overflow-hidden">
-              {/* Current allocation */}
-              <div
-                className="absolute inset-y-0 left-0 bg-[var(--color-accent)]/40"
-                style={{ width: `${Math.min(h.current_pct, 100)}%` }}
+        {data.holdings.map(h => {
+          const v3 = h as V3Fields;
+          return (
+            <div key={h.ticker} className="space-y-1">
+              <div className="flex items-center gap-3 text-sm">
+                <span className="w-14 font-mono text-[var(--color-text-secondary)]">{h.ticker}</span>
+                <div className="flex-1 relative h-6 rounded bg-[var(--color-bg-elevated)] overflow-hidden">
+                  {/* Current allocation */}
+                  <div
+                    className="absolute inset-y-0 left-0 bg-[var(--color-accent)]/40"
+                    style={{ width: `${Math.min(h.current_pct, 100)}%` }}
+                  />
+                  {/* Target allocation */}
+                  {h.target_pct !== null && (
+                    <div
+                      className="absolute inset-y-0 top-0 w-0.5 bg-[var(--color-accent)]"
+                      style={{ left: `${Math.min(h.target_pct, 100)}%` }}
+                    />
+                  )}
+                </div>
+                <span className="w-12 text-right tabular-nums text-[var(--color-text-muted)]">{h.current_pct.toFixed(1)}%</span>
+                <span className={cn("w-16 text-right font-medium", actionColor(h.action))}>
+                  {actionLabel(h.action)}
+                  {h.amount_sek ? ` ${Math.round(h.amount_sek).toLocaleString("sv-SE")} kr` : ""}
+                </span>
+              </div>
+              <V3Badges
+                thesis_band={v3.thesis_band}
+                setup_state={v3.setup_state}
+                risk_state={v3.risk_state}
+                data_grade={v3.data_grade}
               />
-              {/* Target allocation */}
-              {h.target_pct !== null && (
-                <div
-                  className="absolute inset-y-0 top-0 w-0.5 bg-[var(--color-accent)]"
-                  style={{ left: `${Math.min(h.target_pct, 100)}%` }}
-                />
-              )}
             </div>
-            <span className="w-12 text-right tabular-nums text-[var(--color-text-muted)]">{h.current_pct.toFixed(1)}%</span>
-            <span className={cn("w-16 text-right font-medium", actionColor(h.action))}>
-              {actionLabel(h.action)}
-              {h.amount_sek ? ` ${Math.round(h.amount_sek).toLocaleString("sv-SE")} kr` : ""}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -224,6 +292,7 @@ function RebalanceDriftView() {
 
 function OptimizeView() {
   const { data: opts, isLoading } = useOptimizedWeights();
+  const { data: portfolio } = usePortfolio();
   const [activeMethod, setActiveMethod] = useState<"hrp" | "minvar" | "equal">("hrp");
 
   if (isLoading) return <div className="h-32 flex items-center justify-center text-sm text-[var(--color-text-muted)]">Laddar optimal portfölj…</div>;
@@ -232,9 +301,15 @@ function OptimizeView() {
   const active = opts.find(o => o.method === activeMethod);
   if (!active) return null;
 
+  // V3 champion-data per ticker (additiv berikning från /api/portfolio).
+  const v3ByTicker: Record<string, V3Fields> = {};
+  for (const h of portfolio?.holdings ?? []) {
+    v3ByTicker[h.ticker] = h as V3Fields;
+  }
+
   const chartData = Object.entries(active.weights)
     .sort((a, b) => b[1] - a[1])
-    .map(([ticker, w]) => ({ ticker, weight: Math.round(w * 100) }));
+    .map(([ticker, w]) => ({ ticker, weight: Math.round(w * 100), ...v3ByTicker[ticker] }));
 
   const methodLabels: Record<string, string> = {
     hrp: "HRP (hierarkisk riskparitet)",
@@ -277,6 +352,22 @@ function OptimizeView() {
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+
+      {/* V3 champion-data per innehav (additiv — "—" när snapshot saknas) */}
+      <div className="space-y-1 pt-1">
+        {chartData.map(c => (
+          <div key={c.ticker} className="flex items-center justify-between gap-3 text-xs">
+            <span className="w-14 font-mono text-[var(--color-text-secondary)]">{c.ticker}</span>
+            <span className="w-12 text-right font-mono text-[var(--color-text-muted)]">{c.weight}%</span>
+            <V3Badges
+              thesis_band={c.thesis_band}
+              setup_state={c.setup_state}
+              risk_state={c.risk_state}
+              data_grade={c.data_grade}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
