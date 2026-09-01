@@ -224,6 +224,64 @@ def _check_volatility_spike(
     return False, ""
 
 
+# ─── Decision transition handlers ────────────────────────────────────────────
+
+# Maps the five new V3 rule types to their decision_transitions.transition_type.
+_TRANSITION_TYPE_MAP = {
+    "thesis_transition": "thesis",
+    "setup_transition": "setup",
+    "risk_transition": "risk",
+    "data_grade_transition": "data_grade",
+    "tradability_transition": "tradability",
+}
+
+
+def _check_transition(
+    rule: dict,
+    transitions: list[dict],
+    transition_type: str,
+) -> tuple[bool, str, str | None]:
+    """Check decision_transitions rows for a state change of the given type.
+
+    Matches rows whose ``transition_type`` equals ``transition_type``, optionally
+    filtered by the rule's ``ticker`` and by conditions on ``from_state`` /
+    ``to_state``. Returns ``(triggered, detail, decision_id)`` where
+    ``decision_id`` is taken from the matching transition row (FK to
+    decision_manifests).
+    """
+    ticker = rule.get("ticker")
+    conditions = rule.get("conditions", [])
+
+    matches = []
+    decision_id = None
+    for t in transitions:
+        if t.get("transition_type") != transition_type:
+            continue
+        if ticker and t.get("ticker") != ticker:
+            continue
+
+        # Optional conditions on from_state / to_state (string comparison).
+        trans_row = {
+            "from_state": t.get("from_state"),
+            "to_state": t.get("to_state"),
+        }
+        if conditions and not _eval_conditions(trans_row, conditions):
+            continue
+
+        from_label = t.get("from_state") or "–"
+        to_label   = t.get("to_state") or "–"
+        reason     = t.get("reason_code") or ""
+        detail = f"{t['ticker']}: {transition_type} ändrades {from_label}→{to_label} ({reason})"
+        if t.get("rank_delta") is not None:
+            detail += f" (rank_delta {t['rank_delta']:+.1f})"
+        matches.append(detail)
+        decision_id = t.get("decision_id")
+
+    if matches:
+        return True, "; ".join(matches[:3]), decision_id
+    return False, "", None
+
+
 # ─── Main Engine ─────────────────────────────────────────────────────────────
 
 def run_alert_engine(dsn: str) -> dict[str, int]:
@@ -290,6 +348,16 @@ def run_alert_engine(dsn: str) -> dict[str, int]:
             if scan_map[t].get("vol_20d")
         }
 
+        # ── Decision transitions (last 7 days) ─────────────────────────────────
+        # V3 rule types (thesis/setup/risk/data_grade/tradability_transition)
+        # evaluate against decision_transitions rows written by the diff layer.
+        cur.execute("""
+            SELECT * FROM decision_transitions
+            WHERE created_at >= NOW() - INTERVAL '7 days'
+            ORDER BY created_at DESC
+        """)
+        decision_transitions = list(cur.fetchall())
+
         # ── Load active alert rules ────────────────────────────────────────────
         # FIX 2026-08-29: profiles har ingen email-kolumn (001/012) — läs från auth.users.
         cur.execute("""
@@ -312,6 +380,7 @@ def run_alert_engine(dsn: str) -> dict[str, int]:
             triggered = False
             detail    = ""
             ticker    = rule.get("ticker")
+            decision_id = None
 
             try:
                 if rule_type == "price_cross":
@@ -338,6 +407,11 @@ def run_alert_engine(dsn: str) -> dict[str, int]:
 
                 elif rule_type == "volatility_spike":
                     triggered, detail = _check_volatility_spike(rule, vol_map)
+
+                elif rule_type in _TRANSITION_TYPE_MAP:
+                    triggered, detail, decision_id = _check_transition(
+                        rule, decision_transitions, _TRANSITION_TYPE_MAP[rule_type]
+                    )
 
             except Exception as exc:
                 logger.warning("Rule %s evaluation error: %s", rule["id"], exc)
@@ -375,6 +449,7 @@ def run_alert_engine(dsn: str) -> dict[str, int]:
                 "detail":    detail[:500] if detail else None,
                 "score_at":  score_at,
                 "price_at":  price_at,
+                "decision_id": decision_id,
             })
 
             # Mark trigger_once rules as inactive
@@ -405,9 +480,9 @@ def run_alert_engine(dsn: str) -> dict[str, int]:
                 cur,
                 """
                 INSERT INTO triggered_alerts
-                    (user_id, rule_id, rule_name, rule_type, ticker, detail, score_at, price_at)
+                    (user_id, rule_id, rule_name, rule_type, ticker, detail, score_at, price_at, decision_id)
                 VALUES (%(user_id)s, %(rule_id)s, %(rule_name)s, %(rule_type)s,
-                        %(ticker)s, %(detail)s, %(score_at)s, %(price_at)s)
+                        %(ticker)s, %(detail)s, %(score_at)s, %(price_at)s, %(decision_id)s)
                 """,
                 triggered_to_insert,
             )

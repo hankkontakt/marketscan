@@ -32,6 +32,14 @@ VALID_RULE_TYPES = {
     "screen_match",
     "insider_cluster",
     "volatility_spike",
+    # V3 decision-transition types (migration 088): pure transition rules —
+    # no conditions required, optional ticker. Evaluated by the worker against
+    # decision_transitions rows.
+    "thesis_transition",
+    "setup_transition",
+    "risk_transition",
+    "data_grade_transition",
+    "tradability_transition",
 }
 
 
