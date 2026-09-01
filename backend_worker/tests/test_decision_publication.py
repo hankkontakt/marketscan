@@ -101,6 +101,18 @@ def test_inactive_listings_are_excluded_as_quarantine_not_blockers():
     }
 
 
+def test_drivers_are_derived_from_block_scores():
+    manifest = manifest_from_legacy_row(
+        row(quality_z=80.0, value_z=30.0, momentum_z=70.0, analyst_z=60.0,
+            tech_z=20.0, insider_z=50.0, catalyst_z=50.0, growth_z=65.0),
+        snapshot_id="f17f8634-8152-4b3d-bc5e-827d1863813d",
+        decision_time=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    assert [d["label_sv"] for d in manifest.positive_drivers] == ["Kvalitet", "Momentum", "Tillväxt"]
+    assert [d["label_sv"] for d in manifest.negative_drivers] == ["Värde", "Teknik"]
+    assert manifest.positive_drivers[0]["factor_name"] == "quality_z"
+
+
 def test_missing_same_day_rank_for_publishable_row_is_a_hard_stop():
     rows = [
         scripted_row(ticker="MSFT", master_rank=None),

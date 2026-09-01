@@ -103,6 +103,34 @@ export const DecisionHeaderV3: React.FC<DecisionHeaderV3Props> = ({ ticker }) =>
           Beslut {new Date(decision.published_at).toLocaleDateString("sv-SE")}
         </span>
       </div>
+      {(decision.positive_drivers?.length || decision.negative_drivers?.length || decision.warnings?.length) ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Drivare och varningar">
+          {(decision.positive_drivers ?? []).slice(0, 3).map((driver, index) => (
+            <span
+              key={`pos-${index}`}
+              className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium"
+            >
+              +{String((driver as { label_sv?: string }).label_sv ?? (driver as { factor_name?: string }).factor_name ?? "Driver")}
+            </span>
+          ))}
+          {(decision.negative_drivers ?? []).slice(0, 3).map((driver, index) => (
+            <span
+              key={`neg-${index}`}
+              className="text-[11px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300 font-medium"
+            >
+              -{String((driver as { label_sv?: string }).label_sv ?? (driver as { factor_name?: string }).factor_name ?? "Driver")}
+            </span>
+          ))}
+          {(decision.warnings ?? []).slice(0, 3).map((warning) => (
+            <span
+              key={warning}
+              className="text-[11px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium"
+            >
+              {String(warning).replace(/_/g, " ").toLowerCase()}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 };

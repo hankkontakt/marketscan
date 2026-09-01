@@ -1,0 +1,150 @@
+{
+  "scan_date": "2026-09-01",
+  "generated_at": "2026-09-01T20:19:27.760791+00:00",
+  "n": 8,
+  "excluded": [
+    {
+      "ticker": "CPRX",
+      "reason": "listing_not_active:MERGED"
+    }
+  ],
+  "agreement": {
+    "setup": 0.75,
+    "risk": 1.0
+  },
+  "comparisons": [
+    {
+      "ticker": "ALFA.ST",
+      "bridge": {
+        "setup_state": "WATCH",
+        "risk_state": "NORMAL"
+      },
+      "vnext": {
+        "setup_state": "WATCH",
+        "risk_state": "NORMAL",
+        "setup_reasons": [
+          "ok_signal"
+        ],
+        "risk_reasons": []
+      },
+      "agreement": true
+    },
+    {
+      "ticker": "BALD-B.ST",
+      "bridge": {
+        "setup_state": "WAIT",
+        "risk_state": "ELEVATED"
+      },
+      "vnext": {
+        "setup_state": "INSUFFICIENT",
+        "risk_state": "ELEVATED",
+        "setup_reasons": [
+          "no_qualified_setup"
+        ],
+        "risk_reasons": [
+          "low_liquidity",
+          "warnings:1"
+        ]
+      },
+      "agreement": false
+    },
+    {
+      "ticker": "ERIC-B.ST",
+      "bridge": {
+        "setup_state": "WATCH",
+        "risk_state": "NORMAL"
+      },
+      "vnext": {
+        "setup_state": "WATCH",
+        "risk_state": "NORMAL",
+        "setup_reasons": [
+          "ok_signal"
+        ],
+        "risk_reasons": []
+      },
+      "agreement": true
+    },
+    {
+      "ticker": "INVE-B.ST",
+      "bridge": {
+        "setup_state": "READY",
+        "risk_state": "NORMAL"
+      },
+      "vnext": {
+        "setup_state": "READY",
+        "risk_state": "NORMAL",
+        "setup_reasons": [
+          "strong_signal_and_uptrend"
+        ],
+        "risk_reasons": []
+      },
+      "agreement": true
+    },
+    {
+      "ticker": "NIBE-B.ST",
+      "bridge": {
+        "setup_state": "WAIT",
+        "risk_state": "ELEVATED"
+      },
+      "vnext": {
+        "setup_state": "INSUFFICIENT",
+        "risk_state": "ELEVATED",
+        "setup_reasons": [
+          "no_qualified_setup"
+        ],
+        "risk_reasons": [
+          "warnings:1"
+        ]
+      },
+      "agreement": false
+    },
+    {
+      "ticker": "SAND.ST",
+      "bridge": {
+        "setup_state": "WATCH",
+        "risk_state": "NORMAL"
+      },
+      "vnext": {
+        "setup_state": "WATCH",
+        "risk_state": "NORMAL",
+        "setup_reasons": [
+          "ok_signal"
+        ],
+        "risk_reasons": []
+      },
+      "agreement": true
+    },
+    {
+      "ticker": "SEB-A.ST",
+      "bridge": {
+        "setup_state": "WATCH",
+        "risk_state": "NORMAL"
+      },
+      "vnext": {
+        "setup_state": "WATCH",
+        "risk_state": "NORMAL",
+        "setup_reasons": [
+          "ok_signal"
+        ],
+        "risk_reasons": []
+      },
+      "agreement": true
+    },
+    {
+      "ticker": "VOLV-B.ST",
+      "bridge": {
+        "setup_state": "READY",
+        "risk_state": "NORMAL"
+      },
+      "vnext": {
+        "setup_state": "READY",
+        "risk_state": "NORMAL",
+        "setup_reasons": [
+          "strong_signal_and_uptrend"
+        ],
+        "risk_reasons": []
+      },
+      "agreement": true
+    }
+  ]
+}

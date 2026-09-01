@@ -99,6 +99,31 @@
       övrig V3-svit 37).
 - [x] `scripts/generate_v3_types.py --check`: OK (fx-fält i genererade typer).
 
+## Slice 4 — Phase 6 shadow-vNext, driver-proveniens, Topplistor V3, runbook
+
+- [x] **decision_publication.py:** `positive_drivers`/`negative_drivers` härleds från
+      block-z-scores (≥65 positiv, ≤40 negativ, max 3+3, dokumenterad regel — inte tunad);
+      `test_drivers_are_derived_from_block_scores` verifierar proveniens.
+- [x] **shadow_vnext.py (Phase 6):** beräknar SetupState/RiskState med vNext-regler
+      (trend, signal, event-proximitet ≤14 d → WAIT, coverage-grindar; risk: stale→CRITICAL,
+      illikvid/D-grade→ELEVATED) + reason_codes, jämför mot legacy-bridge och skriver
+      `docs/audit/shadow-vnext-<date>.json`. Publicerar ALDRIG. Live: 8 rader,
+      setup-agreement 75 %, risk-agreement 100 %.
+- [x] **Topplistor V3:** `TopplistorViewV3` (samma publicerade snapshot, DecisionTableV3
+      återanvänds, segment-filter) + flag-gate i `topplistor/page.tsx`.
+- [x] **Phase 10 "varför"-yta:** DecisionHeaderV3 visar positiva/negativa drivare +
+      varningschips (från manifestet, inte syntetiskt).
+- [x] **Phase 12:** `docs/audit/ultimate-rebuild-v3-production-runbook.md` — förkontroller,
+      EN migration i taget med efterkontroll per steg, backfill-recept, flagg-cutover med
+      30-minuters-rollback, återställningsgränser, Phase 9-migreringsmatris, ärliga kända
+      brister. Produktionsapplicering = separat uttryckligt beslut.
+
+## Slice 4 — testbevis
+
+- [x] `pytest` (hela V3-sviten): **72 passed**.
+- [x] `npx tsc --noEmit` ren; `npx vitest run lib/__tests__`: 25 passed (3 filer).
+- [x] Shadow-artefakt: `docs/audit/shadow-vnext-2026-09-01.json` (Phase 11-evidenstyp).
+
 ## Slice 2 — testbevis
 
 - [x] API: `test_decision_v3_api.py` (10 tester inkl. enabled-sökvägar med fake-DB,

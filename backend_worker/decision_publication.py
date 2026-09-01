@@ -27,6 +27,38 @@ _COVERAGE_FIELDS = (
 _THESIS_BY_TIER = {"T1": "BULLISH", "T2": "CONSTRUCTIVE", "T3": "NEUTRAL", "T4": "AVOID"}
 _SETUP_BY_SIGNAL = {"STARK": "READY", "OK": "WATCH", "VÄNTA": "WAIT", "EJ_AKTUELL": "INSUFFICIENT"}
 
+# Driver provenance (documented rule, not tuned): a block z-score >= 65 is a
+# positive driver, <= 40 a negative driver. Labels are the same Swedish names
+# the product surfaces use.
+_DRIVER_BLOCKS = (
+    ("quality_z", "Kvalitet"), ("value_z", "Värde"), ("momentum_z", "Momentum"),
+    ("analyst_z", "Analytiker"), ("tech_z", "Teknik"), ("insider_z", "Insider"),
+    ("catalyst_z", "Katalysator"), ("growth_z", "Tillväxt"),
+)
+_POSITIVE_DRIVER_MIN = 65.0
+_NEGATIVE_DRIVER_MAX = 40.0
+
+
+def _drivers(row: Mapping[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Derive positive/negative drivers from block z-scores (provenance rule)."""
+    positive: list[dict[str, str]] = []
+    negative: list[dict[str, str]] = []
+    for key, label in _DRIVER_BLOCKS:
+        value = _value(row, key)
+        if value is None:
+            continue
+        try:
+            score = float(value)
+        except (TypeError, ValueError):
+            continue
+        if score >= _POSITIVE_DRIVER_MIN:
+            positive.append({"factor_name": key, "label_sv": label})
+        elif score <= _NEGATIVE_DRIVER_MAX:
+            negative.append({"factor_name": key, "label_sv": label})
+    positive.sort(key=lambda item: -float(_value(row, item["factor_name"], 0.0)))
+    negative.sort(key=lambda item: -float(_value(row, item["factor_name"], 0.0)))
+    return positive[:3], negative[:3]
+
 
 def _value(row: Mapping[str, Any], key: str, default: Any = None) -> Any:
     value = row.get(key, default)
@@ -64,6 +96,7 @@ def manifest_from_legacy_row(
     is_low_liquidity = bool(_value(row, "low_liquidity", False))
     risk_state = "CRITICAL" if pit_status != "READY" else "ELEVATED" if is_low_liquidity or warning_flags else "NORMAL"
     tier = str(_value(row, "tier", "T4"))
+    positive_drivers, negative_drivers = _drivers(row)
     is_actionable = (
         str(_value(row, "listing_state", "UNKNOWN")) == "ACTIVE"
         and tier in {"T1", "T2"}
@@ -88,6 +121,8 @@ def manifest_from_legacy_row(
         is_actionable=is_actionable,
         stale_critical_count=0 if pit_status == "READY" else 1,
         street_context={"analyst_upside": _value(row, "analyst_upside"), "analyst_count": _value(row, "analyst_count")},
+        positive_drivers=positive_drivers,
+        negative_drivers=negative_drivers,
         warnings=warning_flags,
         model_versions={"master_rank": "legacy-bridge-v3"},
     )
