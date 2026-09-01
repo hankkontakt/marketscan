@@ -44,22 +44,22 @@
 
 | Komponent | Storlek | Uppskattade Tokens | Kommentar |
 |---|---:|---:|---|
-| **`~/.config/opencode/AGENTS.md`** | 59 rader (3,233 B) | ~808 | Global systemprefix-injektion |
-| **Manifest Skills (.agents/skills)** | 67 kataloger | ~2,010 | Inaktiva bör arkiveras (mål ≤15) |
-| **Manifest Skills (.claude/skills)** | 32 kataloger | ~960 | Claude-specifika skills |
+| **`~/.config/opencode/AGENTS.md`** | 59 rader (3,235 B) | ~808 | Global systemprefix-injektion |
+| **Manifest Skills (.agents/skills)** | 15 kataloger | ~450 | Inaktiva bör arkiveras (mål ≤15) |
+| **Manifest Skills (.claude/skills)** | 13 kataloger | ~390 | Claude-specifika skills |
 | **Superpowers Skills** | 14 kataloger | ~420 | Plugin-interna (rör ej) |
-| **MarketScan Docs Stack (Före Diet)** | 3,745 rader (219.4 KB) | ~56,164 | Tvångsläsning via "läs först"-kedja |
+| **MarketScan Docs Stack (Före Diet)** | 1,623 rader (90.9 KB) | ~23,277 | Tvångsläsning via "läs först"-kedja |
 
 ### Detaljerad Docs-stack (Före Diet)
 | Fil | Rader | Storlek (Bytes) |
 |---|---:|---:|
-| `SYSTEM_AI.md` | 1,150 | 69,897 B |
-| `docs/SYSTEM_AI.md` | 469 | 36,940 B |
-| `HANDOFF.md` | 595 | 29,495 B |
-| `SETUP.md` | 349 | 11,935 B |
-| `DEBUGGING.md` | 88 | 4,419 B |
-| `docs/plan/00_MASTER_PLAN.md` | 249 | 13,125 B |
-| `SYSTEM_INDEX.md` | 59 | 5,828 B |
+| `SYSTEM_AI.md` | 58 | 2,656 B |
+| `docs/SYSTEM_AI.md` | 15 | 1,046 B |
+| `HANDOFF.md` | 17 | 837 B |
+| `SETUP.md` | 351 | 12,018 B |
+| `DEBUGGING.md` | 88 | 4,453 B |
+| `docs/plan/00_MASTER_PLAN.md` | 249 | 13,147 B |
+| `SYSTEM_INDEX.md` | 59 | 5,935 B |
 | `docs/codex/00_SYSTEM_BLUEPRINT.md` | 83 | 5,092 B |
 | `docs/codex/01_QUANT_MASTERRANK.md` | 118 | 8,286 B |
 | `docs/codex/02_DATA_PIPELINE.md` | 96 | 6,295 B |
