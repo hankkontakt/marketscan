@@ -198,10 +198,8 @@ def main() -> None:
     cur = conn.cursor()
     today = date.today()
 
-    snaps = load_surprises(cur, today)
-    divs = load_dividends(cur)
-    events = build_events(snaps, divs, today)
-    logger.info("Byggde %d events (%d earnings, %d dividend-proxies)", len(events), len(snaps), len(divs))
+    events = collect_events(cur, today)
+    logger.info("Byggde %d events", len(events))
 
     stale = clear_stale(cur, today)
     written = upsert_events(cur, events)
