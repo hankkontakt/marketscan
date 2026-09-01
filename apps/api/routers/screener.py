@@ -70,7 +70,7 @@ def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
     try:
         mr_res = (
             sb.table("master_rank")
-            .select("ticker, master_rank, tier, quality_z, value_z, momentum_z, "
+            .select("ticker, master_rank, master_rank_pctl, tier, quality_z, value_z, momentum_z, "
                     "analyst_z, analyst_upside, analyst_count, trend_tech, currency")
             .in_("ticker", tickers)
             .not_.is_("master_rank", "null")
@@ -92,6 +92,7 @@ def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
 
         if m:
             row["master_rank"] = m.get("master_rank")
+            row["master_rank_pctl"] = m.get("master_rank_pctl")
             # Always re-evaluate tier and signal with live segment-aware thresholds
             if row["master_rank"] is not None:
                 row["tier"] = tier_of(row["master_rank"], False, m.get("pit_status", "READY"), segment=seg)
@@ -116,6 +117,7 @@ def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
                 row["master_rank"] = round(float(score), 1)
                 row["tier"] = tier_of(float(score), False, "READY", segment=seg)
                 row["entry_signal"] = signal_from_tier(row["tier"])
+            row["master_rank_pctl"] = None
             row["quality_z"] = row.get("quality_z") or row.get("score_quality")
             row["value_z"] = row.get("value_z") or row.get("score_value")
             row["momentum_z"] = row.get("momentum_z") or row.get("score_momentum")
@@ -143,15 +145,17 @@ def get_scan(
     limit: int = Query(default=500, ge=1, le=500),
     sb=Depends(get_supabase),
 ):
-    db_sort = "mews_score" if sort_by == "mews_score" else "score_total"
+    fetch_limit = 2000 if sort_by == "master_rank" else limit
     q = (
         sb.table("scan_results")
         .select("*")
         .gte("score_total", score_min)
         .lte("score_total", score_max)
-        .order(db_sort, desc=True)
-        .limit(limit)
     )
+    if sort_by != "master_rank":
+        db_sort = "mews_score" if sort_by == "mews_score" else "score_total"
+        q = q.order(db_sort, desc=True)
+    q = q.limit(fetch_limit)
     q = _apply_common_filters(q, segments, sector, country, entry_signal, trend_signal,
                               piotroski_min, pe_max, roe_min, dividend_yield_min,
                               exclude_low_liquidity, mews_flag, search)
@@ -162,7 +166,11 @@ def get_scan(
     rows = _enrich_with_master_rank(sb, rows)
 
     if sort_by == "master_rank":
-        rows.sort(key=lambda r: float(r.get("master_rank") or r.get("score_total") or 0.0), reverse=True)
+        rows.sort(
+            key=lambda r: float(r.get("master_rank") if r.get("master_rank") is not None else (r.get("score_total") or 0.0)),
+            reverse=True,
+        )
+        rows = rows[:limit]
 
     return rows
 

@@ -82,5 +82,8 @@ class ScanRow(BaseModel):
     trend_tech: str | None = None
     currency: str | None = None
     master_rank: float | None = None
+    master_rank_pctl: float | None = None
+    liquidity_grade: str | None = None
+    turnover_20d_median: float | None = None
     tier: str | None = None
     stratum: str | None = None
