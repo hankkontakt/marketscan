@@ -82,9 +82,17 @@ def fetch_price_history(ticker: str) -> Optional[list[float]]:
             return None
         rets = hist["Close"].pct_change().dropna().tolist()
         last = float(hist["Close"].iloc[-1])
+        volumes_20d = list(hist["Volume"].tail(20).astype(float)) if "Volume" in hist else []
+        closes_20d = list(hist["Close"].tail(20).astype(float))
         _cache_path(ticker).parent.mkdir(parents=True, exist_ok=True)
-        payload = {"ticker": ticker, "fetched_at": date.today().isoformat(),
-                   "returns_1y": rets, "close_last": last}
+        payload = {
+            "ticker": ticker,
+            "fetched_at": date.today().isoformat(),
+            "returns_1y": rets,
+            "close_last": last,
+            "volumes_20d": volumes_20d,
+            "closes_20d": closes_20d,
+        }
         _cache_path(ticker).write_text(json.dumps(payload, default=str), encoding="utf-8")
         return list(hist["Close"].astype(float))
     except Exception as e:
