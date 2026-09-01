@@ -245,22 +245,8 @@ def trigger_backtest(
     run = run_res.data[0]
     run_id = run["id"]
 
-    # Attempt background execution in-process (best-effort — works if DATABASE_URL set)
-    def _run_backtest():
-        import os
-        dsn = os.environ.get("DATABASE_URL")
-        if not dsn:
-            logger.warning("DATABASE_URL not set — backtest queued for external worker")
-            return
-        try:
-            from backend_worker.strategy_backtester import run_backtest
-            run_backtest(strategy_id, dsn, existing_run_id=run_id)
-            logger.info("Backtest %s completed in background", run_id)
-        except Exception as exc:
-            logger.error("Backtest %s failed: %s", run_id, exc)
-
-    background_tasks.add_task(_run_backtest)
-
+    # Backtest is queued in DB for external worker/CI
+    logger.info("Backtest %s queued for external worker", run_id)
     return {"run_id": run_id, "status": "pending", "message": "Backtest köat"}
 
 
@@ -500,6 +486,7 @@ class StressTestRequest(BaseModel):
 @router.post("/api/strategy-lab/barbell-optimize")
 def optimize_barbell_portfolio(
     body: BarbellOptimizeRequest,
+    user: User = Depends(get_current_user),
     sb=Depends(get_user_supabase),
 ):
     """Generates an institutional Barbell portfolio (Core 60% / Satellite 40%).
@@ -527,6 +514,7 @@ def optimize_barbell_portfolio(
 @router.post("/api/strategy-lab/stress-test")
 def run_portfolio_stress_test(
     body: StressTestRequest,
+    user: User = Depends(get_current_user),
 ):
     """Runs 4 crisis stress-tests (rate shock, tech drawdown, smallcap crunch, stagflation)."""
     return stress_test_portfolio(body.holdings)

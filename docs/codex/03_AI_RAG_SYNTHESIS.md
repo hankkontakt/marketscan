@@ -57,8 +57,8 @@ AI-motorn i MarketScan syntetiserar kvantitativ data och ostrukturerad text (år
 
 | Komponent | Modul / Fil | Syfte |
 |---|---|---|
-| **DeepSeek Klient** | `apps/api/core/deepseek_client.py` | Primär LLM-klient med OpenAI-kompatibelt gränssnitt mot DeepSeek-V3 |
-| **LLM Router & Fallback** | `apps/api/core/llm_client.py` | Fallback-orkestrering och token-budgetkontroll |
+| **DeepSeek Klient** | `apps/api/core/deepseek_client.py` | Primär LLM-klient med OpenAI-kompatibelt gränssnitt; `_resolve_endpoint` routar nyckeltyp ('sk-or-…' → OpenRouter, 'sk-…' → api.deepseek.com); `return_meta=True` returnerar `(text, finish_reason)` så avklippta svar ('length') kan detekteras |
+| **LLM Router & Fallback** | `apps/api/core/llm_client.py` | Fallback-orkestrering (`prefer="cheap"`/`"quality"`) och token-budget; nycklar läses från `settings` vid anropstid och återanvänder `_resolve_endpoint` — samma routing-källa som committee/explain-vägen; synkrona httpx-anrop körs i `asyncio.to_thread` |
 | **Re-ranker** | `apps/api/core/reranker.py` | Väljer ut de mest relevanta textstyckena för given fråga |
 | **Grounding Validator** | `apps/api/core/grounding.py` | Kräver källhänvisningar och förhindrar hallucinationer |
 | **AI Caching** | `apps/api/core/ai_cache.py` | Hash-baserad caching i tabellen `ai_cache` |
@@ -72,6 +72,8 @@ AI-motorn i MarketScan syntetiserar kvantitativ data och ostrukturerad text (år
 2. **Aktiejämförelse (`POST /api/ai/compare`):** Djupgående semantisk jämförelse mellan två bolags affärsmodeller och vallgravar.
 3. **Smart Filter-tolk (`POST /api/ai/parse-filter`):** Översätter naturligt språk (t.ex. "lönsamma verkstadsbolag med låg skuld och bra utdelning") till strukturerade SQL/API-filter.
 4. **Mikrolektioner & Begreppsförklarare:** Genererar pedagogiska förklaringar anpassade för nybörjare.
+5. **Daglig portföljcoach (`POST /api/ai/daily-coach`):** Servern beräknar ALLA fakta ur innehaven (grounding); LLM:en (`llm_complete`, `prefer="quality"`, `max_tokens=700`) formulerar en briefing. Cachas per användare/dag/portföljläge — ENDAST lyckade svar.
+6. **AI-förklaring (`POST /api/ai/explain/{ticker}` + `/followup`):** Pedagogisk förklaring för nybörjare, `max_tokens=1200` (omförsök vid avklippning → 2500), `finish_reason`-styrd truncation-flagga till frontend, cache-nyckel `explain:v2:…` (gamla avklippta poster ogiltigförklaras).
 
 ---
 
@@ -79,7 +81,8 @@ AI-motorn i MarketScan syntetiserar kvantitativ data och ostrukturerad text (år
 
 | Område | Fil | Funktioner |
 |---|---|---|
-| AI API Router | `apps/api/routers/ai.py` | `/api/ai/committee`, `/api/ai/compare`, `/api/ai/parse-filter` |
+| AI API Router | `apps/api/routers/ai.py` | `/api/ai/committee`, `/api/ai/compare`, `/api/ai/parse-filter`, `/api/ai/daily-coach`, `/api/ai/explain/{ticker}`, `/api/ai/explain/{ticker}/followup` |
+| LLM-routing-test | `apps/api/tests/test_llm_client_routing.py` | Routing-paritet, settings-nycklar, finish-normalisering, cache-policy ("fel cachas aldrig") |
 | RAG Fetcher | `backend_worker/rag/document_fetcher.py` | `fetch_company_filings()`, `extract_pdf_text()` |
 | Grounding Check | `apps/api/core/grounding.py` | `require_citations()`, `validate_grounding()` |
 | AI Cache Helper | `apps/api/core/ai_cache.py` | `get_cached()`, `set_cache()` |
@@ -91,3 +94,5 @@ AI-motorn i MarketScan syntetiserar kvantitativ data och ostrukturerad text (år
 1. **Autentiseringskrav:** Alla publika LLM-endpoints kräver inloggad användare (`get_current_user`) för att förhindra DoS och oönskad API-kostnad.
 2. **Strikta JSON-kontrakt:** Inga fria textströmmar utan validering via Pydantic. Om modellen returnerar ogiltig JSON körs en automatisk retry med felmeddelandet injicerat.
 3. **Cachningspolicy:** Analyser för samma kvartalsrapport cachas i 7 dagar om inte användaren begär tvingad uppdatering.
+4. **CACHA ALDRIG FEL (regression 2026-08-31):** Felaktiga/avklippta LLM-svar får ALDRIG fastna i `ai_cache` — `daily-coach` returnerar tom briefing vid fel (frontend visar feltillstånd + retry) och `explain` cachar endast kompletta svar (`finish_reason != "length"`). Tidigare fastnade felmeddelandet en hel dag och dolde att AI:t var återställt.
+5. **Token-policy:** explain/followup kör 1200 tokens med omförsök vid 2500; daily-coach 700; committee-analytiker 2500. Prompt-kontrakt: explain tillåter markdown (renderas av `MarkdownLite`), daily-coach förbjuder markdown; disclaimers läggs alltid av gränssnittet, aldrig av modellen (undviker dubbletter).

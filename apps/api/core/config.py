@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     DEEPSEEK_MODEL: str = "deepseek/deepseek-v4-pro-0813"
     FINNHUB_API_KEY: str = ""
 
+    # Gemini (free tier fallback) — läses av llm_client vid ANROPSTID via settings,
+    # så att nycklar satta i Vercel eller .env.local alltid slår igenom.
+    GEMINI_API_KEY: str = ""
+
     # App
     ENVIRONMENT: str = "development"
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "https://marketscan.vercel.app", "https://web-hankkontakts-projects.vercel.app"]

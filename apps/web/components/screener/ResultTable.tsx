@@ -84,6 +84,7 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 sortKey="master_rank"
                 sort={sort}
                 onSort={toggleSort}
+                tip="Kvantitativ faktormodell (0–100) kalibrerad per segment med datatäthets-tak och multi-faktor-regim"
                 width="90px"
                 align="right"
               />
@@ -92,6 +93,7 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 sortKey="score_total"
                 sort={sort}
                 onSort={toggleSort}
+                tip="Linjär sammanvägning av 8 delbetyg (0–100) från den breda scanning-motorn"
                 width="90px"
                 align="right"
               />
@@ -159,8 +161,10 @@ export function ResultTable({ data, loading, onReset }: Props) {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     {row.low_liquidity && (
-                      <AlertTriangle size={12} strokeWidth={1.5}
-                                     className="text-[var(--color-warn)] shrink-0" />
+                      <span title="Låg likviditet — genomsnittlig handelsvolym under tröskelvärde (beräknas externt; risk vid stora order)">
+                        <AlertTriangle size={12} strokeWidth={1.5}
+                                       className="text-[var(--color-warn)] shrink-0" />
+                      </span>
                     )}
                     <div>
                       <div className="font-semibold text-[var(--color-text-primary)] text-xs truncate max-w-36">
@@ -210,9 +214,9 @@ export function ResultTable({ data, loading, onReset }: Props) {
                   {formatPctChange(row.change_pct)}
                 </td>
 
-                {/* Börsvärde — valutasuffix visar explicit valutabas */}
-                <td className="px-4 py-3 tabular text-right text-[var(--color-text-secondary)]">
-                  {formatMarketCap(row.market_cap, row.currency ?? "USD")}
+                {/* Börsvärde — lagras i USD (FX-normaliserat) */}
+                <td className="px-4 py-3 tabular text-right text-[var(--color-text-secondary)]" title="Börsvärde i USD (FX-normaliserat)">
+                  {formatMarketCap(row.market_cap, "USD")}
                 </td>
 
                 {/* P/E — visar Trailing P/E med fallback till Forward P/E om tomt */}
@@ -231,11 +235,17 @@ export function ResultTable({ data, loading, onReset }: Props) {
                   })()}
                 </td>
 
-                {/* ROE — visar RÅ värde (neutraliserad residual är intern) */}
+                {/* ROE — visar endast RÅ värde (neutraliserad residual är intern) */}
                 <td className="px-4 py-3 text-right tabular">
                   {(() => {
-                    const v = row.roe_raw ?? row.roe;
-                    return v != null && v > 0.0005 ? `${(v * 100).toFixed(0)}%` : "—";
+                    const v = row.roe_raw;
+                    return v != null && v > 0.0005 ? (
+                      `${(v * 100).toFixed(0)}%`
+                    ) : (
+                      <span className="text-[var(--color-text-muted)] inline-flex items-center justify-end gap-1" title="Rå ROE saknas">
+                        —
+                      </span>
+                    );
                   })()}
                 </td>
               </tr>
@@ -278,16 +288,17 @@ export function ResultTable({ data, loading, onReset }: Props) {
 
 // U-8: Column header tooltips — explanations for each metric
 const COL_TIPS: Partial<Record<string, string>> = {
-  Totalbetyg: "Systemets samlade betyg (0–100) baserat på 8 faktorer: Värde, Kvalitet, Momentum, Tillväxt, Risk, Storlek, Utdelning och Sentiment. Över 70 är starkt.",
+  MasterRank: "Kvantitativ faktormodell (0–100) kalibrerad per segment med datatäthets-tak och multi-faktor-regim. Till skillnad från Totalbetyg anpassas trösklarna för småbolag.",
+  Totalbetyg: "Linjär sammanvägning av 8 delbetyg (0–100) från den breda scanning-motorn: Värde, Kvalitet, Momentum, Tillväxt, Risk, Storlek, Utdelning och Sentiment.",
   Köpläge: "Köpsignalen baseras på tekniska faktorer: trend, momentum och marknadsläge. STARK = starka tekniska signaler. OK = neutralt. VÄNTA = avvakta.",
   Trend: "Aktiens pristrend de senaste 3–6 månaderna. Upptrend = stigande mönster. Nedtrend = fallande. Sidled = utan tydlig riktning.",
-  Börsvärde: "Aktiekursen multiplicerat med antalet aktier — hur mycket hela bolaget värderas till på börsen.",
+  Börsvärde: "Aktiekursen multiplicerat med antalet aktier — hur mycket hela bolaget värderas till på börsen (normaliserat till USD).",
   "P/E": "Price/Earnings — aktiekursen delat med vinst per aktie (senaste 12 mån). Lägre = billigare relativt vinsten. Negativt = bolaget går med förlust.",
-  ROE: "Return on Equity — hur mycket vinst bolaget genererar per investerad krona av eget kapital. Högt ROE tyder på effektiv kapitalanvändning.",
+  ROE: "Return on Equity — hur mycket vinst bolaget genererar per investerad krona av eget kapital (visar uteslutande verkligt råvärde).",
 };
 
 function Th({
-  label, width, sortKey, sort, onSort, align = "left",
+  label, width, sortKey, sort, onSort, align = "left", tip: propTip,
 }: {
   label: string;
   width?: string;
@@ -295,9 +306,10 @@ function Th({
   sort?: { key: SortKey; dir: SortDir };
   onSort?: (k: SortKey) => void;
   align?: "left" | "right";
+  tip?: string;
 }) {
   const active = sortKey && sort?.key === sortKey;
-  const tip = COL_TIPS[label];
+  const tip = propTip ?? COL_TIPS[label];
   return (
     <th
       style={{ width }}

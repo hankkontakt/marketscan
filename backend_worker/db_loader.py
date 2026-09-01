@@ -167,13 +167,19 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
 
 def _derive_segment(market_cap_usd: float | None) -> str:
     """Map USD market cap to segment string."""
-    if market_cap_usd is None or market_cap_usd <= 0:
-        return "micro_cap"
-    if market_cap_usd >= SEGMENT_THRESHOLDS["large_cap"]:
+    if market_cap_usd is None or pd.isna(market_cap_usd) or market_cap_usd <= 0:
+        return "unknown"
+    mc = float(market_cap_usd)
+    if 0 < mc < 1_000_000:
+        logger.warning("market_cap %s scaled by 1e6 as probable million-unit -> %s", mc, mc * 1_000_000)
+        mc *= 1_000_000
+    if mc > 1e13:
+        logger.warning("market_cap %s unusually large (>1e13 USD)", mc)
+    if mc >= SEGMENT_THRESHOLDS["large_cap"]:
         return "large_cap"
-    if market_cap_usd >= SEGMENT_THRESHOLDS["mid_cap"]:
+    if mc >= SEGMENT_THRESHOLDS["mid_cap"]:
         return "mid_cap"
-    if market_cap_usd >= SEGMENT_THRESHOLDS["small_cap"]:
+    if mc >= SEGMENT_THRESHOLDS["small_cap"]:
         return "small_cap"
     return "micro_cap"
 

@@ -1,9 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { formatPrice, formatPctChange, signalLabel, scoreColorClass } from "../format";
+import { formatPrice, formatPctChange, signalLabel, scoreColorClass, segmentLabel } from "../format";
 
 describe("formatPrice", () => {
   it("formats a number as SEK currency", () => {
     expect(formatPrice(123.45)).toMatch(/123,45/);
+  });
+
+  it("formats GBp as pence with p suffix", () => {
+    expect(formatPrice(2864, "GBp")).toMatch(/2\s?864p/);
+  });
+
+  it("falls back gracefully on invalid currency code without throwing", () => {
+    expect(formatPrice(10, "INVALID_CURRENCY")).toContain("INVALID_CURRENCY");
+  });
+
+  it("formats AUD currency", () => {
+    expect(formatPrice(50.25, "AUD")).toMatch(/50,25/);
   });
 
   it("returns em dash for null", () => {
@@ -60,5 +72,19 @@ describe("scoreColorClass", () => {
 
   it("returns muted for null", () => {
     expect(scoreColorClass(null)).toBe("text-[var(--color-text-muted)]");
+  });
+});
+
+describe("segmentLabel", () => {
+  it("translates segments to Swedish labels", () => {
+    expect(segmentLabel("large_cap")).toBe("Stora bolag");
+    expect(segmentLabel("mid_cap")).toBe("Medelstora");
+    expect(segmentLabel("small_cap")).toBe("Småbolag");
+    expect(segmentLabel("micro_cap")).toBe("Mikrobolag");
+    expect(segmentLabel("unknown")).toBe("Okänd");
+  });
+
+  it("handles null gracefully", () => {
+    expect(segmentLabel(null)).toBe("—");
   });
 });

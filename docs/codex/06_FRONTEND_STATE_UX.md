@@ -54,6 +54,12 @@ Klienten använder `apps/web/lib/api.ts` för alla API-anrop med automatisk JWT-
 4. **Diagram-motorer:**
    - **Recharts:** Används för fördelningsdiagram (Donut, Pie), radar-diagram (`MultiFactorRadar.tsx`) och tidsserier.
    - **Lightweight Charts:** Används för högpresterande candlestick-kursdiagram.
+5. **AI-text renderas ALDRIG som råtext (regression 2026-08-31):** All LLM-genererad text (`AI-förklaring`, följdfrågechatt, coach-briefing) går genom `apps/web/components/ui/MarkdownLite.tsx` (stödjer `**fet**`, punktlistor `- * •`, numrerade punkter; stripar rubrikmarkörer). Tidigare renderades AI-förklaringen som rå `<p>` → synliga `**`/`*` i UI.
+6. **AI-analysens visuella kontrakt (`AnalysCommittee.tsx`):**
+   - Verdict + analytikernas "OMDÖME" renderas som färgkodade chips (STARK → `--color-up`, BRA → `--color-accent`, AVVAKTA → `--color-warn`, EJ AKTUELL → muted) med matchande soft-bakgrund.
+   - Ordförandens syntes parsas i intro + Bull/Base/Bear-scenarier (`splitScenarios`) som renderas som tre färgkodade minikort (grön/accent/röd med TrendingUp/Minus/TrendingDown); parsning är best-effort — faller tillbaka till hel text om inte alla tre hittas.
+7. **AI-feltillstånd med retry (`PortfolioCoachCard.tsx`):** Tom briefing från backend → feltillstånd (ikon + text + "Försök igen" via `invalidateQueries`); backend cachar aldrig fel, så retry kan faktiskt lyckas.
+8. **Likviditets- & ROE-visningskontrakt:** `low_liquidity` renderas med varningstriangel och förklarande tooltip. ROE visar endast `roe_raw` (aldrig neutraliserad residual); saknat råvärde visar `"—"` med tooltip.
 
 ---
 
@@ -66,6 +72,8 @@ Klienten använder `apps/web/lib/api.ts` för alla API-anrop med automatisk JWT-
 | Aktievyn | `apps/web/app/(app)/aktie/[ticker]/page.tsx` | Huvudsida för aktiedetaljer |
 | Portföljvy | `apps/web/app/(app)/portfolj/page.tsx` | Portföljöversikt och innehavshantering |
 | Avanza Import | `apps/web/components/portfolio/ImportModal.tsx` | CSV-uppladdning och parsning |
+| AI-analysytor | `apps/web/components/stock/AnalysCommittee.tsx` | Chips + scenario-kort; `ExplainSection.tsx` AI-förklaring via `MarkdownLite` |
+| Markdown-rendering | `apps/web/components/ui/MarkdownLite.tsx` | Lättviktig markdown för LLM-text utan externa libs |
 | Design Tokens | `apps/web/app/globals.css` | CSS-variabler för Tailwind v4 tema |
 
 ---

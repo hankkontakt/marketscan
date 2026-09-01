@@ -1,8 +1,8 @@
 """
-portfolio_construction.py — Portföljkonstruktion (ERC + Black-Litterman).
+portfolio_construction.py — Portfoljkonstruktion (ERC + Black-Litterman).
 
-Riskparitet (ERC): robust baslinje som bara kräver kovariansmatris.
-Black-Litterman: kombinerar marknadsprior med AI-views för posterior-vikter.
+Riskparitet (ERC): robust baslinje som bara kraver kovariansmatris.
+Black-Litterman: kombinerar marknadsprior med AI-views for posterior-vikter.
 
 All ren NumPy/SciPy — inga externa beroenden.
 """
@@ -11,24 +11,27 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-import numpy as np
-from scipy.optimize import minimize
-
 logger = logging.getLogger(__name__)
 
+try:
+    import numpy as np
+    from scipy.optimize import minimize
+    HAS_NUMPY_SCIPY = True
+except ImportError:
+    np = None  # type: ignore
+    minimize = None  # type: ignore
+    HAS_NUMPY_SCIPY = False
 
-def equal_risk_contribution(cov: np.ndarray) -> np.ndarray:
+
+def equal_risk_contribution(cov) -> list[float] | object:
     """Equal Risk Contribution (ERC / Risk Parity).
 
-    Varje tillgång bidrar lika mycket till portföljrisken.
+    Varje tillgang bidrar lika mycket till portfoljrisken.
     Long-only, summa=1.
-
-    Args:
-        cov: Kovariansmatris (n_assets x n_assets).
-
-    Returns:
-        Vikt-array (n_assets,) som summerar till 1.
     """
+    if not HAS_NUMPY_SCIPY:
+        raise NotImplementedError("Heavy optimization requires numpy and scipy.")
+    cov = np.asarray(cov)
     n = cov.shape[0]
     if n == 0:
         return np.array([])
@@ -36,11 +39,9 @@ def equal_risk_contribution(cov: np.ndarray) -> np.ndarray:
         return np.array([1.0])
 
     def _risk_contribution(weights: np.ndarray) -> np.ndarray:
-        """Beräkna marginal risk contribution per tillgång."""
         port_var = weights @ cov @ weights
         if port_var <= 0:
             return np.zeros(n)
-        # Marginal risk = (cov @ weights) / sqrt(port_var)
         marginal = cov @ weights
         rc = weights * marginal / np.sqrt(port_var)
         return rc
@@ -64,10 +65,8 @@ def equal_risk_contribution(cov: np.ndarray) -> np.ndarray:
 
     if not result.success:
         logger.warning("ERC-optimering konvergerade inte: %s", result.message)
-        # Fallback: equal weight
         return np.ones(n) / n
 
-    # Normalisera
     w = result.x
     w = np.maximum(w, 0)
     w = w / w.sum()
@@ -75,99 +74,65 @@ def equal_risk_contribution(cov: np.ndarray) -> np.ndarray:
 
 
 def black_litterman(
-    market_caps: np.ndarray,
-    cov: np.ndarray,
+    market_caps,
+    cov,
     views: list[dict],
     risk_aversion: float = 2.5,
     tau: float = 0.05,
     max_position_pct: float = 0.25,
     target_volatility: Optional[float] = None,
-) -> np.ndarray:
-    """Black-Litterman portföljkonstruktion med AI-views.
-
-    Standard BL-matematik (Idzorek):
-      1. Implied equilibrium returns Π = δ Σ w_mkt
-      2. Kombinera med views (P, Q, Ω) → posterior E[R]
-      3. Mean-variance optimization med constraints
-
-    Args:
-        market_caps: Marknadsvärden för equilibrium-vikter.
-        cov: Kovariansmatris (n_assets x n_assets).
-        views: Lista med dicts {ticker_idx, expected_excess_return, confidence}.
-               ticker_idx = index i market_caps/cov.
-               confidence = 0..1 (hur säker är view:n?).
-        risk_aversion: Riskaversion (δ). Lägre = tryggare profil.
-        tau: Skalning av prior-kovarians (standard 0.05).
-        max_position_pct: Maximal vikt per position (0..1).
-        target_volatility: Målvolatilitet (om satt, skala).
-
-    Returns:
-        Posterior-vikter (n_assets,) som summerar till 1.
-    """
+):
+    """Black-Litterman portfoljkonstruktion med AI-views."""
+    if not HAS_NUMPY_SCIPY:
+        raise NotImplementedError("Heavy optimization requires numpy and scipy.")
+    market_caps = np.asarray(market_caps)
+    cov = np.asarray(cov)
     n = len(market_caps)
     if n == 0:
         return np.array([])
 
-    # 1. Market cap weights
-    w_mkt = np.array(market_caps, dtype=float)
-    w_mkt = np.maximum(w_mkt, 0)
-    if w_mkt.sum() == 0:
-        w_mkt = np.ones(n) / n
-    else:
-        w_mkt = w_mkt / w_mkt.sum()
-
-    # 2. Implied equilibrium returns Π = δ Σ w_mkt
+    total_mcap = market_caps.sum()
+    w_mkt = market_caps / total_mcap if total_mcap > 0 else np.ones(n) / n
     pi = risk_aversion * cov @ w_mkt
 
-    # 3. Bygg view-matriser
-    if not views:
-        # Inga views → returnera equilibrium-vikter
-        return w_mkt
-
     k = len(views)
-    P = np.zeros((k, n))
-    Q = np.zeros(k)
-    omega = np.zeros((k, k))
+    if k == 0:
+        er = pi
+        cov_post = cov
+    else:
+        P = np.zeros((k, n))
+        Q = np.zeros(k)
+        omega_diag = np.zeros(k)
 
-    for i, view in enumerate(views):
-        idx = view.get("ticker_idx", i)
-        if idx >= n:
-            continue
-        P[i, idx] = 1.0
-        Q[i] = view.get("expected_excess_return", 0.0)
-        confidence = max(min(view.get("confidence", 0.5), 1.0), 0.01)
-        # Ω: uncertainty scaled by prior variance
-        omega[i, i] = (1.0 / confidence - 1.0) * cov[idx, idx] * tau if cov[idx, idx] > 0 else 0.01
+        for i, view in enumerate(views):
+            idx = view["ticker_idx"]
+            conf = min(max(view.get("confidence", 0.5), 0.05), 0.95)
+            P[i, idx] = 1.0
+            Q[i] = view.get("expected_excess_return", 0.0)
+            asset_var = cov[idx, idx]
+            omega_diag[i] = asset_var * (1.0 - conf) / conf
 
-    # 4. Posterior expected returns (BL master formula)
-    # E[R] = [(τΣ)⁻¹ + PᵀΩ⁻¹P]⁻¹ [(τΣ)⁻¹Π + PᵀΩ⁻¹Q]
-    tau_cov = tau * cov
+        Omega = np.diag(omega_diag)
+        tau_sigma = tau * cov
+        tau_sigma_inv = np.linalg.pinv(tau_sigma)
+        omega_inv = np.linalg.pinv(Omega)
 
-    try:
-        inv_tau_cov = np.linalg.inv(tau_cov)
-        inv_omega = np.linalg.inv(omega)
+        M_inv = tau_sigma_inv + P.T @ omega_inv @ P
+        M = np.linalg.pinv(M_inv)
 
-        # Posterior covariance
-        M = np.linalg.inv(inv_tau_cov + P.T @ inv_omega @ P)
-        # Posterior mean
-        mu_bl = M @ (inv_tau_cov @ pi + P.T @ inv_omega @ Q)
-    except np.linalg.LinAlgError:
-        logger.warning("BL matrix inversion failed — using equilibrium returns")
-        mu_bl = pi
+        er = M @ (tau_sigma_inv @ pi + P.T @ omega_inv @ Q)
+        cov_post = cov + M
 
-    # 5. Mean-variance optimization with constraints
     def _neg_utility(weights: np.ndarray) -> float:
-        port_return = weights @ mu_bl
-        port_risk = weights @ cov @ weights
-        return -(port_return - 0.5 * risk_aversion * port_risk)
+        port_return = weights @ er
+        port_var = weights @ cov_post @ weights
+        return -(port_return - 0.5 * risk_aversion * port_var)
 
-    constraints = [
-        {"type": "eq", "fun": lambda w: np.sum(w) - 1.0},
-    ]
+    constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
     bounds = [(0.0, max_position_pct)] * n
-    x0 = w_mkt.copy()
+    x0 = np.ones(n) / n
 
-    result = minimize(
+    res = minimize(
         _neg_utility, x0,
         method="SLSQP",
         bounds=bounds,
@@ -175,44 +140,39 @@ def black_litterman(
         options={"maxiter": 1000, "ftol": 1e-12},
     )
 
-    weights = result.x if result.success else w_mkt
-    weights = np.maximum(weights, 0)
-    weights = weights / weights.sum()
+    if res.success:
+        weights = np.maximum(res.x, 0)
+        weights = weights / weights.sum()
+    else:
+        logger.warning("BL-optimering konvergerade inte: %s — anvander marknadsvikter", res.message)
+        weights = w_mkt
 
-    # 6. Volatilitets-begränsning
-    if target_volatility is not None:
-        port_vol = np.sqrt(weights @ cov @ weights)
-        if port_vol > target_volatility and port_vol > 0:
-            # Skala ner risk
-            scale = target_volatility / port_vol
-            # Blanda med kontanter (risk-free)
-            cash = 1.0 - scale
-            weights = weights * scale
+    if target_volatility is not None and target_volatility > 0:
+        port_vol = float(np.sqrt(weights @ cov_post @ weights))
+        if port_vol > target_volatility:
+            cash = 1.0 - (target_volatility / port_vol)
             weights = weights / weights.sum() * (1 - cash)
-            logger.info("BL: vol constraint applied (%.1f%% → %.1f%%)", port_vol * 100, target_volatility * 100)
+            logger.info("BL: vol constraint applied (%.1f%% -> %.1f%%)", port_vol * 100, target_volatility * 100)
 
     return weights
 
 
 def portfolio_stats(
-    weights: np.ndarray,
-    cov: np.ndarray,
-    expected_returns: Optional[np.ndarray] = None,
+    weights,
+    cov,
+    expected_returns=None,
 ) -> dict:
-    """Beräkna portföljstatistik.
-
-    Returns:
-        Dict med expected_return, volatility, sharpe, var_95.
-    """
+    """Berakna portfoljstatistik."""
+    if not HAS_NUMPY_SCIPY:
+        return {"expected_return": 0, "volatility": 0, "sharpe": 0, "var_95": 0}
+    weights = np.asarray(weights)
+    cov = np.asarray(cov)
     if len(weights) == 0:
         return {"expected_return": 0, "volatility": 0, "sharpe": 0, "var_95": 0}
 
     vol = float(np.sqrt(weights @ cov @ weights))
     ret = float(weights @ expected_returns) if expected_returns is not None else 0.0
-
-    # VaR (95%, normal approximation)
     var_95 = float(-1.645 * vol)
-
     sharpe = ret / vol if vol > 0 else 0.0
 
     return {
@@ -239,7 +199,7 @@ def build_barbell_portfolio(
     max_sector_share: float = MAX_SECTOR_SHARE,
     target_holdings_count: int = 10,
 ) -> dict:
-    """Optimerar och konstruerar en Barbell-portfölj med sektortak och riskkontroll."""
+    """Optimerar och konstruerar en Barbell-portfolj med sektortak och riskkontroll."""
     if not candidates:
         return {"holdings": [], "metrics": {}, "sector_breakdown": {}}
 
@@ -304,7 +264,7 @@ def build_barbell_portfolio(
                 "weight": round(min(sat_w, MAX_SATELLITE_SINGLE_WEIGHT), 4),
                 "sector": c.get("sector") or "Other",
                 "master_rank": c.get("master_rank"),
-                "thesis": f"Satellit-alpha: Tillväxt {round(float(c.get('revenue_growth') or 0.0)*100, 1)}%, Rank {c.get('master_rank')}"
+                "thesis": f"Satellit-alpha: Tillvaxt {round(float(c.get('revenue_growth') or 0.0)*100, 1)}%, Rank {c.get('master_rank')}"
             })
 
     total_w = sum(h["weight"] for h in holdings)
@@ -334,30 +294,30 @@ def build_barbell_portfolio(
 
 SCENARIOS = {
     "RATE_SHOCK_150BPS": {
-        "title": "Räntechock (+150 bps)",
-        "description": "Kraftigt stigande marknadsräntor som pressar högt värderade tillväxtmultiplar och högt belånade bolag (motsvarande 2022).",
+        "title": "Rantechock (+150 bps)",
+        "description": "Kraftigt stigande marknadsrantor som pressar hogt varderade tillvaxtmultiplar och hogt belanade bolag (motsvarande 2022).",
         "market_shock_pct": -12.0,
     },
     "TECH_SEMI_DRAWDOWN_25PCT": {
-        "title": "Teknik- & Halvledarnedgång (-25%)",
+        "title": "Teknik- & Halvledarnedgang (-25%)",
         "description": "Cyklisk avkylning och multipelkontraktion inom tech och halvledare.",
         "market_shock_pct": -15.0,
     },
     "SMALLCAP_LIQUIDITY_CRUNCH": {
-        "title": "Småbolags- & Likviditetskris (-20%)",
-        "description": "Likviditeten torkar upp i småbolagssegmentet med kraftig spreadvidgning som följd.",
+        "title": "Smabolags- & Likviditetskris (-20%)",
+        "description": "Likviditeten torkar upp i smabolagssegmentet med kraftig spreadvidgning som foljd.",
         "market_shock_pct": -10.0,
     },
     "STAGFLATION_ENERGY_SPIKE": {
-        "title": "Stagflations- & Råvaruchock (+30% Olja)",
-        "description": "Ihållande kostnadsinflation som pressar bruttomarginaler för bolag utan prissättningskraft.",
+        "title": "Stagflations- & Ravaruchock (+30% Olja)",
+        "description": "Ihallande kostnadsinflation som pressar bruttomarginaler for bolag utan prissattningskraft.",
         "market_shock_pct": -8.0,
     },
 }
 
 
 def stress_test_portfolio(holdings: list[dict]) -> dict:
-    """Stresstestar en portfölj mot 4 standardiserade kris-scenarier."""
+    """Stresstestar en portfolj mot 4 standardiserade kris-scenarier."""
     if not holdings:
         return {"scenarios": {}, "resilience_score": 50.0, "worst_scenario": None}
 
@@ -393,9 +353,9 @@ def stress_test_portfolio(holdings: list[dict]) -> dict:
                 elif "health" in sec or "defen" in sec or "util" in sec:
                     shock_multiplier = 0.3
             elif key == "SMALLCAP_LIQUIDITY_CRUNCH":
-                if mcap < 5e9:  # Small/Micro
+                if mcap < 5e9:
                     shock_multiplier = 1.7
-                elif mcap > 1e11:  # Mega
+                elif mcap > 1e11:
                     shock_multiplier = 0.5
             elif key == "STAGFLATION_ENERGY_SPIKE":
                 gm = float(h.get("gross_margin") or 0.40)
@@ -430,4 +390,3 @@ def stress_test_portfolio(holdings: list[dict]) -> dict:
         "resilience_score": resilience_score,
         "worst_drawdown_pct": round(worst_dd, 2),
     }
-

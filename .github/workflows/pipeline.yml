@@ -6,19 +6,15 @@ permissions:
 on:
   schedule:
     # Morning scan (~06:15 Stockholm)
-    # UTC 05:15 = 06:15 CET (vinter), 07:15 CEST (sommar)
-    # ±1h wobble acceptabelt — enklare än dubbla crons med DST-detektion
     - cron: "15 5 * * 1-5"
     # Evening update (~18:30 Stockholm)
-    # UTC 17:30 = 18:30 CET (vinter), 19:30 CEST (sommar)
     - cron: "30 17 * * 1-5"
-    # Weekly deep scan (Sunday ~08:00 Stockholm)
-    # UTC 07:00 = 08:00 CET (vinter), 09:00 CEST (sommar)
-    - cron: "0 7 * * 0"
+    # Weekly deep scan (Sunday ~07:00 Stockholm, spread from company_profiles 07:00 UTC)
+    - cron: "0 6 * * 0"
   workflow_dispatch:
     inputs:
       mode:
-        description: "Pipeline mode (morning/evening/weekly/smallcap/targeted/refresh_missing/retry_rate_limited)"
+        description: "Pipeline mode (morning/evening/weekly/manual/smallcap/targeted)"
         required: true
         default: "morning"
         type: string
@@ -30,7 +26,7 @@ on:
 
 env:
   TZ: "Europe/Stockholm"
-  PYTHONPATH: "marketscan:stock-scanner"
+  PYTHONPATH: ".:stock-scanner"
 
 jobs:
   run-pipeline:
@@ -39,18 +35,16 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Check out the new marketscan repo
-          path: marketscan
+      - name: Checkout marketscan
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Also check out stock-scanner for core/ pipeline logic
-      # Requires GH_CHECKOUT_TOKEN secret (PAT with repo scope) to access private repo
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout stock-scanner (optional dependency)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: hankkontakt/stock-scanner
           token: ${{ secrets.GH_CHECKOUT_TOKEN }}
           path: stock-scanner
+        continue-on-error: true
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -58,7 +52,9 @@ jobs:
           cache: pip
 
       - name: Install backend_worker deps
-        run: pip install -r marketscan/backend_worker/requirements.txt
+        run: |
+          pip install -r backend_worker/requirements.txt
+          if [ -f stock-scanner/requirements.txt ]; then pip install -r stock-scanner/requirements.txt; fi
 
       - name: Supabase heartbeat (keep DB warm)
         run: |
@@ -84,7 +80,7 @@ jobs:
           MODE="${{ github.event.inputs.mode || 'morning' }}"
           TICKERS="${{ github.event.inputs.tickers || '' }}"
           if [ -n "$TICKERS" ]; then
-            python -m marketscan.backend_worker.pipeline.entrypoint --mode "$MODE" --tickers "$TICKERS"
+            python -m backend_worker.pipeline.entrypoint --mode "$MODE" --tickers "$TICKERS"
           else
-            python -m marketscan.backend_worker.pipeline.entrypoint --mode "$MODE"
+            python -m backend_worker.pipeline.entrypoint --mode "$MODE"
           fi

@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Sparkles, Send } from "lucide-react";
+import { Sparkles, Send, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { trackEvent, EVENT } from "@/lib/tracking";
 import { cn } from "@/lib/utils";
 import { FeedbackWidget } from "@/components/ui/FeedbackWidget";
+import { MarkdownLite } from "@/components/ui/MarkdownLite";
 import type { ScanRow } from "@/types/scan";
 
 interface ExplainResponse {
@@ -14,17 +15,20 @@ interface ExplainResponse {
   explanation: string;
   level: string;
   cached_date: string;
+  truncated?: boolean;
 }
 
 interface FollowupResponse {
   ticker: string;
   answer: string;
   cached_date: string;
+  truncated?: boolean;
 }
 
 interface ChatMessage {
   role: "ai" | "user";
   text: string;
+  truncated?: boolean;
 }
 
 export function ExplainSection({
@@ -66,7 +70,7 @@ export function ExplainSection({
     setChat((prev) => [...prev, { role: "user", text: followupQuestion }]);
     followupMutation.mutate(followupQuestion, {
       onSuccess: (res) => {
-        setChat((prev) => [...prev, { role: "ai", text: res.answer }]);
+        setChat((prev) => [...prev, { role: "ai", text: res.answer, truncated: res.truncated }]);
         setFollowupQuestion("");
       },
     });
@@ -104,10 +108,18 @@ export function ExplainSection({
         )}
       </div>
 
-      {/* Explanation text */}
-      <p className="text-sm text-[var(--color-text-primary)] leading-relaxed whitespace-pre-line">
-        {data.explanation}
-      </p>
+      {/* Explanation text — markdown (fet + punkter) renderas via MarkdownLite */}
+      <MarkdownLite
+        text={data.explanation}
+        className="text-sm text-[var(--color-text-primary)] leading-relaxed"
+      />
+
+      {data.truncated && (
+        <p className="text-[11px] text-[var(--color-warn)] flex items-start gap-1.5">
+          <AlertCircle size={11} strokeWidth={1.5} className="mt-0.5 shrink-0" />
+          Svaret blev längre än modellens tak och kan vara ofullständigt — ställ en följdfråga för mer.
+        </p>
+      )}
 
       {/* Disclaimer */}
       <p className="text-[10px] text-[var(--color-text-muted)] italic">
@@ -133,7 +145,18 @@ export function ExplainSection({
                   : "bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]",
               )}
             >
-              {msg.text}
+              {msg.role === "ai" ? (
+                <>
+                  <MarkdownLite text={msg.text} />
+                  {msg.truncated && (
+                    <p className="text-[10px] text-[var(--color-warn)] mt-1">
+                      Svaret klipptes vid token-taket — ställ en följdfråga för resten.
+                    </p>
+                  )}
+                </>
+              ) : (
+                msg.text
+              )}
             </div>
           ))}
           {followupMutation.isPending && (

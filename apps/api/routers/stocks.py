@@ -15,6 +15,7 @@ from apps.api.dependencies import get_supabase
 from apps.api.core.duckdb_r2 import query_score_history, query_price_history
 from apps.api.core.config import settings
 from apps.api.core.search_utils import safe_search
+from apps.api.core.segments import segment_from_finnhub_mcap, segment_from_market_cap
 from apps.api.schemas.scan import ScanRow
 
 logger = logging.getLogger(__name__)
@@ -155,32 +156,20 @@ async def lookup_stocks(q: str, limit: int = 10, sb=Depends(get_supabase)):
     return []
 
 
-def _segment_from_market_cap(market_cap_millions: float | None) -> str:
-    """Determine segment string from Finnhub marketCapitalization (USD millions)."""
-    if market_cap_millions is None:
-        return "small_cap"
-    if market_cap_millions >= 10_000:
-        return "large_cap"
-    if market_cap_millions >= 1_000:
-        return "mid_cap"
-    if market_cap_millions >= 100:
-        return "small_cap"
-    return "micro_cap"
-
-
 def _segment_from_market(market: str | None) -> str:
-    """Derive ScanRow.segment from universe_registry.market (t.ex. 'First North').
-
-    ScanRow.segment är en obligatorisk Literal — fallbacken måste alltid kunna
-    producera ett giltigt värde. Okänd marknad → small_cap (nordiska småbolag
-    är standarduniversumet).
-    """
-    m = (market or "").lower()
+    """Derive ScanRow.segment from universe_registry.market (t.ex. 'First North')."""
+    if not market:
+        return "unknown"
+    m = market.lower()
     if "large" in m:
         return "large_cap"
     if "mid" in m:
         return "mid_cap"
-    return "small_cap"
+    if "small" in m:
+        return "small_cap"
+    if "micro" in m or "first north" in m or "spotlight" in m or "ngm" in m:
+        return "micro_cap"
+    return "unknown"
 
 
 @router.get("/{ticker}", response_model=ScanRow)
@@ -229,7 +218,7 @@ async def get_stock(ticker: str, sb=Depends(get_supabase)):
                 return {
                     "ticker": t,
                     "name": profile["name"],
-                    "segment": _segment_from_market_cap(cap_m),
+                    "segment": segment_from_finnhub_mcap(cap_m),
                     "sector": profile.get("finnhubIndustry"),
                     "country": profile.get("country", ""),
                     "price": quote.get("c"),
@@ -391,7 +380,7 @@ async def get_score_history(ticker: str, limit: int = 52, sb=Depends(get_supabas
 
 
 @router.get("/{ticker}/earnings-memo")
-async def get_earnings_memo(ticker: str, sb=Depends(get_supabase)):
+def get_earnings_memo(ticker: str, sb=Depends(get_supabase)):
     """Senaste AI-rapportmemot för en aktie (Spec 08). 404 om inget memo finns."""
     t = _validate_ticker(ticker)
     res = (
@@ -810,31 +799,12 @@ async def get_omxs30_benchmark():
         except Exception as e:
             logger.warning("Finnhub OMXS30 failed: %s", e)
 
-    # Fallback: synthetic benchmark (flat 5% annual return)
+    # Fallback om Finnhub inte kan leverera OMXS30
     return {
         "ticker": "^OMX",
         "name": "OMXS30",
-        "candles": _generate_mock_benchmark_candles(),
-        "is_synthetic": True,
+        "candles": [],
     }
-
-
-def _generate_mock_benchmark_candles(days: int = 400) -> list[dict]:
-    """Generate a ~8% annual return benchmark for dev."""
-    import random
-    rng = random.Random(42)  # fixed seed for reproducibility
-    price = 2500.0
-    candles = []
-    from datetime import date, timedelta
-    start = date.today() - timedelta(days=days)
-    for i in range(days):
-        d = start + timedelta(days=i)
-        if d.weekday() >= 5:
-            continue
-        ret = rng.gauss(0.0003, 0.01)  # ~7.5% annual
-        price *= (1 + ret)
-        candles.append({"time": d.isoformat(), "close": round(price, 2)})
-    return candles
 
 
 # ─── Similar stocks (F1) ─────────────────────────────────────────────────────
@@ -1033,4 +1003,5 @@ def get_qualitative_signals(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Kvalitativa signaler ej tillg\xe4ngliga: {e}")
+        logger.warning("Kvalitativa signaler misslyckades för %s: %s", t, e)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Kvalitativa signaler är inte tillgängliga för närvarande.")

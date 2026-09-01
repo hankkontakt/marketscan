@@ -65,6 +65,7 @@ Data Pipeline ansvarar för att hämta, deduplicera, normalisera och ladda finan
 2. **Ticker & ISIN Resolver:** `backend_worker/universe_mapping.py` hanterar matchning mellan ISIN, LEI-kod och Yahoo-suffix (`.ST`, `.OL`, `.HE`, `.CO`).
 3. **Encoding:** Alla CSV- och nätverksströmmar måste tvingas till `UTF-8` med `client_encoding="UTF8"` för att förhindra teckenfel i svenska å/ä/ö.
 4. **Service Role:** Pipeline-körningar kräver `SUPABASE_SERVICE_ROLE_KEY` för att kunna skriva till tabeller med RLS aktiverat.
+5. **Segment-klassificering & Guard:** Marknadsvärde (`market_cap`) lagras i absolut USD. `_derive_segment()` tillämpar enhetsguard ($0 < mc < 10^6 \implies mc \times 10^6$) och sätter saknade/icke-positiva värden till `"unknown"` (aldrig `micro_cap`), vilket förhindrar att stora bolag felaktigt klassas som mikrobolag.
 
 ---
 

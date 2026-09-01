@@ -259,7 +259,7 @@ async def trigger_pipeline(
         raise
     except Exception as e:
         logger.error("Pipeline trigger failed: %s", e)
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Kunde inte starta pipeline: {e}")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Kunde inte starta pipeline.")
 
 
 @router.post("/workflow/trigger", status_code=202)
@@ -293,7 +293,7 @@ async def trigger_workflow(
         raise
     except Exception as e:
         logger.error("Workflow trigger failed (%s): %s", body.workflow, e)
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Kunde inte starta {body.workflow}: {e}")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Kunde inte starta {body.workflow}.")
 
 
 @router.get("/workflow/list")
@@ -348,8 +348,8 @@ def setup_company_profiles(
             "message": f"Tabell finns redan — {count} profiler i databasen",
             "count": count,
         }
-    except Exception:
-        pass  # Table doesn't exist yet — continue below
+    except Exception as e:
+        logger.debug("Table check failed, proceeding: %s", e)
 
     # ── Step 2: try psycopg2 if DATABASE_URL is available ──────────────────
     dsn = os.environ.get("DATABASE_URL")
@@ -581,10 +581,11 @@ def clear_ai_cache(
 ):
     """Clear AI analysis cache in Supabase."""
     try:
-        sb.table("ai_cache").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+        sb.table("ai_cache").delete().neq("cache_key", "").execute()
         return {"cleared": True}
     except Exception as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Kunde inte rensa cache: {e}")
+        logger.warning("Failed to clear ai_cache: %s", e)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Kunde inte rensa AI-cache för närvarande.")
 
 
 # ─── Candidates / Blacklist ───────────────────────────────────────────────────

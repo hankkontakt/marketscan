@@ -1,7 +1,4 @@
-"""
-AI endpoints: NL screener parser, stock analysis, Analyskommittén, portfolio coach.
-All responses are cached per ticker/day to minimize token spend.
-"""
+import asyncio
 import json
 import logging
 from datetime import date
@@ -9,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from apps.api.core.ai_cache import get_cached, set_cache
 from apps.api.core.security import get_current_user, User
-from apps.api.dependencies import get_supabase, get_supabase_admin
+from apps.api.dependencies import get_supabase, get_user_supabase
 from apps.api.core.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -147,8 +144,7 @@ Inga generella disclaimers. Var konkret, datadriven och skarp.""",
 async def get_committee_analysis(
     ticker: str,
     body: CommitteeRequest,
-    sb=Depends(get_supabase),
-    sb_admin=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
     user: User = Depends(get_current_user),
 ):
     """
@@ -156,11 +152,8 @@ async def get_committee_analysis(
     Cached per ticker per day (stored in Supabase).
     L4: Kör synthesis 2 ggr för self-consistency.
     """
-    import asyncio
-
     cache_key = f"committee:{ticker}:{date.today().isoformat()}"
-    # Read from anon client (public read), write via admin (P2-5: ensures cache writes succeed)
-    cached = get_cached(cache_key, sb_admin)
+    cached = get_cached(cache_key, sb)
     if cached:
         return cached
 
@@ -250,12 +243,11 @@ SENTIMENTANALYTIKER:
         "cached_date": date.today().isoformat(),
     }
 
-    # P2-5: Use admin client for cache writes so grant/RLS issues don't silently skip caching
-    set_cache(cache_key, response, sb_admin)
+    set_cache(cache_key, response, sb)
 
     # Save to AI journal for transparency
     try:
-        sb_admin.table("ai_journal").insert({
+        sb.table("ai_journal").insert({
             "ticker": ticker,
             "verdict": synthesis.get("verdict", "AVVAKTA"),
             "confidence": synthesis.get("confidence"),
@@ -303,11 +295,11 @@ class AICompareResponse(BaseModel):
 
 
 @router.post("/compare")
-async def ai_compare(body: AICompareRequest, sb=Depends(get_supabase), sb_admin=Depends(get_supabase_admin), user: User = Depends(get_current_user)):
+async def ai_compare(body: AICompareRequest, sb=Depends(get_user_supabase), user: User = Depends(get_current_user)):
     """AI that compares 2-5 stocks and recommends the most attractive one."""
 
     key = f"compare:{'-'.join(sorted(body.tickers))}:{date.today().isoformat()}"
-    cached = get_cached(key, sb_admin)
+    cached = get_cached(key, sb)
     if cached:
         return cached
 
@@ -338,7 +330,7 @@ async def ai_compare(body: AICompareRequest, sb=Depends(get_supabase), sb_admin=
         "cached_date": date.today().isoformat(),
     }
 
-    set_cache(key, response, sb_admin)
+    set_cache(key, response, sb)
     return response
 
 
@@ -366,6 +358,17 @@ PORTFÖLJDATA:
 
 
 # ─── Daglig proaktiv coach (Spec 10) ──────────────────────────────────────────
+
+
+def _clean_coach_text(text: str | None) -> str:
+    """Returnera briefing-texten om den är en riktig analys, annars tom sträng.
+    Tomt svar → frontend visar feltillstånd med retry; feltexter cachas aldrig
+    (tidigare fastnade felmeddelandet en hel dag i ai_cache)."""
+    t = (text or "").strip()
+    if not t or t.startswith("(AI"):
+        return ""
+    return t
+
 
 DAILY_COACH_SYSTEM = """Du är en kvantitativ portföljrådgivare. Svara på svenska, max 250 ord.
 ANVÄND ENDAST siffrorna du får i JSON — hitta inte på egna tal.
@@ -397,7 +400,7 @@ class DailyCoachResponse(BaseModel):
 async def daily_coach(
     body: DailyCoachRequest,
     user: User = Depends(get_current_user),
-    sb_admin=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
 ):
     """Proaktiv daglig coach-briefing. Servern beräknar ALLA fakta ur innehaven
     (grounding); LLM:en får bara de beräknade talen. Cachas per användare/dag/portföljläge."""
@@ -451,7 +454,7 @@ async def daily_coach(
         json.dumps({k: round(v) for k, v in sorted(values.items())}).encode()
     ).hexdigest()[:8]
     cache_key = f"daily_coach:{user.id}:{today}:{state_hash}"
-    cached = get_cached(cache_key, sb_admin)
+    cached = get_cached(cache_key, sb)
     if cached:
         return cached
 
@@ -459,19 +462,26 @@ async def daily_coach(
         from apps.api.core.llm_client import llm_complete
         prompt = (DAILY_COACH_SYSTEM + "\n\nPORTFÖLJDATA (JSON):\n"
                   + json.dumps(facts, ensure_ascii=False))
-        # prefer="cheap" → Gemini free tier först, DeepSeek bara som fallback.
-        # cache=False här eftersom vi redan cachar svaret via set_cache nedan.
-        result = await llm_complete(prompt, task="daily_coach", prefer="cheap", cache=False)
-        briefing = (result or {}).get("text", "").strip()
-        if not briefing:
-            briefing = "Kunde inte generera en coach-briefing just nu. Försök igen senare."
+        # prefer="quality" → DeepSeek först (bevisat fungerande routing, samma
+        # som committee/explain), Gemini som fallback när nyckeln finns.
+        # cache=False — vi cachar själva nedan, men ENDAST lyckade svar.
+        result = await llm_complete(
+            prompt, task="daily_coach", prefer="quality", max_tokens=700, cache=False
+        )
+        briefing = _clean_coach_text((result or {}).get("text"))
     except Exception as e:
         logger.warning("daily-coach LLM failed: %s", e)
-        briefing = "Kunde inte generera en coach-briefing just nu. Försök igen senare."
+        briefing = ""
+
+    if not briefing:
+        # Ingen fel-cache: feltexten fastnade tidigare en hel dag i ai_cache och
+        # dolde att AI:t var återställt. Frontend visar feltillstånd + retry.
+        return {"briefing": "", "facts": facts, "date": today,
+                "disclaimer": _COACH_DISCLAIMER, "empty": False}
 
     resp = {"briefing": briefing, "facts": facts, "date": today,
             "disclaimer": _COACH_DISCLAIMER, "empty": False}
-    set_cache(cache_key, resp, sb_admin)
+    set_cache(cache_key, resp, sb)
     return resp
 
 
@@ -495,7 +505,7 @@ class AIJournalOut(BaseModel):
 
 
 @router.get("/journal/{ticker}", response_model=AIJournalOut)
-def get_ai_journal(ticker: str, sb=Depends(get_supabase)):
+def get_ai_journal(ticker: str, sb=Depends(get_supabase), user: User = Depends(get_current_user)):
     """Get AI analysis history for a ticker (transparency log)."""
     t = ticker.upper().strip()
     res = (
@@ -535,6 +545,7 @@ class ExplainResponse(BaseModel):
     explanation: str
     level: str
     cached_date: str
+    truncated: bool = False
 
 
 class FollowupRequest(BaseModel):
@@ -547,6 +558,7 @@ class FollowupResponse(BaseModel):
     ticker: str
     answer: str
     cached_date: str
+    truncated: bool = False
 
 
 class MicroLessonRequest(BaseModel):
@@ -561,14 +573,20 @@ class MicroLessonResponse(BaseModel):
 
 
 AI_EXPLAIN_SYSTEM = """Du är en pedagogisk AI-assistent som förklarar aktieanalys på svenska.
-Din målgrupp är nybörjare — använd enkelt språk, undik jargong och förklara alla begrepp du nämner.
+Din målgrupp är nybörjare — använd enkelt språk, undvik jargong och förklara alla begrepp du nämner.
 Var konkret och använd siffrorna du får. Hitta inte på egna tal.
-Avsluta ALLTID med: "AI-genererad — inte finansiell rådgivning." """
+Svaret renderas som markdown: använd **fetstil** för delrubriker och punktlistor med * —
+de renderas snyggt i gränssnittet.
+Håll svaret KOMPLETT: avsluta alltid pågående listor och meningar. Max ~450 ord.
+Hoppa över tomfraser ("Självklart!", "Låt oss titta på ...") — börja direkt med innehållet.
+Avsluta INTE med någon disclaimer — gränssnittet lägger till den."""
 
 EXPLAIN_FOLLOWUP_SYSTEM = """Du är en pedagogisk AI-assistent som svarar på följdfrågor om aktieanalys.
 Använd enkelt språk. Utgå från den tidigare förklaringen och datan som ges.
 Var konkret. Hitta inte på egna tal.
-Avsluta ALLTID med: "AI-genererad — inte finansiell rådgivning." """
+Svaret renderas som markdown (fetstil och punktlistor är ok).
+Avsluta alltid pågående meningar och listor. Max ~300 ord.
+Avsluta INTE med någon disclaimer — gränssnittet lägger till den."""
 
 MICRO_LESSONS: dict[str, dict[str, str]] = {
     "pe_trailing": {
@@ -610,8 +628,7 @@ async def explain_stock(
     ticker: str,
     body: ExplainRequest,
     request: Request,
-    sb=Depends(get_supabase),
-    sb_admin=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
     user: User = Depends(get_current_user),
 ):
     """Explain a stock's key metrics in plain Swedish for beginners."""
@@ -622,22 +639,32 @@ async def explain_stock(
             pass
 
     today = date.today().isoformat()
-    cache_key = f"explain:{ticker}:beginner:{today}"
-    cached = get_cached(cache_key, sb_admin)
+    # v2: gamla poster kan innehålla avklippta svar (gammalt max_tokens=500) —
+    # nyckel-bump gör att avklippta cachar ogiltigförklaras vid deploy.
+    cache_key = f"explain:v2:{ticker}:beginner:{today}"
+    cached = get_cached(cache_key, sb)
     if cached:
         return cached
 
     context = _build_stock_context(ticker, body.stock_data)
     prompt = f"Förklara aktien {ticker} för en nybörjare. Använd datan nedan.\n\n{context}"
-    explanation = await _call_ai(AI_EXPLAIN_SYSTEM, prompt, max_tokens=500)
+    explanation, finish = await _call_ai(AI_EXPLAIN_SYSTEM, prompt, max_tokens=1200, return_meta=True)
+    truncated = finish == "length"
+    if truncated:
+        # Omförsök med dubbelt tak innan en ofullständig förklaring visas.
+        explanation, finish = await _call_ai(AI_EXPLAIN_SYSTEM, prompt, max_tokens=2500, return_meta=True)
+        truncated = finish == "length"
 
+    usable = bool(explanation) and not explanation.startswith("(AI")
     response = {
         "ticker": ticker,
         "explanation": explanation,
         "level": "beginner",
         "cached_date": today,
+        "truncated": truncated,
     }
-    set_cache(cache_key, response, sb_admin)
+    if usable and not truncated:
+        set_cache(cache_key, response, sb)  # avklippta/misslyckade svar cachas ALDRIG
     return response
 
 
@@ -646,8 +673,7 @@ async def explain_followup(
     ticker: str,
     body: FollowupRequest,
     request: Request,
-    sb=Depends(get_supabase),
-    sb_admin=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
     user: User = Depends(get_current_user),
 ):
     """Answer follow-up questions about a previously explained stock."""
@@ -664,12 +690,17 @@ async def explain_followup(
         f"Data:\n{context}\n\n"
         f"Användaren frågar: {body.question}"
     )
-    answer = await _call_ai(EXPLAIN_FOLLOWUP_SYSTEM, prompt, max_tokens=500)
+    answer, finish = await _call_ai(EXPLAIN_FOLLOWUP_SYSTEM, prompt, max_tokens=1200, return_meta=True)
+    truncated = finish == "length"
+    if truncated:
+        answer, finish = await _call_ai(EXPLAIN_FOLLOWUP_SYSTEM, prompt, max_tokens=2500, return_meta=True)
+        truncated = finish == "length"
 
     return {
         "ticker": ticker,
         "answer": answer,
         "cached_date": today,
+        "truncated": truncated,
     }
 
 
@@ -677,8 +708,7 @@ async def explain_followup(
 async def micro_lesson(
     body: MicroLessonRequest,
     request: Request,
-    sb=Depends(get_supabase),
-    sb_admin=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
     user: User = Depends(get_current_user),
 ):
     """Return a short micro-lesson explaining a financial concept."""
@@ -690,7 +720,7 @@ async def micro_lesson(
 
     today = date.today().isoformat()
     cache_key = f"micro_lesson:{body.topic}:{today}"
-    cached = get_cached(cache_key, sb_admin)
+    cached = get_cached(cache_key, sb)
     if cached:
         return cached
 
@@ -705,7 +735,7 @@ async def micro_lesson(
         "explanation": lesson["explanation"],
         "cached_date": today,
     }
-    set_cache(cache_key, response, sb_admin)
+    set_cache(cache_key, response, sb)
     return response
 
 
@@ -734,21 +764,30 @@ def _build_stock_context(ticker: str, data: dict) -> str:
     return "\n".join(lines)
 
 
-async def _call_ai(system_prompt: str, user_message: str, max_tokens: int = 2500) -> str:
-    """AI-provider: DeepSeek (OpenRouter) först; vid fel → Gemini free tier (ärligt
-    fallback, aldrig 500). Om båda misslyckas → tydligt meddelande till användaren."""
+async def _call_ai(
+    system_prompt: str, user_message: str, max_tokens: int = 2500, return_meta: bool = False
+):
+    """AI-provider: DeepSeek (settings-routing) först; vid fel → Gemini free tier
+    (ärlig fallback, aldrig 500). Om båda misslyckas → tydligt meddelande.
+    Med return_meta=True returneras (text, finish_reason) så att anroparen kan
+    detektera avklippta svar (finish_reason='length') och avstå från caching."""
     from apps.api.core.deepseek_client import call_deepseek
     try:
-        result = await call_deepseek(system_prompt, user_message, max_tokens=max_tokens, temperature=0.2)
+        result, finish = await call_deepseek(
+            system_prompt, user_message, max_tokens=max_tokens, temperature=0.2, return_meta=True
+        )
         if result and not result.startswith("(AI ej konfigurerad)"):
-            return result
+            return (result, finish) if return_meta else result
     except Exception as e:
         logger.warning("DeepSeek-vägen misslyckades (%s) — faller till Gemini", e)
     from apps.api.core.llm_client import _call_gemini_complete
-    gem = _call_gemini_complete(f"{system_prompt}\n\n{user_message}")
+    gem = await asyncio.to_thread(
+        _call_gemini_complete, f"{system_prompt}\n\n{user_message}", None, max_tokens
+    )
     if gem and gem.get("text"):
-        return str(gem["text"])
-    return "(AI-tjänsterna är tillfälligt otillgängliga — försök igen om någon minut.)"
+        return (str(gem["text"]), gem.get("finish_reason")) if return_meta else str(gem["text"])
+    msg = "(AI-tjänsterna är tillfälligt otillgängliga — försök igen om någon minut.)"
+    return (msg, None) if return_meta else msg
 
 
 async def _call_ai_chat(system_prompt: str, context: str, messages: list[dict], max_tokens: int = 2500) -> str:
@@ -761,7 +800,7 @@ async def _call_ai_chat(system_prompt: str, context: str, messages: list[dict], 
     except Exception as e:
         logger.warning("DeepSeek-chat misslyckades (%s) — faller till Gemini", e)
     from apps.api.core.llm_client import _call_gemini_complete
-    gem = _call_gemini_complete(f"{system_prompt}\n\n{context}\n\n{messages}")
+    gem = await asyncio.to_thread(_call_gemini_complete, f"{system_prompt}\n\n{context}\n\n{messages}")
     if gem and gem.get("text"):
         return str(gem["text"])
     return "(AI-tjänsterna är tillfälligt otillgängliga — försök igen om någon minut.)"

@@ -115,7 +115,11 @@ def fetch_price_history_batch(tickers: list[str], days: int = 365) -> "pd.DataFr
     Returns:
         DataFrame med datum-index och ticker-kolumner.
     """
-    import pandas as pd
+    try:
+        import pandas as pd
+    except ImportError:
+        logger.warning("fetch_price_history_batch requires pandas which is not in API bundle")
+        raise RuntimeError("fetch_price_history_batch requires pandas")
 
     all_data = {}
     with httpx.Client() as client:

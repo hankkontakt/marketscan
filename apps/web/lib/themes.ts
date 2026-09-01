@@ -3,7 +3,8 @@ import type { ScanParams } from "@/lib/api";
 export interface ThemeDefinition {
   id: string;
   label: string;
-  emoji: string;
+  emoji?: string;
+  iconName?: string;
   description: string;
   riskLabel: string;
   riskExplanation: string;
@@ -16,7 +17,7 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: "stable-large",
     label: "Stabila svenska storbolag",
-    emoji: "\u{1F3F0}",
+    iconName: "Shield",
     description:
       "De tryggaste bland Large Cap-bolagen med stark fundamentalkvalitet och stabil avkastning över tid.",
     riskLabel: "Låg risk",
@@ -29,7 +30,7 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: "dividend-reliable",
     label: "Företag som delar ut pengar varje år",
-    emoji: "\u{1F48E}",
+    iconName: "Gem",
     description:
       "Bolag med återkommande utdelningar över 2 % direktavkastning och solid finansiell hälsa.",
     riskLabel: "Låg risk",
@@ -42,7 +43,7 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: "value-quality",
     label: "Billiga & trygga — värdeinvestering",
-    emoji: "\u{1F3F7}️",
+    iconName: "Tag",
     description:
       "Lågt P/E-tal kombinerat med stark fundamentalkvalitet — Benjamin Grahams anda i svensk tappning.",
     riskLabel: "Medel risk",
@@ -55,7 +56,7 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: "growth-small",
     label: "Växande småbolag — för den som kan ta högre risk",
-    emoji: "\u{1F680}",
+    iconName: "Rocket",
     description:
       "Svenska små- och mikrobolag med hög tillväxtpotential och goda fundamentala betyg.",
     riskLabel: "Högre risk",
@@ -68,7 +69,7 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: "starter-kit",
     label: "Nybörjarens startpaket — 5 att börja titta på",
-    emoji: "\u{1F393}",
+    iconName: "GraduationCap",
     description:
       "En bred och välbalanserad inkörsta till aktiemarknaden med högbetygsatta stor- och medelstora bolag.",
     riskLabel: "Låg–Medel risk",
@@ -81,7 +82,7 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: "insider-buying",
     label: "Högst rankade aktier just nu",
-    emoji: "\u{1F525}",
+    iconName: "Flame",
     description: "Marknadens topprankade aktier baserat på vårt Totalbetyg. " +
       "Det här är helt enkelt de aktier som får högst betyg just nu — " +
       "en bra start för att lära dig vad som kännetecknar en stark kandidat.",

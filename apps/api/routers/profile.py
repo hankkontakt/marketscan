@@ -189,7 +189,7 @@ def save_risk_profile(
         "answers": answers,
     }
 
-    sb.table("user_risk_profiles").upsert(data, on_conflict="user_id").eq("user_id", user.id).execute()
+    sb.table("user_risk_profiles").upsert(data, on_conflict="user_id").execute()
 
     return RiskProfileOut(
         profile=profile,

@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { MessageSquare, Sparkles } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, MessageSquare, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { usePortfolio, useRiskAnalytics } from "@/hooks/usePortfolio";
@@ -23,6 +23,7 @@ interface CoachResponse {
  * visar en kort, grundad briefing. Cachas server-side per dag/portföljläge.
  */
 export function PortfolioCoachCard() {
+  const queryClient = useQueryClient();
   const { data: portfolio } = usePortfolio();
   const { data: risk } = useRiskAnalytics();
   const { data: profile } = useRiskProfile();
@@ -87,7 +88,21 @@ export function PortfolioCoachCard() {
           </p>
         </>
       ) : (
-        <p className="text-sm text-[var(--color-text-muted)]">Coach-briefing ej tillgänglig just nu.</p>
+        <div className="space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={14} strokeWidth={1.5} className="text-[var(--color-warn)] mt-0.5 shrink-0" />
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Coach-briefingen kunde inte genereras just nu — vanligtvis ett tillfälligt AI-fel.
+            </p>
+          </div>
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["daily-coach", stateKey] })}
+            className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-accent)] hover:underline"
+          >
+            <RefreshCw size={12} strokeWidth={1.5} />
+            Försök igen
+          </button>
+        </div>
       )}
     </div>
   );

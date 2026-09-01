@@ -1,17 +1,25 @@
 """Paper trading — simulated portfolio."""
 import logging
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, status
-from apps.api.dependencies import get_supabase_admin
+from pydantic import BaseModel, Field
+from apps.api.dependencies import get_user_supabase
 from apps.api.core.security import get_current_user, User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/paper", tags=["paper-trading"])
 
 
+class PaperTradeIn(BaseModel):
+    ticker: str
+    side: Literal["BUY", "SELL"]
+    shares: float = Field(..., gt=0)
+
+
 @router.get("/portfolio")
 def get_paper_portfolio(
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase_admin),  # P1-6: use same client tier as POST so reads are consistent
+    sb=Depends(get_user_supabase),
 ):
     """Get current user's paper trading portfolio."""
     port = sb.table("paper_portfolios").select("*").eq("user_id", user.id).limit(1).execute()
@@ -58,14 +66,14 @@ def get_paper_portfolio(
 
 @router.post("/trade")
 def execute_paper_trade(
-    body: dict,
+    body: PaperTradeIn,
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
 ):
     """Execute a paper trade (buy/sell)."""
-    ticker = body.get("ticker", "").upper()
-    side = body.get("side", "BUY")
-    shares = float(body.get("shares", 0))
+    ticker = body.ticker.upper().strip()
+    side = body.side
+    shares = float(body.shares)
 
     if not ticker or shares <= 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ogiltig trade")
@@ -148,7 +156,7 @@ def execute_paper_trade(
 @router.post("/reset")
 def reset_paper_portfolio(
     user: User = Depends(get_current_user),
-    sb=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
 ):
     """Reset paper portfolio to initial state."""
     port = sb.table("paper_portfolios").select("id").eq("user_id", user.id).limit(1).execute()

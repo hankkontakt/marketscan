@@ -398,7 +398,7 @@ function OverviewTab({ stock, showBeginnerCTA = false }: { stock: ScanRow; showB
             },
             {
               label: "ROE",
-              value: (() => { const v = stock.roe_raw ?? stock.roe; return v != null && v > 0.0005 ? formatPct(v) : "—" })(),
+              value: (() => { const v = stock.roe_raw; return v != null && v > 0.0005 ? formatPct(v) : "—" })(),
               tip: "Avkastning på eget kapital. Hur effektivt bolaget genererar vinst med ägarnas kapital. Över 15 % anses generellt bra.",
               microTopic: "roe",
             },
@@ -638,14 +638,14 @@ function FaktorerTab({ stock, ticker }: { stock: ScanRow; ticker: string }) {
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
       {/* Radar */}
       <div className="rounded-xl p-4 border bg-[var(--color-bg-surface)] border-[var(--color-border)]">
-        <h3 className="text-sm font-medium mb-2 text-[var(--color-text-secondary)]">FaktorÃ¶versikt</h3>
+        <h3 className="text-sm font-medium mb-2 text-[var(--color-text-secondary)]">Faktoröversikt</h3>
         <FactorRadar stock={stock} />
         <div className="mt-3 text-center">
           <button
             onClick={() => setShowDetails(!showDetails)}
             className="text-xs text-[var(--color-accent)] hover:underline"
           >
-            {showDetails ? "DÃ¶lj detaljer" : "Detaljer"}
+            {showDetails ? "Dölj detaljer" : "Detaljer"}
           </button>
         </div>
         {showDetails && (
@@ -1036,7 +1036,7 @@ function RapporterTab({ ticker, stock }: { ticker: string; stock: ScanRow }) {
           {[
             { label: "Bruttomarginal", value: grossMarginValue(stock), tip: "Hur stor andel av intäkterna som kvarstår efter direkta produktionskostnader." },
             { label: "Rörelsemarginal", value: stock.operating_margin != null ? `${(stock.operating_margin * 100).toFixed(1)} %` : "—", tip: "Vinst som andel av intäkterna, efter driftkostnader men före räntor och skatt." },
-            { label: "ROE", value: (() => { const v = stock.roe_raw ?? stock.roe; return v != null && v > 0.0005 ? `${(v * 100).toFixed(1)} %` : "—" })(), tip: "Avkastning på eget kapital — hur effektivt bolaget skapar värde för aktieägarna." },
+            { label: "ROE", value: (() => { const v = stock.roe_raw; return v != null && v > 0.0005 ? `${(v * 100).toFixed(1)} %` : "—" })(), tip: "Avkastning på eget kapital — hur effektivt bolaget skapar värde för aktieägarna." },
             { label: "Skuldsättning (D/E)", value: displayValue(stock.debt_to_equity, { min: 0 }), tip: "Skulder relativt eget kapital. Under 1,0 är konservativt." },
             { label: "Finansiell styrka", value: stock.piotroski_f != null ? `${stock.piotroski_f}/9` : "—", tip: "Piotroski F-score: summerar 9 finansiella hälsokontroller. 7–9 är starkt." },
             { label: "Direktavkastning", value: stock.dividend_yield != null ? `${(stock.dividend_yield * 100).toFixed(2)} %` : "—", tip: "Årsutdelning delat med aktiekurs." },

@@ -120,6 +120,12 @@ jobs:
             psql "$DATABASE_URL" -v ON_ERROR_STOP=0 -q -f "$f" 2>&1 | grep -vi "already exists" || true
           done
 
+      - name: Verify migrations (bootstrap)
+        id: verify_migrations
+        if: env.MODE == 'bootstrap'
+        run: |
+          psql "$DATABASE_URL" -c "\dt"
+
       - name: Reset derived tables (bootstrap + reset_data)
         id: reset
         if: env.MODE == 'bootstrap' && env.RESET == 'true'
@@ -215,11 +221,6 @@ jobs:
         id: outcomes
         continue-on-error: true
         run: python -m backend_worker.outcome_filler
-
-      - name: Portfolio snapshots
-        id: snapshot
-        continue-on-error: true
-        run: python -m backend_worker.portfolio_snapshot || echo "portfolio_snapshot hoppad"
 
       # ── Fas 6: notiser ───────────────────────────────────────────────────
       - name: Smart alert engine

@@ -63,7 +63,7 @@ def build_barbell_portfolio(
     satellite_pool = []
 
     for c in candidates:
-        seg = c.get("segment", "large_cap")
+        seg = c.get("segment") or "unknown"
         rank = float(c.get("master_rank") or 0.0)
 
         # Core kräver stabilitet: Large/Mid Cap och god kapitalavkastning
@@ -124,7 +124,7 @@ def build_barbell_portfolio(
             "ticker": c["ticker"],
             "name": c.get("name", c["ticker"]),
             "role": "CORE_COMPOUNDER",
-            "segment": c.get("segment", "large_cap"),
+            "segment": c.get("segment") or "unknown",
             "sector": sec,
             "weight": round(w, 4),
             "weight_pct": round(w * 100.0, 2),
@@ -146,7 +146,7 @@ def build_barbell_portfolio(
             "ticker": c["ticker"],
             "name": c.get("name", c["ticker"]),
             "role": "ALPHA_SATELLITE",
-            "segment": c.get("segment", "small_cap"),
+            "segment": c.get("segment") or "unknown",
             "sector": sec,
             "weight": round(w, 4),
             "weight_pct": round(w * 100.0, 2),

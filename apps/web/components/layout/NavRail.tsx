@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { isUserAdmin } from "@/lib/adminJwt";
 
 const NAV_ITEMS = [
   { href: "/oversikt",      icon: LayoutDashboard,    label: "Översikt" },
@@ -59,20 +60,8 @@ export function NavRail() {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }) => {
       const token = data.session?.access_token;
-      if (!token) return;
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        // Supabase always sets payload.role = "authenticated" (PostgREST role).
-        // Admin role lives in app_metadata, set via SQL on auth.users.
-        const role: string =
-          (payload.app_metadata?.role as string | undefined) ??
-          (payload.user_metadata?.role as string | undefined) ??
-          "";
-        if (role === "admin") {
-          setIsAdmin(true);
-        }
-      } catch {
-        // ignore decode errors
+      if (isUserAdmin(token)) {
+        setIsAdmin(true);
       }
     });
   }, []);

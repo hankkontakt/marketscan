@@ -106,3 +106,13 @@ Specialiserade signalmoduler som körs i `backend_worker/alpha_discovery/`:
 2. Kör historisk validering: `python backend_worker/backtest_runner.py`.
 3. Verifiera ranking-distributionen: `python scripts/ranking_sanity_gate.py`.
 4. Uppdatera vikttabellen i sektion 3 ovan *in-place*.
+
+---
+
+## 8. Småbolag & Kända Begränsningar
+
+1. **Segment-relativ kalibrering:** Småbolag (`small_cap`, `micro_cap`) har glesare data och lägre analytikertäckning. MasterRank anpassar tier-trösklarna (T1 $\ge 62.0$, T2 $\ge 50.0$, T3 $\ge 38.0$) så att köpvärda småbolag inte utestängs.
+2. **Datatäthet & Thin-Data Tak:** Vid färre än 3 giltiga kärnblock begränsas ranken automatiskt (`thin_cap = 61.999` för småbolag resp $64.999$ för stora bolag).
+3. **Koncentrationsrisk (NAV):** Modellen mäter ej portfölj-/NAV-koncentration i investmentbolag (t.ex. 3i Group / Action). Detta är en känd begränsning i universumet.
+4. **Likviditetsflagga (`low_liquidity`):** Graderas av extern scanner baserat på omsättning; visas med varningstriangel i UI.
+5. **ROE Kontrakt (Rå vs Residual):** UI och screener-filter använder uteslutande `roe_raw` (yfinance råvärde). Den neutraliserade sektorresidualen `roe` är strikt intern för faktorberäkning.

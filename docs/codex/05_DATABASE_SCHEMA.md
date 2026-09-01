@@ -80,6 +80,8 @@ MarketScan använder Supabase Postgres i region `eu-north-1` (Stockholm). Databa
 - **Postgres `42501 permission denied`:**
   - Om en ny tabell skapas via migration utan `GRANT`-satser blockeras även inloggade användare trots att RLS är konfigurerat.
   - *Åtgärd:* Kör alltid `supabase/migrations/023_grant_table_privileges.sql` eller inkludera explicita `GRANT SELECT, INSERT, UPDATE, DELETE ON table_name TO authenticated;`.
+- **Obligatorisk RLS-regel för alla tabeller:**
+  - Varje ny tabellmigration **MÅSTE** innehålla `ENABLE ROW LEVEL SECURITY` och minst en explicit policy (t.ex. publik läsning eller användarisolering via `auth.uid() = user_id`). Skrivningar från anonyma/oautentiserade anrop är blockerade som standard.
 - **Soft Deletes vs Cascades:**
   - När en portfölj raderas i `portfolios` kaskaderas borttagningen automatiskt till `holdings` och `transactions` via `ON DELETE CASCADE`.
 

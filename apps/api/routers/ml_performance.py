@@ -91,8 +91,8 @@ def _load_model_metrics(universe: str = "universe") -> dict:
     import json
     from pathlib import Path
 
-    # Finn stock-scanner-fix-rooten via SCANNER_PATH env eller relativ sökväg
-    scanner_root = Path(os.environ.get("SCANNER_PATH", "/app/stock-scanner-fix"))
+    # Finn stock-scanner rooten via SCANNER_PATH env eller fallback sökväg
+    scanner_root = Path(os.environ.get("SCANNER_PATH", "/tmp/stock-scanner-ext"))
 
     ranker_file = scanner_root / "models" / f"ml_ranker_{universe}_metrics.json"
     xgb_file    = scanner_root / "models" / f"ml_{universe}_metrics.json"

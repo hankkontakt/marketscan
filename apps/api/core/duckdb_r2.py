@@ -18,16 +18,20 @@ _con: duckdb.DuckDBPyConnection | None = None
 def _init_con() -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(":memory:")
     con.execute("INSTALL httpfs; LOAD httpfs;")
-    con.execute(f"""
-        CREATE SECRET r2 (
-          TYPE S3,
-          KEY_ID '{settings.R2_KEY_ID}',
-          SECRET '{settings.R2_SECRET}',
-          ENDPOINT '{settings.R2_ENDPOINT}',
-          URL_STYLE 'path',
-          REGION 'auto'
-        );
-    """)
+    if settings.R2_KEY_ID and settings.R2_SECRET and settings.R2_ENDPOINT:
+        key_id = settings.R2_KEY_ID.replace("'", "''")
+        secret = settings.R2_SECRET.replace("'", "''")
+        endpoint = settings.R2_ENDPOINT.replace("'", "''")
+        con.execute(f"""
+            CREATE SECRET r2 (
+              TYPE S3,
+              KEY_ID '{key_id}',
+              SECRET '{secret}',
+              ENDPOINT '{endpoint}',
+              URL_STYLE 'path',
+              REGION 'auto'
+            );
+        """)
     con.execute("SET max_memory='768MB';")
     con.execute("SET threads=2;")
     return con

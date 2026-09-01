@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from apps.api.core.security import get_current_user, User
-from apps.api.dependencies import get_supabase_admin
-from backend_worker.rebalancer_engine import generate_rebalance_plan, calculate_portfolio_allocation
+from apps.api.dependencies import get_user_supabase
+from apps.api.core.rebalancer_engine import generate_rebalance_plan, calculate_portfolio_allocation
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/portfolio/rebalance", tags=["Rebalancer"])
@@ -25,11 +25,24 @@ class RebalancePlanRequest(BaseModel):
     custom_fund_holdings: Optional[list[dict]] = None
 
 
+def _fetch_user_fund_holdings(sb, user_id: str) -> list[dict]:
+    """Fetch fund holdings across user portfolios."""
+    try:
+        ports = sb.table("portfolios").select("id").eq("user_id", user_id).execute()
+        port_ids = [p["id"] for p in (ports.data or [])]
+        if port_ids:
+            res_f = sb.table("fund_holdings").select("*").in_("portfolio_id", port_ids).execute()
+            return res_f.data or []
+    except Exception as e:
+        logger.warning("Could not fetch fund_holdings: %s", e)
+    return []
+
+
 @router.post("/plan")
-async def create_rebalance_plan(
+def create_rebalance_plan(
     body: RebalancePlanRequest,
     user: User = Depends(get_current_user),
-    sb_admin=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
 ):
     """Skapar en ren och handlingsbar rebalanseringsplan."""
     stock_holdings = body.custom_stock_holdings
@@ -38,17 +51,14 @@ async def create_rebalance_plan(
     # Hämta från databasen om inte anroparen skickade med egna innehav
     if stock_holdings is None:
         try:
-            res = sb_admin.table("portfolio_holdings").select("*").eq("user_id", user.id).execute()
+            res = sb.table("portfolio_holdings").select("*").eq("user_id", user.id).execute()
             stock_holdings = res.data or []
-        except Exception:
+        except Exception as e:
+            logger.warning("Could not fetch portfolio_holdings: %s", e)
             stock_holdings = []
 
     if fund_holdings is None:
-        try:
-            res_f = sb_admin.table("fund_holdings").select("*").eq("user_id", user.id).execute()
-            fund_holdings = res_f.data or []
-        except Exception:
-            fund_holdings = []
+        fund_holdings = _fetch_user_fund_holdings(sb, user.id)
 
     plan = generate_rebalance_plan(
         stock_holdings=stock_holdings,
@@ -63,19 +73,19 @@ async def create_rebalance_plan(
 
 
 @router.get("/overview")
-async def get_rebalance_overview(
+def get_rebalance_overview(
     user: User = Depends(get_current_user),
-    sb_admin=Depends(get_supabase_admin),
+    sb=Depends(get_user_supabase),
 ):
     """Snabböversikt av aktuell fördelning mellan basfonder och aktier."""
     try:
-        res = sb_admin.table("portfolio_holdings").select("*").eq("user_id", user.id).execute()
+        res = sb.table("portfolio_holdings").select("*").eq("user_id", user.id).execute()
         stock_holdings = res.data or []
-        res_f = sb_admin.table("fund_holdings").select("*").eq("user_id", user.id).execute()
-        fund_holdings = res_f.data or []
-    except Exception:
+    except Exception as e:
+        logger.warning("Could not fetch portfolio_holdings: %s", e)
         stock_holdings = []
-        fund_holdings = []
+
+    fund_holdings = _fetch_user_fund_holdings(sb, user.id)
 
     alloc = calculate_portfolio_allocation(stock_holdings, fund_holdings)
     return {

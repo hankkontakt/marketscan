@@ -54,8 +54,9 @@ END $$;
 
 -- ── Framtida tabeller ärver vettiga defaults ────────────────────────────────
 -- Så att nästa migration inte återskapar 42501-problemet.
+-- Notera: SELECT-only för authenticated så att framtida tabeller kräver explicit RLS för mutationer.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+  GRANT SELECT ON TABLES TO authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT ON TABLES TO anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public

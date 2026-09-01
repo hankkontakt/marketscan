@@ -31,9 +31,12 @@ async def call_deepseek(
     user_message: str,
     max_tokens: int = 500,
     temperature: float = 0.3,
-) -> str:
+    return_meta: bool = False,
+):
+    """Med return_meta=True returneras (text, finish_reason) så att anroparen
+    kan detektera avklippta svar ('length'). Default-beteende (str) oförändrat."""
     if not settings.DEEPSEEK_API_KEY:
-        return "(AI ej konfigurerad)"
+        return ("(AI ej konfigurerad)", None) if return_meta else "(AI ej konfigurerad)"
 
     url, model_name = _resolve_endpoint(settings.DEEPSEEK_API_KEY)
     async with httpx.AsyncClient(timeout=30) as client:
@@ -56,7 +59,11 @@ async def call_deepseek(
         )
         resp.raise_for_status()
         data = resp.json()
-        return _extract_content(data["choices"][0]["message"])
+        choice = (data.get("choices") or [{}])[0]
+        text = _extract_content(choice.get("message", {}))
+        if return_meta:
+            return text, choice.get("finish_reason")
+        return text
 
 
 async def call_deepseek_chat(

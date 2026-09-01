@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from apps.api.dependencies import get_supabase
 from apps.api.schemas.scan import ScanRow
 from apps.api.core.search_utils import safe_search
+from apps.api.core.master_rank_utils import tier_of, signal_from_tier
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ def _apply_common_filters(q, segments, sector, country, entry_signal, trend_sign
     if pe_max is not None:
         q = q.lte("pe_trailing", pe_max).gt("pe_trailing", 0)
     if roe_min is not None:
-        q = q.gte("roe", roe_min)
+        q = q.gte("roe_raw", roe_min)
     if dividend_yield_min is not None:
         q = q.gte("dividend_yield", dividend_yield_min)
     if exclude_low_liquidity:
@@ -87,7 +88,6 @@ def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
 
     for row in rows:
         m = mr_by_ticker.get(row["ticker"], {})
-        from backend_worker.master_rank import tier_of, signal_from_tier
         seg = row.get("segment")
 
         if m:

@@ -1,16 +1,24 @@
 """
 llm_client.py — Enhetligt LLM-interface med kostnadsoptimerad routing.
 
-Ordning: Gemini free tier → DeepSeek v4-flash (betald) → fel.
+Ordning styrs av prefer: "cheap" = Gemini free tier först, "quality" = DeepSeek först.
 Allt cachas via ai_cache (cache_key = sha256 av prompt+model+task).
 Budgettak: max N DeepSeek-anrop/dygn (env LLM_DAILY_PAID_CAP, default 500).
+
+Nycklar läses via settings vid ANROPSTID (pydantic läser os.environ först, därefter
+.env/.env.local) — nyckelrotation i Vercel slår igenom utan omstart. DeepSeek-routing
+återanvänder deepseek_client._resolve_endpoint: 'sk-or-…' → OpenRouter (settings-
+modell), 'sk-…' → api.deepseek.com direkt. Tidigare hårdkodades OpenRouter för alla
+nycklar → 401 med DeepSeek-plattformsnyckel (daily-coach-felet 2026-08-29/31).
 
 Används av:
   - #7 Svensk dokumentintelligens (RAG-extraktion)
   - #19 Black-Litterman (AI-views)
+  - /api/ai/daily-coach (Gemini-fallback efter DeepSeek)
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -20,12 +28,10 @@ from typing import Optional
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from apps.api.core.config import settings
+from apps.api.core.deepseek_client import _extract_content, _resolve_endpoint
 
-# Miljövariabler
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-LLM_DAILY_PAID_CAP = int(os.environ.get("LLM_DAILY_PAID_CAP", "500"))
+logger = logging.getLogger(__name__)
 
 # Gemini endpoints (free tier) — OBS: 1.5-modellerna är RÖTADE i Gemini API (2026: Gemini 3.x).
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
@@ -33,10 +39,6 @@ GEMINI_EMBED_MODEL = "models/text-embedding-005"
 GEMINI_FLASH_MODEL = "models/gemini-3-flash-preview"
 # Fallback-kedja om en modell saknar fri-tier/avviker på kontot:
 GEMINI_FLASH_FALLBACKS = ["models/gemini-3.1-flash-lite", "models/gemini-3.6-flash", "models/gemini-2.5-flash"]
-
-# DeepSeek endpoint (via OpenRouter; env-var-namn behålls för kompatibilitet)
-DEEPSEEK_BASE = os.environ.get("DEEPSEEK_BASE", "https://openrouter.ai/api/v1")
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek/deepseek-v4-flash")
 
 # Cache-nyckel-prefix
 CACHE_PREFIX = "llm:"
@@ -83,13 +85,14 @@ def _check_daily_budget(model: str) -> bool:
     """Kontrollera om daglig budget för betalda modeller är nådd."""
     if model == "gemini":
         return True  # Gemini free tier har ingen budget-begränsning här
-    # DeepSeek: kontrollera räknare via fil/enkel state
+    # DeepSeek: kontrollera räknare via fil/enkel state (cap läses vid anropstid)
+    cap = int(os.environ.get("LLM_DAILY_PAID_CAP", "500"))
     budget_file = f"/tmp/llm_budget_{date.today().isoformat()}.count"
     try:
         if os.path.exists(budget_file):
             count = int(open(budget_file).read().strip())
-            if count >= LLM_DAILY_PAID_CAP:
-                logger.warning("Daglig LLM-budget nådd (%d/%d)", count, LLM_DAILY_PAID_CAP)
+            if count >= cap:
+                logger.warning("Daglig LLM-budget nådd (%d/%d)", count, cap)
                 return False
     except (ValueError, OSError):
         pass
@@ -110,22 +113,40 @@ def _increment_budget(model: str):
             pass
 
 
-def _call_gemini_complete(prompt: str, json_schema: Optional[dict] = None) -> Optional[dict]:
+def _normalize_gemini_finish(raw: object) -> Optional[str]:
+    """Gemini finishReason → OpenAI-style kontrakt ('length'/'stop')."""
+    if not raw:
+        return None
+    r = str(raw).upper()
+    if r == "MAX_TOKENS":
+        return "length"
+    if r == "STOP":
+        return "stop"
+    return r.lower()
+
+
+def _call_gemini_complete(
+    prompt: str,
+    json_schema: Optional[dict] = None,
+    max_tokens: int = 2048,
+) -> Optional[dict]:
     """Anropa Gemini (free tier). Kör igenom GEMINI_FLASH_MODEL + fallback-kedja —
-    en modell som saknar fri-tier/avviker på kontot ska inte knäcka AI:et."""
-    if not GEMINI_API_KEY:
+    en modell som saknar fri-tier/avviker på kontot ska inte knäcka AI:et.
+    Nyckeln läses från settings vid anropstid."""
+    gemini_key = settings.GEMINI_API_KEY
+    if not gemini_key:
         logger.info("GEMINI_API_KEY not set")
         return None
 
     models = [GEMINI_FLASH_MODEL, *GEMINI_FLASH_FALLBACKS]
     last_err = ""
     for model in models:
-        url = f"{GEMINI_BASE}/{model}:generateContent?key={GEMINI_API_KEY}"
+        url = f"{GEMINI_BASE}/{model}:generateContent?key={gemini_key}"
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": 0.1,
-                "maxOutputTokens": 2048,
+                "maxOutputTokens": max_tokens,
             },
         }
         if json_schema:
@@ -145,17 +166,18 @@ def _call_gemini_complete(prompt: str, json_schema: Optional[dict] = None) -> Op
                 last_err = f"{model}: inga candidates"
                 continue
             text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            finish = _normalize_gemini_finish(candidates[0].get("finishReason"))
             if json_schema:
                 try:
                     return json.loads(text)
                 except json.JSONDecodeError:
                     return {"raw": text}
             if not text:
-                last_err = f"{model}: tom text"
+                last_err = f"{model}: tom text (finish={finish})"
                 continue
             if model != GEMINI_FLASH_MODEL:
                 logger.info("Gemini-fallback använde %s", model)
-            return {"text": text}
+            return {"text": text, "finish_reason": finish}
         except httpx.TimeoutException:
             last_err = f"{model}: timeout"
             continue
@@ -166,29 +188,23 @@ def _call_gemini_complete(prompt: str, json_schema: Optional[dict] = None) -> Op
     return None
 
 
-def _extract_content(message: dict) -> str:
-    """OpenRouter-proxyvariation: vissa uppströms (t.ex. SiliconFlow) ignorerar
-    thinking:disabled och lägger svaret i reasoning-fälten med content=null."""
-    content = message.get("content")
-    if content:
-        return content
-    reasoning = message.get("reasoning")
-    if reasoning:
-        return reasoning
-    details = message.get("reasoning_details") or []
-    return "\n".join(d.get("text", "") for d in details if isinstance(d, dict))
-
-
-def _call_deepseek_complete(prompt: str, json_schema: Optional[dict] = None) -> Optional[dict]:
-    """Anropa DeepSeek v4-flash via OpenRouter (betald)."""
-    if not DEEPSEEK_API_KEY:
+def _call_deepseek_complete(
+    prompt: str,
+    json_schema: Optional[dict] = None,
+    max_tokens: int = 2048,
+) -> Optional[dict]:
+    """Anropa DeepSeek via deepseek_client-routing (OpenRouter ELLER plattform
+    beroende på nyckeltyp — samma kontrakt som committee/explain-vägen).
+    Nyckeln läses från settings vid anropstid."""
+    key = settings.DEEPSEEK_API_KEY
+    if not key:
         logger.debug("DEEPSEEK_API_KEY not set")
         return None
 
     if not _check_daily_budget("deepseek"):
         return None
 
-    url = f"{DEEPSEEK_BASE}/chat/completions"
+    url, model_name = _resolve_endpoint(key)
 
     messages = [
         {"role": "system", "content": "Du är en analytisk assistent. Svara kortfattat och precist."},
@@ -196,10 +212,10 @@ def _call_deepseek_complete(prompt: str, json_schema: Optional[dict] = None) -> 
     ]
 
     body = {
-        "model": DEEPSEEK_MODEL,
+        "model": model_name,
         "messages": messages,
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": max_tokens,
         "thinking": {"type": "disabled"},
     }
 
@@ -210,7 +226,7 @@ def _call_deepseek_complete(prompt: str, json_schema: Optional[dict] = None) -> 
         resp = httpx.post(
             url,
             json=body,
-            headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
+            headers={"Authorization": f"Bearer {key}"},
             timeout=120,
         )
         if resp.status_code == 429:
@@ -221,7 +237,9 @@ def _call_deepseek_complete(prompt: str, json_schema: Optional[dict] = None) -> 
             return None
 
         data = resp.json()
-        text = _extract_content(data.get("choices", [{}])[0].get("message", {}))
+        choice = (data.get("choices") or [{}])[0]
+        text = _extract_content(choice.get("message", {}))
+        finish = choice.get("finish_reason")
 
         _increment_budget("deepseek")
 
@@ -231,7 +249,10 @@ def _call_deepseek_complete(prompt: str, json_schema: Optional[dict] = None) -> 
             except json.JSONDecodeError:
                 logger.warning("DeepSeek JSON parse failed")
                 return {"raw": text}
-        return {"text": text}
+        if not text:
+            logger.warning("DeepSeek tomt svar (finish_reason=%s)", finish)
+            return None
+        return {"text": text, "finish_reason": finish}
 
     except httpx.TimeoutException:
         logger.warning("DeepSeek timeout")
@@ -249,6 +270,7 @@ async def llm_complete(
     prefer: str = "cheap",
     cache: bool = True,
     max_retries: int = 1,
+    max_tokens: int = 2048,
 ) -> dict:
     """Enhetligt LLM-anrop med routing, cache och retry.
 
@@ -259,6 +281,7 @@ async def llm_complete(
         prefer: "cheap" (Gemini först) eller "quality" (DeepSeek först).
         cache: Använd cache?
         max_retries: Antal retries vid valideringsfel (L3). Default 1.
+        max_tokens: Max output-tokens per provider (default 2048).
 
     Returns:
         Dict med svar ('text' eller JSON-fält).
@@ -293,7 +316,9 @@ async def llm_complete(
     current_prompt = prompt
     for attempt in range(max_retries + 1):
         for i, provider in enumerate(providers):
-            result = provider(current_prompt, json_schema)
+            # to_thread: providers är synkron httpx-anrop — utan detta blockeras
+            # event-loopen i async-routen (Vercel serverless, 60 s maxDuration).
+            result = await asyncio.to_thread(provider, current_prompt, json_schema, max_tokens)
             if result:
                 # L3: Validera JSON-schema om json_schema gavs
                 if json_schema and json_schema.get("required"):
@@ -345,11 +370,11 @@ async def llm_embed(texts: list[str]) -> list[list[float]]:
     Returns:
         Lista med vektorer (dim 768).
     """
-    if not GEMINI_API_KEY:
+    if not settings.GEMINI_API_KEY:
         logger.error("GEMINI_API_KEY not set for embeddings")
-        return [[0.0] * 768] * len(texts)
+        return [[0.0] * 768 for _ in range(len(texts))]
 
-    url = f"{GEMINI_BASE}/{GEMINI_EMBED_MODEL}:embedContent?key={GEMINI_API_KEY}"
+    url = f"{GEMINI_BASE}/{GEMINI_EMBED_MODEL}:embedContent?key={settings.GEMINI_API_KEY}"
 
     all_embeddings = []
     batch_size = 50  # Gemini free tier batch-limit
@@ -367,7 +392,7 @@ async def llm_embed(texts: list[str]) -> list[list[float]]:
             resp = httpx.post(url, json=body, timeout=30)
             if resp.status_code != 200:
                 logger.warning("Gemini embedding error %d: %s", resp.status_code, resp.text[:200])
-                all_embeddings.extend([[0.0] * 768] * len(batch))
+                all_embeddings.extend([[0.0] * 768 for _ in range(len(batch))])
                 continue
 
             data = resp.json()

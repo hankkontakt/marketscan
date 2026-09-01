@@ -28,15 +28,10 @@ logger = logging.getLogger(__name__)
 
 def _segment_from_market_cap(market_cap_millions: float | None) -> str:
     """Determine segment from Finnhub marketCapitalization (in USD millions)."""
-    if market_cap_millions is None:
-        return "small_cap"
-    if market_cap_millions >= 10_000:
-        return "large_cap"
-    if market_cap_millions >= 1_000:
-        return "mid_cap"
-    if market_cap_millions >= 100:
-        return "small_cap"
-    return "micro_cap"
+    if market_cap_millions is None or market_cap_millions <= 0:
+        return "unknown"
+    from backend_worker.db_loader import _derive_segment
+    return _derive_segment(float(market_cap_millions) * 1_000_000)
 
 
 # ---------------------------------------------------------------------------
@@ -281,14 +276,17 @@ def run(mode: str, tickers: list[str] | None = None) -> None:
     if mode == "targeted":
         if not tickers:
             raise SystemExit("mode=targeted kräver --tickers (komma-separerade)")
-        from core.daily_pipeline import run_targeted
+        try:
+            from core.daily_pipeline import run_targeted, REPORT_DIR
+        except ImportError as e:
+            logger.error("core.daily_pipeline kunde inte importeras (kontrollera PYTHONPATH): %s", e)
+            raise SystemExit(1)
         n_ok = run_targeted(tickers)
         if not n_ok:
             logger.error("run_targeted uppdaterade 0 tickers: %s", tickers)
             raise SystemExit(1)
         # run_targeted returnerar antal uppdaterade (int); ladda parquet som
         # den skrev — REPORT_DIR finns i core.daily_pipeline (stock-scanner/reports)
-        from core.daily_pipeline import REPORT_DIR
         parquet_files = sorted(REPORT_DIR.glob("scored_universe_*.parquet"), reverse=True)
         fallback = parquet_files[:1]
         if not fallback:
@@ -321,8 +319,11 @@ def run(mode: str, tickers: list[str] | None = None) -> None:
     error_msg  = None
 
     try:
-        import core as _core_pkg
-        report_dir = Path(_core_pkg.__file__).parent.parent / "reports"
+        try:
+            import core as _core_pkg
+            report_dir = Path(_core_pkg.__file__).parent.parent / "reports"
+        except ImportError:
+            report_dir = Path(os.environ.get("SCANNER_PATH", "stock-scanner")) / "reports"
 
         if mode in ("morning", "evening", "manual"):
             # Fast path: prices + ML only, no news/AI/email

@@ -1,13 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Shield, Gem, Tag, Rocket, GraduationCap, Flame, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useScreener } from "@/hooks/useScreener";
 import { FeedbackWidget } from "@/components/ui/FeedbackWidget";
 import { formatPrice, formatPctChange } from "@/lib/format";
 import type { ThemeDefinition } from "@/lib/themes";
 import type { ScanRow } from "@/types/scan";
+
+const THEME_ICONS: Record<string, typeof Shield> = {
+  Shield,
+  Gem,
+  Tag,
+  Rocket,
+  GraduationCap,
+  Flame,
+};
 
 // ── Risk colour mapping ─────────────────────────────────────────────────────
 
@@ -170,10 +179,15 @@ export function ThemeCard({ theme }: { theme: ThemeDefinition }) {
       <div className="px-5 pt-5 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xl leading-none" aria-hidden="true">
-                {theme.emoji}
-              </span>
+            <div className="flex items-center gap-2.5">
+              {(() => {
+                const IconComponent = (theme.iconName && THEME_ICONS[theme.iconName]) || Sparkles;
+                return (
+                  <div className="p-1.5 rounded-lg bg-[var(--color-bg-elevated)] text-[var(--color-accent)] shrink-0">
+                    <IconComponent size={18} />
+                  </div>
+                );
+              })()}
               <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
                 {theme.label}
               </h2>

@@ -28,12 +28,19 @@ export function formatPctChange(value: number | null | undefined): string {
 
 export function formatPrice(value: number | null | undefined, currency = "SEK"): string {
   if (value == null) return "—";
-  return new Intl.NumberFormat("sv-SE", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+  if (currency === "GBp") {
+    return `${formatNumber(value, value % 1 === 0 ? 0 : 2)}p`;
+  }
+  try {
+    return new Intl.NumberFormat("sv-SE", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${formatNumber(value, 2)} ${currency}`;
+  }
 }
 
 export function formatNumber(value: number | null | undefined, decimals = 0): string {
@@ -158,6 +165,7 @@ export function segmentLabel(segment: string | null | undefined): string {
     mid_cap: "Medelstora",
     small_cap: "Småbolag",
     micro_cap: "Mikrobolag",
+    unknown: "Okänd",
   };
   return map[segment ?? ""] ?? segment ?? "—";
 }

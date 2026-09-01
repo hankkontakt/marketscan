@@ -156,52 +156,6 @@ INDEX_SYMBOLS = [
 ]
 
 
-async def _fetch_indices_yfinance() -> list[GlobalIndexOut]:
-    """Fallback: fetch index data via yfinance when Finnhub key is unavailable."""
-    # yfinance uses same ^ symbols as Finnhub for indices; DAX uses ^GDAXI not ^DAX
-    YF_SYMBOLS = [
-        ("^OMX",     "OMXS30"),
-        ("^GSPC",    "S&P 500"),
-        ("^IXIC",    "Nasdaq"),
-        ("^DJI",     "Dow Jones"),
-        ("^FTSE",    "FTSE 100"),
-        ("^GDAXI",   "DAX"),
-        ("^STOXX50E","Euro Stoxx 50"),
-        ("^N225",    "Nikkei 225"),
-        ("^HSI",     "Hang Seng"),
-    ]
-
-    def _blocking() -> list[GlobalIndexOut]:
-        try:
-            import yfinance as yf
-        except ImportError:
-            return []
-
-        results: list[GlobalIndexOut] = []
-        for symbol, name in YF_SYMBOLS:
-            try:
-                t = yf.Ticker(symbol)
-                # Use history(period="2d") — more reliable than fast_info for indices
-                # across all yfinance versions and works when markets are closed.
-                hist = t.history(period="2d")
-                if hist.empty:
-                    continue
-                price = float(hist["Close"].iloc[-1])
-                prev = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else None
-                if price:
-                    change = round(((price - prev) / prev) * 100, 2) if prev else None
-                    results.append(GlobalIndexOut(name=name, price=round(price, 2), change_pct=change))
-            except Exception as exc:
-                logger.debug("yfinance index %s failed: %s", symbol, exc)
-        return results
-
-    try:
-        return await asyncio.to_thread(_blocking)
-    except Exception as exc:
-        logger.warning("yfinance indices fallback failed: %s", exc)
-        return []
-
-
 _YAHOO_INDEX_SYMBOLS = [
     ("^OMX", "OMXS30"), ("^GSPC", "S&P 500"), ("^IXIC", "Nasdaq"),
     ("^DJI", "Dow Jones"), ("^FTSE", "FTSE 100"), ("^GDAXI", "DAX"),

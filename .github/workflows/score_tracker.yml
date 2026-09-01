@@ -19,9 +19,10 @@ env:
 
 jobs:
   snapshot:
-    # Only run if the pipeline succeeded (or manual trigger)
+    # Only run if the pipeline succeeded, schedule fired, or manual trigger
     if: >
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -33,7 +34,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
 
       - name: Install dependencies

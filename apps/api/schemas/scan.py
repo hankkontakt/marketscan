@@ -5,7 +5,7 @@ from typing import Literal
 class ScanRow(BaseModel):
     ticker: str
     name: str
-    segment: Literal["large_cap", "mid_cap", "small_cap", "micro_cap"]
+    segment: Literal["large_cap", "mid_cap", "small_cap", "micro_cap", "unknown"]
     sector: str | None = None
     country: str = "SE"
 

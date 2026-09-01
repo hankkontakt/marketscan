@@ -510,11 +510,13 @@ NOISE_Z = 1.96           # 95 % konfidens
 
 # ROND 11: suffix → quote-valuta (fallback när analyst_estimates.currency saknas,
 # t.ex. PETR4.SA/2914.T/7733.T har ingen analyst-rad → tidigare visades "US$" felaktigt).
+# OBS: GBp = pence sterling (brittiska pence, 1 GBP = 100 GBp); hanteras i formatPrice.
 _SUFFIX_CURRENCY: dict[str, str] = {
     ".ST": "SEK", ".OL": "NOK", ".HE": "EUR", ".CO": "DKK",
     ".T": "JPY", ".TW": "TWD", ".KS": "KRW", ".HK": "HKD",
     ".SI": "SGD", ".SA": "BRL", ".L": "GBp", ".AS": "EUR",
     ".TO": "CAD", ".DE": "EUR", ".PA": "EUR", ".MI": "EUR",
+    ".AX": "AUD", ".NZ": "NZD", ".SW": "CHF", ".VX": "CHF",
 }
 
 
@@ -788,8 +790,12 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         # proxy-signalen är inte samma sak som riktig insiderdata).
         insider_source = "real" if q else "proxy"
         if iz is None:
-            iz = 50.0 + (s["piotroski_f"] - 4.5) * 8.0   # piotroski-proxy 0-100
-            iz = float(np.clip(iz, 0.0, 100.0))
+            piot = s.get("piotroski_f")
+            if piot is not None:
+                iz = 50.0 + (float(piot) - 4.5) * 8.0   # piotroski-proxy 0-100
+                iz = float(np.clip(iz, 0.0, 100.0))
+            else:
+                iz = 50.0
             insider_source = "proxy"
         if insider_source == "proxy":
             iz = float(np.clip(50.0 + (iz - 50.0) * 0.5, 0.0, 100.0))  # 0.5× vikt

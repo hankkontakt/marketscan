@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { NotificationBell } from "@/components/notifications/NotificationCenter";
 import { useScanMeta } from "@/hooks/useScreener";
 import { useExperience, type ExperienceLevel } from "@/components/providers/ExperienceProvider";
+import { isUserAdmin } from "@/lib/adminJwt";
 
 // ── Nav data ───────────────────────────────────────────────────────────────
 
@@ -131,14 +132,7 @@ export function TopBar() {
     });
     supabase.auth.getSession().then(({ data }) => {
       const token = data.session?.access_token;
-      if (!token) return;
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        const role: string =
-          (payload.app_metadata?.role as string | undefined) ??
-          (payload.user_metadata?.role as string | undefined) ?? "";
-        if (role === "admin") setIsAdmin(true);
-      } catch { /* ignore */ }
+      if (isUserAdmin(token)) setIsAdmin(true);
     });
   }, []);
 

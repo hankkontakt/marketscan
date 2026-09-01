@@ -116,8 +116,8 @@ export function KalenderView() {
       return next;
     });
 
-  const monthStart = currentMonth.toISOString().slice(0, 10);
-  const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).toISOString().slice(0, 10);
+  const monthStart = format(startOfMonth(currentMonth), "yyyy-MM-dd");
+  const monthEnd = format(endOfMonth(currentMonth), "yyyy-MM-dd");
   const monthLabel = format(currentMonth, "MMMM yyyy", { locale: sv });
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));

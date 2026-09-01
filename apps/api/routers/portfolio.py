@@ -725,15 +725,21 @@ def construct_portfolio(
     sb=Depends(get_user_supabase),
 ):
     """Konstruera portföljförslag med Black-Litterman eller Risk Parity."""
-    import numpy as np
     try:
+        import numpy as np
         from apps.api.core.portfolio_construction import (
             black_litterman,
             equal_risk_contribution,
             portfolio_stats,
+            HAS_NUMPY_SCIPY,
         )
-    except ImportError as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"portfolio_construction saknas: {e}")
+        if not HAS_NUMPY_SCIPY:
+            raise ImportError("NumPy/SciPy saknas i denna serverless-miljö")
+    except (ImportError, NotImplementedError) as e:
+        raise HTTPException(
+            status.HTTP_501_NOT_IMPLEMENTED,
+            "Portföljkonstruktion (Black-Litterman/ERC) kräver numeriska bibliotek som inte är aktiverade i denna serverless-miljö.",
+        )
 
     # 1. Hämta användarens riskprofil (eller defaulta till balanserad)
     risk_profile = {}

@@ -24,7 +24,7 @@ CREATE POLICY "feedback_select_own" ON user_feedback
 
 CREATE POLICY "feedback_admin_all" ON user_feedback
   FOR ALL USING (
-    (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+    EXISTS (SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin')
   );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON user_feedback TO authenticated;

@@ -43,34 +43,8 @@ jobs:
       - name: Install dependencies
         run: pip install psycopg2-binary
 
-      # ── Step 1: Ensure reconcile key (unique index) exists — migration 049 ─────────────────────────────
-      # Migration 049 replaced insider_trades_dedup_key (027) with the unique
-      # index insider_trades_reconcile_key — never recreate the old constraint.
-      - name: Run migration — ensure reconcile key (unique index)
-        run: |
-          python - <<'EOF'
-          import os, psycopg2
-
-          dsn = os.environ["DATABASE_URL"]
-          conn = psycopg2.connect(dsn)
-          cur = conn.cursor()
-
-          cur.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS insider_trades_reconcile_key
-              ON insider_trades (COALESCE(isin, ticker), name, trade_date, type);
-          """)
-          conn.commit()
-
-          cur.execute("SELECT COUNT(*) FROM insider_trades")
-          count = cur.fetchone()[0]
-          conn.close()
-
-          print(f"Migration OK — insider_trades table ready ({count} existing rows)")
-          EOF
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-      # ── Step 2: Fetch insider trades ───────────────────────────────────────
+      # ── Schema hanteras av migration 049 i supabase/migrations ───────────
+      # ── Fetch insider trades ───────────────────────────────────────────────
       - name: Fetch insider trades
         run: |
           EXTRA_ARGS=""

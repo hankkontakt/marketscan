@@ -3,32 +3,41 @@ import { createServerClient } from "@supabase/ssr";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
+  const code = searchParams.get("code");
   const type = searchParams.get("type");
+  const next = searchParams.get("next") ?? (type === "recovery" ? "/installningar?tab=losenord" : "/oversikt");
+
+  if (!code) {
+    return NextResponse.redirect(new URL("/login?error=auth_callback", request.url));
+  }
+
+  const redirectUrl = new URL(next, request.url);
+  const response = NextResponse.redirect(redirectUrl);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll(); },
-        setAll() {},
+        getAll(): { name: string; value: string }[] {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value);
+            response.cookies.set(name, value, options as Parameters<typeof response.cookies.set>[2]);
+          });
+        },
       },
     },
   );
 
   // Exchange the auth code for a session
-  const { data, error } = await supabase.auth.exchangeCodeForSession(
-    request.url,
-  );
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-  if (error || !data.session) {
+  if (error) {
     return NextResponse.redirect(new URL("/login?error=auth_callback", request.url));
   }
 
-  // If recovery flow, redirect to settings with password tab
-  if (type === "recovery") {
-    return NextResponse.redirect(new URL("/installningar?tab=losenord", request.url));
-  }
-
-  return NextResponse.redirect(new URL("/oversikt", request.url));
+  return response;
 }

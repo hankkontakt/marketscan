@@ -54,17 +54,20 @@ class ClientErrorIn(BaseModel):
 
 @debug_router.post("/client-error", status_code=200)
 @(limiter.limit("10/minute") if limiter is not None else lambda f: f)
-async def capture_client_error(request: Request, body: ClientErrorIn):
+def capture_client_error(request: Request, body: ClientErrorIn):
     """Log client-side errors. Rate-limited to 10 req/min per IP via slowapi."""
-    logger.warning("Client error: %s | url=%s | rid=%s", body.message[:200], body.url, body.request_id)
+    msg = (body.message or "").strip()[:4000]
+    stack = (body.stack.strip()[:4000]) if body.stack else None
+    url = (body.url.strip()[:1000]) if body.url else None
+    req_id = (body.request_id.strip()[:100]) if body.request_id else None
+    logger.warning("Client error: %s | url=%s | rid=%s", msg[:200], url, req_id)
     try:
-        from apps.api.dependencies import get_supabase_admin
-        sb = get_supabase_admin()
+        sb = get_supabase()
         sb.table("client_errors").insert({
-            "message": body.message[:500],
-            "stack": body.stack[:2000] if body.stack else None,
-            "url": body.url,
-            "request_id": body.request_id,
+            "message": msg[:4000],
+            "stack": stack,
+            "url": url,
+            "request_id": req_id,
         }).execute()
     except Exception as e:
         logger.debug("Could not store client error: %s", e)
@@ -74,7 +77,7 @@ async def capture_client_error(request: Request, body: ClientErrorIn):
 # ─── Debug health / env ──────────────────────────────────────────────────────
 
 @debug_router.get("/health")
-async def debug_health(user: User = Depends(require_admin)):
+def debug_health(user: User = Depends(require_admin)):
     """Admin-protected health probe — checks all env vars and DB."""
     import os
 
@@ -92,6 +95,7 @@ async def debug_health(user: User = Depends(require_admin)):
         cnt = sb.table("scan_results").select("ticker", count="exact").execute()
         db["scan_results_rows"] = cnt.count or 0
     except Exception as e:
-        db["scan_results_rows"] = f"Error: {e}"
+        logger.warning("Debug health DB query failed: %s", e)
+        db["scan_results_rows"] = None
 
     return {"env": env, "db": db, "settings": {"environment": settings.ENVIRONMENT}}

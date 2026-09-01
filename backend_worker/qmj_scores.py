@@ -818,10 +818,10 @@ def main():
     conn.commit()
     conn.close()
 
-    top = sorted([r for r in rows if r["alpha_rank"] is not None],
+    top = sorted([r for r in rows if r.get("alpha_rank") is not None],
                  key=lambda r: r["alpha_rank"], reverse=True)[:5]
     print(json.dumps({
-        "status": "ok", "written": written, "excluded": len(rows) - len(top) - (len(rows) - sum(1 for r in rows if r['alpha_rank'] is not None)),
+        "status": "ok", "written": written, "excluded": sum(1 for r in rows if r.get("alpha_rank") is None),
         "top5": [{"ticker": r["ticker"], "rank": r["alpha_rank"]} for r in top],
     }))
     logger.info("QMJ klar: %d rader skrivna", written)

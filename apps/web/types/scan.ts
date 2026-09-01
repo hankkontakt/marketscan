@@ -1,7 +1,7 @@
 export interface ScanRow {
   ticker: string;
   name: string;
-  segment: "large_cap" | "mid_cap" | "small_cap" | "micro_cap";
+  segment: "large_cap" | "mid_cap" | "small_cap" | "micro_cap" | "unknown";
   sector: string | null;
   country: string;
   market: string | null;

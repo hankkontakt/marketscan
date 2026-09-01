@@ -80,7 +80,7 @@ def stress_test_portfolio(holdings: list[dict]) -> dict:
 
         for h in holdings:
             w = float(h.get("weight") or 0.0)
-            seg = h.get("segment", "large_cap")
+            seg = h.get("segment") or "unknown"
             sec = str(h.get("sector", "Other"))
             pe = float(h.get("pe") or 20.0)
             gm = float(h.get("gross_margin") or 0.50)

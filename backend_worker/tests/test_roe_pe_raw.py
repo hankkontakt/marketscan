@@ -72,6 +72,24 @@ class TestRawPreservation(unittest.TestCase):
         self.assertEqual(out[out["ticker"] == "NVDA"].iloc[0]["roe_raw"], 1.01)
 
 
+    def test_raw_roe_preserved_when_residual_zero(self):
+        """roe_raw ska bevaras även när residualen roe sätts till 0 / NA."""
+        df = pd.DataFrame({
+            "ticker": ["SAP.DE", "EQNR.OL"],
+            "roe": [0.0335, 0.0687],
+            "roe_raw": [0.175, 0.220],
+        })
+        out = db_loader._apply_sanity(df.copy())
+        self.assertAlmostEqual(out[out["ticker"] == "SAP.DE"].iloc[0]["roe_raw"], 0.175)
+        self.assertAlmostEqual(out[out["ticker"] == "EQNR.OL"].iloc[0]["roe_raw"], 0.220)
+
+
+class TestBackfillRoeModule(unittest.TestCase):
+    def test_import_backfill_module(self):
+        import backend_worker.backfill_roe_raw as bfill
+        self.assertTrue(callable(bfill.get_yfinance_roe))
+
+
 class TestDbLoaderRoundtrip(unittest.TestCase):
     def test_scan_columns_include_raw(self):
         for col in ("roe_raw", "pe_trailing_raw", "pe_forward_raw", "roa_raw"):
