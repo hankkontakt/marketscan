@@ -68,12 +68,20 @@ För att förhindra att aktier med fantastisk historisk kvalitet men extremt öv
 - **Bubbla-Triage Cap (RSI > 75):** Om aktien bekräftas överköpt ($RSI > 75$) cappas ranken strikt till max $60.0$ (Tier 3) med flaggan `bubble_triage`.
 - **Cyklisk & Noll-Tillväxt Guard:** Vid negativ eller nära-noll tillväxt ($\le 0.5\%$) är PEG matematiskt odefinierat och ignoreras helt. Grinden förlitar sig då uteslutande på historisk percentil ($PE_{p90}$) och sektorpeers så att cykliska bolag inte slinker förbi.
 
+### Street-Parity Guards & Synergier (R15)
+- **Cycle Peak Moderation (MU):** När Forward P/E förefaller lågt ($PE_{forward} < 10.0$) men historisk ROE toppar cykeln ($ROE_{raw} > 0.50$ eller sektor $p90$) dämpas både kvalitet och värde ($quality\_z \le 75.0$, $value\_z \le 65.0$) för att förhindra cykliska toppfällor.
+- **Earnings Spike & Revenue Decline Watch (BMY):** Vid krympande intäkter ($revenue\_growth < 0$) och tillfällig vinstspik ($earnings\_growth > 0.50$) cappas tillväxten ($growth\_z \le 45.0$) så att engångseffekter inte feltolkas som uthållig tillväxt.
+- **Value-Trap Watch (Olympus, Text S.A., FPG):** När en aktie framstår som extremt billig ($value\_z \ge 85.0$) men intäkterna backar ($revenue\_growth < 0$) begränsas värdeblocket ($value\_z \le 65.0$).
+- **QARP Relief (ATOSS):** Kapitaleffektiva tillväxtbolag med exceptionell lönsamhet ($quality\_z \ge 85.0$, $ROE_{raw} \ge 0.40$) och rimlig värdering ($PEG \le 3.0$) erhåller en QARP-lättnad ($value\_z \ge 50.0$ i QARP-synergiberäkningen).
+
 ### Regler för Datatäthet (Thin Data), Analytikerspridning och PIT
 - **T1-Krav:** Kräver giltiga värden för minst 4 av 8 block för stora/medelstora bolag och minst 3 av 8 block för små/mikrobolag. Aktier med färre giltiga block begränsas automatiskt till max Tier 3 med flaggan `thin_data` (cap 64.999 för stora, 61.999 för småbolag).
 - **Analytiker-Tak, Täckningsskalning & Spridning (D6):** Analytikerblocket skalas ned om antalet analytiker är 1–2 genom linjär krympning mot neutral 50: $az = 50.0 + (az - 50.0) \cdot \frac{N}{3}$. Dessutom appliceras ett avdrag på upp till 50% om riktkursspridningen är hög, så att extrem oenighet mellan banker straffar konfidensen.
 - **Segment×Sektor-Normalisering (D3):** P/E normaliseras inom (segment, sektor) vid $\ge 5$ peers, med fallback till sektor vid $\ge 15$ peers och global percentil som sista steg (`group_percentile_z`).
 - **Momentum Segment-Percentil (D3):** Momentum-z rankas om som inom-segment-percentil när segmentet har $\ge 10$ bolag för att undvika strukturell snedvridning mellan illikvida och likvida segment.
-- **Segment-Normalisering (`master_rank_pctl`):** Vid sidan av rå MasterRank beräknas en segment-relativ percentil (0–100) för att möjliggöra direkt jämförelse mellan småbolag ($T1 \ge 62$) och storbolag ($T1 \ge 75$).
+- **Segment-Normalisering (`master_rank_pctl`):** Vid sidan av rå MasterRank beräknas en inom-segment empirisk percentil (0–100) för att möjliggöra direkt jämförelse mellan småbolag ($T1 \ge 62$) och storbolag ($T1 \ge 75$):
+  $$Percentil_i = \frac{1}{N_{segment}} \sum_{j=1}^{N_{segment}} \mathbf{1}(mr_i \ge mr_j) \cdot 100.0$$
+- **Screener Enrichment & Fallback:** `apps/api/routers/screener.py` kör kolumnmedveten selektering med automatisk fallback vid saknad `master_rank_pctl` och ovillkorlig deterministisk beräkning från `score_total` så att inga rader lämnas o-berikade.
 - **Kvalitets-Junk-Gate (D2):** Små/mikrobolag med fundamental kvalitet $quality\_z < 55.0$ kan aldrig nå Tier 1 och cappas strikt till max $61.999$ med flaggan `junk_gate`.
 - **Likviditetsmotor & Grader A–F (D5):** `backend_worker/liquidity.py` graderar aktier A–F baserat på 20-dagars medianomsättning mot segmentens golv (Micro 500k, Small 2M, Mid 10M, Large 20M SEK). Grader E/F i små/mikrobolag cappas till max $49.999$ (`liquidity_gate`). Låg likviditet (`low_liquidity`) definieras som grad D, E eller F.
 - **PIT Soft-Block:** Bolag med fördröjd bokslutsdata (PENDING) tillåts delta på tekniska/analytiska signaler men kan aldrig uppnå Tier 1 förrän bokslutet verifierats.

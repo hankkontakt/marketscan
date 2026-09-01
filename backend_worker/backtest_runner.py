@@ -56,6 +56,13 @@ def evaluate_segment_ic(
         return {"segment": segment or "all", "n": n, "rank_ic": None, "error": str(e)}
 
 
+def simulate_master_rank_scores(rows: list[dict], weights: dict | None = None) -> list[dict]:
+    """Kör MasterRank-motorns compute_table (inkl. R15 street-parity-vakter & segment percentil)."""
+    from backend_worker.master_rank import compute_table, load_weights
+    w = weights or load_weights()
+    return compute_table(rows, w)
+
+
 def run_backtest(strategy="momentum", tickers=None):
     """Run a historical backtest for a given strategy."""
     try:
