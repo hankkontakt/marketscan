@@ -41,5 +41,5 @@ CREATE INDEX IF NOT EXISTS idx_saved_screens_user_id
   ON saved_screens (user_id);
 
 -- 10. Strategy runs: user_id lookup
-CREATE INDEX IF NOT EXISTS idx_strategy_runs_user_id
-  ON strategy_runs (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_strategy_runs_user_started
+  ON strategy_runs (user_id, started_at DESC);
