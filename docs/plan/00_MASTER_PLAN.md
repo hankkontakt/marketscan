@@ -4,7 +4,7 @@
 > Varje projekt har ett eget detaljerat spec-dokument (01–06) som är skrivet så
 > att en enklare AI (DeepSeek v4-flash/pro) kan implementera koden utan att gissa.
 >
-> **Läs ALLTID detta dokument först**, sedan relevant spec. Avvik inte från
+> **Referensarkiv:** Läs direkt relevant delplan (01–06) vid arbete med Batch 1. Avvik inte från
 > konventionerna i avsnitt 6 utan att flagga det.
 
 ---

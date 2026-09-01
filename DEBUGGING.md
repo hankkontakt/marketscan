@@ -1,7 +1,7 @@
 # DEBUGGING.md — MarketScan felsöknings-runbook
 
 > Syfte: Gör det snabbt för Claude/DeepSeek (eller en människa) att hitta och åtgärda
-> buggar utan att gissa. Läs detta FÖRST vid felrapportering.
+> buggar utan att gissa. Vid fel: läs DEBUGGING.md + docs/codex/04_API_ARCHITECTURE.md (pekare).
 
 ---
 

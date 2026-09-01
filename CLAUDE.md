@@ -1,7 +1,7 @@
 # MarketScan
 
-> 🧭 **AI/Claude: läs `SYSTEM_INDEX.md` FÖRST.** Det är det centrala navet som pekar till systemets Living AI Codex i `docs/codex/`.
-> För operativ felsökning och buggmönster, se även `docs/AI_GUIDE.md` och `docs/CONTRIBUTING.md`.
+> 🧭 **AI/Claude: Läs `SYSTEM_INDEX.md` (index) först; läs sedan ENDAST relevant kapitel i `docs/codex/`. Fulla omläsningar av stora docs (SYSTEM_AI/HANDOFF/SETUP) är FÖRBJUDNA — använd pekare.**
+> För operativ felsökning och buggmönster, se även `docs/AI_GUIDE.md` och `docs/CONTRIBUTING.md`. MCP/context7: se `docs/ai/reference/mcp-context7.md` vid behov.
 
 ## Prime directives
 1. **Felsök, gissa inte.** Kör diagnostikverktygen innan du teoretiserar.

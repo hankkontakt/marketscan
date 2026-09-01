@@ -1,7 +1,7 @@
 # Spec 13 — M0 Analytics + Feedback
 
 > **Skrivet: 2026-06-10. Beräknad insats: S–M (4–6h).**
-> **Skrivet för:** DeepSeek v4-flash. Läs ALLTID detta dokument HELT innan kod rörs.
+> **Skrivet för:** DeepSeek v4-flash. Vid arbete med M0 Analytics, läs specens relevanta avsnitt innan kod rörs.
 > **Bygger på:** `docs/plan/00_MASTER_PLAN.md §6` + befintliga mönster i kodbasen.
 
 ---

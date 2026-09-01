@@ -1,7 +1,7 @@
 # 🧭 MarketScan System Index (Living AI Codex)
 
 > **Maskinläsbart Nav & AI-karta för MarketScan.**  
-> Denna fil och underliggande kapitel i `docs/codex/` utgör systemets **Ground Truth**. Läs detta dokument först för att navigera till rätt delsystem utan att behöva läsa rå källkod.
+> Denna fil och underliggande kapitel i `docs/codex/` utgör systemets **Ground Truth**. Använd detta index för att navigera och läs ENDAST det relevanta kapitlet i docs/codex/. Fulla omläsningar av stora dokument/arkiv är förbjudna.
 
 ---
 

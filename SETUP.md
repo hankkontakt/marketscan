@@ -1,5 +1,7 @@
 # MarketScan 2.0 — Uppstartsguide
 
+> **Referensdokument (läses endast på begäran).** Ingår inte i startkedjan.
+
 > Följ stegen i ordning. Varje steg har en verifiering innan du går vidare.
 
 ---
