@@ -67,24 +67,44 @@ def _enrich_with_master_rank(sb, rows: list[dict]) -> list[dict]:
     if not rows:
         return rows
     tickers = list({r["ticker"] for r in rows})
+    mr_by_ticker: dict[str, dict] = {}
+    cols_full = ("ticker, master_rank, master_rank_pctl, tier, quality_z, value_z, momentum_z, "
+                 "analyst_z, analyst_upside, analyst_count, trend_tech, currency")
+    cols_fallback = ("ticker, master_rank, tier, quality_z, value_z, momentum_z, "
+                     "analyst_z, analyst_upside, analyst_count, trend_tech, currency")
+
     try:
         mr_res = (
             sb.table("master_rank")
-            .select("ticker, master_rank, master_rank_pctl, tier, quality_z, value_z, momentum_z, "
-                    "analyst_z, analyst_upside, analyst_count, trend_tech, currency")
+            .select(cols_full)
             .in_("ticker", tickers)
             .not_.is_("master_rank", "null")
             .execute()
         )
-        mr_by_ticker: dict[str, dict] = {}
         for r in (mr_res.data or []):
             t = r["ticker"]
             # Keep highest master_rank per ticker (dedup if multiple scan_dates)
             if t not in mr_by_ticker or (r.get("master_rank") or 0) > (mr_by_ticker[t].get("master_rank") or 0):
                 mr_by_ticker[t] = r
     except Exception as e:
-        logger.warning("master_rank enrichment failed (non-fatal): %s", e)
-        return rows
+        logger.error(
+            "master_rank enrichment with master_rank_pctl failed for %d tickers, retrying without pctl: %s",
+            len(tickers), e
+        )
+        try:
+            mr_res = (
+                sb.table("master_rank")
+                .select(cols_fallback)
+                .in_("ticker", tickers)
+                .not_.is_("master_rank", "null")
+                .execute()
+            )
+            for r in (mr_res.data or []):
+                t = r["ticker"]
+                if t not in mr_by_ticker or (r.get("master_rank") or 0) > (mr_by_ticker[t].get("master_rank") or 0):
+                    mr_by_ticker[t] = r
+        except Exception as e2:
+            logger.error("master_rank enrichment failed completely for %d tickers: %s", len(tickers), e2)
 
     for row in rows:
         m = mr_by_ticker.get(row["ticker"], {})
