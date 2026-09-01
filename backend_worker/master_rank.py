@@ -579,9 +579,11 @@ def fuse(row: dict, weights: dict) -> dict:
             rank = _clip100(rank + elite_bonus)
 
     # Anti-bubbla-grind (kontinuerlig progressiv dämpning vid RSI 70-75 + triage-tak vid överköpt)
-    if "EXTREME_OVERVAL" in row.get("val_flags", []):
+    v_flags = row.get("val_flags") or []
+    t_flags = row.get("tech_flags") or []
+    if "EXTREME_OVERVAL" in v_flags:
         rsi = row.get("rsi_14")
-        is_overbought = "OVERBOUGHT" in row.get("tech_flags", [])
+        is_overbought = "OVERBOUGHT" in t_flags
         if rsi is not None and float(rsi) > 70.0 and not is_overbought:
             # Mjuk dämpning nära tröskeln (RSI 70-75) för att undvika tröskelflimmer
             rsi_excess = float(rsi) - 70.0
@@ -618,7 +620,7 @@ def fuse(row: dict, weights: dict) -> dict:
 
     # SOE Political & Governance Discount:
     # Statligt kontrollerade råvarubolag cappas från att dominera över privata kvalitetsbolag
-    if "SOE_POLITICAL_RISK" in row.get("val_flags", []):
+    if "SOE_POLITICAL_RISK" in v_flags:
         if rank is not None and rank > 69.5:
             rank = 69.499
             missing.append("soe_governance_risk")
