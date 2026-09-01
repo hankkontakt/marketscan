@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from apps.api.dependencies import get_user_supabase, get_supabase_admin
 from apps.api.core.security import get_current_user, User
 from apps.api.schemas.portfolio import HoldingIn, HoldingOut, PortfolioOut
-from apps.api.core.enrichment import enrich_with_scan_data
+from apps.api.core.enrichment import enrich_with_scan_data, enrich_with_v3_decisions
 from apps.api.core.avanza_import import (
     build_preview,
     parse_positioner_csv, parse_inkopskurser_csv, get_buy_date,
@@ -46,6 +46,13 @@ def get_portfolio(user: User = Depends(get_current_user), sb=Depends(get_user_su
     # portfolio should show the CURRENT market value, so fetch live prices for
     # any holding still missing one. Best-effort — never breaks the response.
     _fill_live_prices(holdings)
+
+    # V3-beslutsdata (champion-data) som additiv berikning — best-effort,
+    # kraschar aldrig svaret (samma mönster som _fill_live_prices).
+    try:
+        enrich_with_v3_decisions(holdings, sb)
+    except Exception as e:  # pragma: no cover — defensive
+        logger.warning("v3 decision enrichment skipped: %s", e)
 
     portfolio["holdings"] = holdings
     return portfolio

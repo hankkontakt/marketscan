@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from apps.api.dependencies import get_user_supabase
 from apps.api.core.security import get_current_user, User
+from apps.api.core.enrichment import enrich_with_v3_decisions
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,11 @@ def _get_holdings_with_prices(portfolio_id: str, sb) -> list[dict]:
         item["name"]        = info.get("name") or item["ticker"]
         item["sector"]      = info.get("sector")
         item["score_total"] = info.get("score_total")
+    # V3-beslutsdata (champion-data) som additiv berikning — best-effort.
+    try:
+        enrich_with_v3_decisions(h.data, sb)
+    except Exception as e:  # pragma: no cover — defensive
+        logger.warning("v3 decision enrichment skipped: %s", e)
     return h.data
 
 

@@ -33,6 +33,19 @@ class HoldingOut(BaseModel):
     value_z: float | None = None
     stratum: str | None = None
 
+    # V3-beslutsdata (champion-data) — additiv berikning från
+    # current_decisions_v3. Inga legacy-fält; None när vyn saknar träff.
+    thesis_band: str | None = None
+    setup_state: str | None = None
+    risk_state: str | None = None
+    data_grade: str | None = None
+    decision_id: str | None = None
+    master_rank_score: float | None = None
+    segment_percentile: float | None = None
+    tradability_state: str | None = None
+    is_actionable: bool | None = None
+    v3_snapshot_id: str | None = None
+
 
 class PortfolioOut(BaseModel):
     id: str

@@ -44,6 +44,50 @@ def enrich_with_scan_data(items: list[dict], sb, ticker_key: str = "ticker") -> 
     return items
 
 
+# V3-beslutsdata (champion-data) — additiv berikning från current_decisions_v3.
+# Dessa nycklar är NYA (inga legacy-fält) och flaggas inte bort någonstans.
+V3_DECISION_FIELDS = (
+    "thesis_band", "setup_state", "risk_state", "data_grade", "decision_id",
+    "master_rank_score", "segment_percentile", "tradability_state",
+    "is_actionable",
+)
+
+
+def enrich_with_v3_decisions(items: list[dict], sb, ticker_key: str = "ticker") -> list[dict]:
+    """Merge current_decisions_v3 fields into items (in place, returns items).
+
+    Additiv V3-berikning: varje item med en ticker-träff i vyn får sina
+    V3-fält satta — bara om de inte redan finns. Items utan träff lämnas
+    orörda (V1-beteende); aldrig syntetiska värden. Första vyn-raden per
+    ticker vinner (samma mönster som _current_rows). Anroparen ansvarar för
+    best-effort-hantering (try/except) om vyn saknas/är otillgänglig.
+    """
+    tickers = [item[ticker_key] for item in items if item.get(ticker_key)]
+    if not tickers:
+        return items
+    res = (
+        sb.table("current_decisions_v3")
+        .select("*")
+        .in_("ticker", tickers)
+        .execute()
+    )
+    v3_map: dict[str, dict] = {}
+    for r in (res.data or []):
+        t = r.get("ticker")
+        if t and t not in v3_map:  # första träffen vinner
+            v3_map[t] = r
+    for item in items:
+        row = v3_map.get(item.get(ticker_key))
+        if not row:
+            continue
+        for field in V3_DECISION_FIELDS:
+            if field not in item and row.get(field) is not None:
+                item[field] = row[field]
+        if "v3_snapshot_id" not in item and row.get("decision_snapshot_id"):
+            item["v3_snapshot_id"] = row["decision_snapshot_id"]
+    return items
+
+
 def _enrich_registry_fallback(items: list[dict], sb, missing: list[str],
                               ticker_key: str = "ticker") -> None:
     """Best-effort fallback: universe_registry (name/market) + qmj_scores.
