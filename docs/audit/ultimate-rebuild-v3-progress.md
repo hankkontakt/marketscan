@@ -124,6 +124,24 @@
 - [x] `npx tsc --noEmit` ren; `npx vitest run lib/__tests__`: 25 passed (3 filer).
 - [x] Shadow-artefakt: `docs/audit/shadow-vnext-2026-09-01.json` (Phase 11-evidenstyp).
 
+## Slice 5 — Phase 9: decision-transitions-diff-lager + migration 088 (2026-09-01 natt)
+
+- [x] **PLAN.md:** Phase 9-plan (8 tasks, 6 vågor) — planer-natt-audit + reviewer-natt
+      (NEEDS_REVISION → 2 blockerande fynd fixade: RLS blockerar API-diff av snapshots
+      [083:281 PUBLISHED-only + 083:237-238 supersedear] → diff-lagret flyttat till worker;
+      FK ska peka på `decision_manifests(decision_id)`, inte `id`).
+- [x] **088-migration:** `decision_transitions` (worker-write/anon-read, RLS+GRANT, index),
+      alert_rules-CHECK utökad med 5 transition-typer (DO-block + pg_constraint-koll,
+      idempotent, alla 6 legacy bevarade), `triggered_alerts.decision_id`,
+      `holdings.listing_id` + backfill (endast exakt-1 ACTIVE-träff, annars NULL+NOTICE,
+      CPRX=MERGED kan aldrig matcha). **migration-vakt-natt: APPROVED.** Ej applicerad.
+- [x] **decision_transitions.py:** diffar 2 senaste publicerade snapshots (PUBLISHED+SUPERSEDED,
+      published_at DESC) → transition-rader med reason codes (`thesis:BULLISH->CONSTRUCTIVE`,
+      `setup:READY->WATCH`, `rank_delta:+4.1`; rank |Δ|≥5). Ny listing → from_state=NULL.
+      CPRX-invariant: icke-ACTIVE-i-båda hoppas över helt. Idempotent (ON CONFLICT DO NOTHING).
+- [x] **Testbevis:** hela V3-sviten **86 passed** (72 + 14 nya `test_decision_transitions`).
+- [x] Commit `d6726e0` (Phase 9 foundation) + PLAN.md-commit.
+
 ## Slice 2 — testbevis
 
 - [x] API: `test_decision_v3_api.py` (10 tester inkl. enabled-sökvägar med fake-DB,
