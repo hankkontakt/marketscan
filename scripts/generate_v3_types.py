@@ -18,7 +18,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = REPO_ROOT / "apps" / "web" / "lib" / "types" / "decision_v3.ts"
 
 # Schemas to emit, in order. Only these and their refs are included.
-TOP_LEVEL = ["DecisionProjectionV3", "ScreenerProjectionV3", "CurrentSnapshotV3"]
+TOP_LEVEL = [
+    "DecisionProjectionV3",
+    "ScreenerProjectionV3",
+    "CurrentSnapshotV3",
+    "ChangeEventV3",
+    "ChangesProjectionV3",
+    "CompareRequestV3",
+    "CompareProjectionV3",
+    "TransitionEventV3",
+]
 
 HEADER = """// GENERATED FILE — do not edit by hand.
 // Source of truth: apps/api/schemas/decision_v3.py (OpenAPI).

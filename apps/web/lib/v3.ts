@@ -10,9 +10,12 @@
 
 import { api } from "@/lib/api";
 import type {
+  ChangesProjectionV3,
+  CompareProjectionV3,
   CurrentSnapshotV3,
   DecisionProjectionV3,
   ScreenerProjectionV3,
+  TransitionEventV3,
 } from "@/lib/types/decision_v3";
 
 export const DECISIONS_V3_ENABLED =
@@ -45,4 +48,23 @@ export function v3StockByTicker(ticker: string): Promise<DecisionProjectionV3> {
 
 export function v3CurrentSnapshot(): Promise<CurrentSnapshotV3> {
   return api<CurrentSnapshotV3>("/api/v3/decisions/system/current-snapshot");
+}
+
+export function v3Changes(limit = 50): Promise<ChangesProjectionV3> {
+  return api<ChangesProjectionV3>(
+    `/api/v3/decisions/changes?limit=${limit}`,
+  );
+}
+
+export function v3Transitions(limit = 50): Promise<TransitionEventV3[]> {
+  return api<TransitionEventV3[]>(
+    `/api/v3/decisions/transitions?limit=${limit}`,
+  );
+}
+
+export function v3Compare(tickers: string[]): Promise<CompareProjectionV3> {
+  return api<CompareProjectionV3>("/api/v3/decisions/compare", {
+    body: JSON.stringify({ tickers }),
+    method: "POST",
+  });
 }

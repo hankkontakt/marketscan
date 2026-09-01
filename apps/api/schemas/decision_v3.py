@@ -59,3 +59,50 @@ class CurrentSnapshotV3(BaseModel):
     actionable_count: int
     excluded_count: int
     quality_report: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChangeEventV3(BaseModel):
+    id: int
+    snapshot_from: str | None = None
+    snapshot_to: str
+    listing_id: str
+    ticker: str
+    decision_id: str | None = None
+    transition_type: str
+    from_state: str | None = None
+    to_state: str
+    reason_code: str
+    rank_delta: float | None = None
+    created_at: str
+
+
+class ChangesProjectionV3(BaseModel):
+    snapshot_id: str | None = None
+    as_of: str | None = None
+    master_model_version: str | None = None
+    total_count: int
+    rows: list[ChangeEventV3]
+
+
+class TransitionEventV3(BaseModel):
+    listing_id: str
+    ticker: str
+    decision_id: str | None = None
+    transition_type: str
+    from_state: str | None = None
+    to_state: str
+    reason_code: str
+    rank_delta: float | None = None
+    snapshot_to: str
+    created_at: str
+
+
+class CompareRequestV3(BaseModel):
+    tickers: list[str] = Field(min_length=1, max_length=10)
+
+
+class CompareProjectionV3(BaseModel):
+    snapshot_id: str
+    as_of: str
+    total_count: int
+    rows: list[DecisionProjectionV3]

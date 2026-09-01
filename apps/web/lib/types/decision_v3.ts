@@ -56,4 +56,51 @@ export interface CurrentSnapshotV3 {
   quality_report?: Record<string, unknown>;
 }
 
-export type V3DecisionTypes = DecisionProjectionV3 | ScreenerProjectionV3 | CurrentSnapshotV3;
+export interface ChangeEventV3 {
+  id: number;
+  snapshot_from?: string | null;
+  snapshot_to: string;
+  listing_id: string;
+  ticker: string;
+  decision_id?: string | null;
+  transition_type: string;
+  from_state?: string | null;
+  to_state: string;
+  reason_code: string;
+  rank_delta?: number | null;
+  created_at: string;
+}
+
+export interface ChangesProjectionV3 {
+  snapshot_id?: string | null;
+  as_of?: string | null;
+  master_model_version?: string | null;
+  total_count: number;
+  rows: ChangeEventV3[];
+}
+
+export interface CompareRequestV3 {
+  tickers: string[];
+}
+
+export interface CompareProjectionV3 {
+  snapshot_id: string;
+  as_of: string;
+  total_count: number;
+  rows: DecisionProjectionV3[];
+}
+
+export interface TransitionEventV3 {
+  listing_id: string;
+  ticker: string;
+  decision_id?: string | null;
+  transition_type: string;
+  from_state?: string | null;
+  to_state: string;
+  reason_code: string;
+  rank_delta?: number | null;
+  snapshot_to: string;
+  created_at: string;
+}
+
+export type V3DecisionTypes = DecisionProjectionV3 | ScreenerProjectionV3 | CurrentSnapshotV3 | ChangeEventV3 | ChangesProjectionV3 | CompareRequestV3 | CompareProjectionV3 | TransitionEventV3;

@@ -9,9 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from apps.api.core.feature_flags import is_feature_enabled
 from apps.api.dependencies import get_supabase
 from apps.api.schemas.decision_v3 import (
+    ChangeEventV3,
+    ChangesProjectionV3,
+    CompareProjectionV3,
+    CompareRequestV3,
     CurrentSnapshotV3,
     DecisionProjectionV3,
     ScreenerProjectionV3,
+    TransitionEventV3,
 )
 
 router = APIRouter(prefix="/v3/decisions", tags=["decisions-v3"])
@@ -156,4 +161,91 @@ def current_snapshot(db=Depends(get_supabase)):
         actionable_count=sum(1 for row in manifest_rows if row.get("is_actionable")),
         excluded_count=report.get("excluded_count", 0),
         quality_report=report,
+    )
+
+
+def _snapshot_meta(db):
+    """Resolve the current published snapshot's id, published_at and model version."""
+    db = _db_or_503(db)
+    pointer = db.table("publication_state").select("current_decision_snapshot_id").limit(1).execute()
+    snapshot_id = (pointer.data or [{}])[0].get("current_decision_snapshot_id")
+    if not snapshot_id:
+        return None, None, None
+    snapshots = (
+        db.table("decision_snapshots")
+        .select("decision_snapshot_id, published_at, master_model_version")
+        .eq("decision_snapshot_id", snapshot_id)
+        .execute()
+    )
+    snapshot = (snapshots.data or [{}])[0]
+    return snapshot_id, snapshot.get("published_at"), snapshot.get("master_model_version")
+
+
+@router.get("/changes", response_model=ChangesProjectionV3, dependencies=[Depends(_require_v3_flag)])
+def changes_projection(limit: int = Query(50, ge=1, le=500), db=Depends(get_supabase)):
+    """Delta rows between the two most recent published snapshots (worker-computed).
+
+    Empty is an explicit state: 0 rows returns 200 with an empty list, never 404.
+    """
+    db = _db_or_503(db)
+    result = (
+        db.table("decision_transitions")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    rows = result.data or []
+    snapshot_id, published_at, master_model_version = _snapshot_meta(db)
+    return ChangesProjectionV3(
+        snapshot_id=snapshot_id,
+        as_of=published_at,
+        master_model_version=master_model_version,
+        total_count=len(rows),
+        rows=rows,
+    )
+
+
+@router.get("/transitions", response_model=list[TransitionEventV3], dependencies=[Depends(_require_v3_flag)])
+def transitions(limit: int = Query(50, ge=1, le=500), db=Depends(get_supabase)):
+    """Normalized transition events from the decision_transitions table.
+
+    Empty is an explicit state: 0 rows returns 200 with an empty list, never 404.
+    """
+    db = _db_or_503(db)
+    result = (
+        db.table("decision_transitions")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+@router.post("/compare", response_model=CompareProjectionV3, dependencies=[Depends(_require_v3_flag)])
+def compare(request: CompareRequestV3, db=Depends(get_supabase)):
+    """Compare current published decisions for a set of tickers.
+
+    Only tickers with a published decision are kept; all matches must share the
+    same decision_snapshot_id/published_at. No matches is an explicit 404.
+    """
+    db = _db_or_503(db)
+    rows = []
+    for ticker in request.tickers:
+        rows.extend(_current_rows(db, ticker=ticker, limit=1))
+    if not rows:
+        raise HTTPException(status_code=404, detail="No published decisions match the request")
+    snapshot_ids = {row["decision_snapshot_id"] for row in rows}
+    published_ats = {row["published_at"] for row in rows}
+    if len(snapshot_ids) != 1 or len(published_ats) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Requested tickers span multiple published decision snapshots",
+        )
+    return CompareProjectionV3(
+        snapshot_id=rows[0]["decision_snapshot_id"],
+        as_of=rows[0]["published_at"],
+        total_count=len(rows),
+        rows=rows,
     )
