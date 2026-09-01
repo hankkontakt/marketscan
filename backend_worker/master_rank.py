@@ -64,14 +64,41 @@ IC_DOWN = -0.02
 
 # ═════════════════════════ PURE CORE (testbar; ingen nätverk/DB) ══════════════
 
-def load_weights(path: Path = WEIGHTS_PATH, regime: Optional[str] = None) -> dict:
+def resolve_weights(weights_config: dict, segment: Optional[str] = None) -> dict[str, float]:
+    """Slår samman segment_overrides med basvikter och renormaliserar till summa 1.0.
+
+    Stöder v1 (platt dict eller {"weights": {...}}) och v2 med segment_overrides.
+    """
+    if not isinstance(weights_config, dict):
+        return {}
+    base_w = weights_config.get("weights", weights_config)
+    if not isinstance(base_w, dict):
+        return {}
+
+    w = dict(base_w)
+    overrides = weights_config.get("segment_overrides", {})
+    if segment and isinstance(overrides, dict) and segment in overrides:
+        seg_overrides = overrides[segment]
+        if isinstance(seg_overrides, dict):
+            w.update(seg_overrides)
+
+    # Renormalisera så att summan alltid är exakt 1.0
+    total = sum(float(v) for v in w.values() if v is not None and float(v) > 0)
+    if total > 0:
+        w = {k: round(float(v) / total, 4) for k, v in w.items()}
+    return w
+
+
+def load_weights(path: Path = WEIGHTS_PATH, regime: Optional[str] = None, segment: Optional[str] = None) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"weights.json saknas: {path}")
     with open(path, encoding="utf-8") as f:
         base = json.load(f)
     if regime:
         from backend_worker.macro_regime import compute_smoothed_regime_weights
-        return compute_smoothed_regime_weights(regime, previous_weights=base)
+        base = compute_smoothed_regime_weights(regime, previous_weights=base)
+    if segment:
+        return resolve_weights(base, segment)
     return base
 
 
@@ -223,12 +250,7 @@ def val_flags(val_hist: Optional[float], val_peers: Optional[float],
 
 def sector_neutral_z(value: Optional[float], sector: Optional[str],
                      peers_map: dict[str, list[float]], min_peers: int = 15) -> Optional[float]:
-    """Percentil INOM sektorn (0-100). Saknar sektor/peers → global percentil.
-
-    `value` är aktiens råvärde (t.ex. ROE, P/E) som redan är en 0-100-percentil
-    globalt; vi konverterar till sektor-rank genom att jämföra värdet mot
-    peers' percentilvärden (samma skala) — bevarar sektor-relativ ordning.
-    """
+    """Percentil INOM sektorn (0-100). Saknar sektor/peers → global percentil."""
     if value is None:
         return None
     if not sector or sector not in peers_map or len(peers_map[sector]) < min_peers:
@@ -236,18 +258,53 @@ def sector_neutral_z(value: Optional[float], sector: Optional[str],
     peers = [float(x) for x in peers_map[sector] if x is not None]
     if not peers:
         return _clip100(float(value))
-    # count-baserad percentil: hur många peers är LÄGRE än value → värde-percentil.
-    # Men BILLIG ska ge HÖG z (lågt P/E = bra), så invertera: 100 - pct.
     pct = float(np.mean([1.0 if float(value) > p else 0.0 for p in peers]) * 100.0)
     return _clip100(100.0 - pct)
 
 
-def build_sector_z_maps(scan: dict, fields: list[str]) -> dict[str, dict[str, list[float]]]:
-    """Bygg sektor→[värde] map per fält för sektor-neutralisering.
+def group_percentile_z(
+    value: Optional[float],
+    segment: Optional[str],
+    sector: Optional[str],
+    seg_sector_maps: dict[str, dict[tuple[str, str], list[float]]],
+    sector_maps: dict[str, dict[str, list[float]]],
+    field: str = "pe_trailing",
+    min_group_peers: int = 5,
+    min_sector_peers: int = 15,
+) -> Optional[float]:
+    """Segment×sektor-normalisering med fallback-kedja (D3).
 
-    scan: {ticker: {"sector": str, field: float, ...}}; fields: t.ex. ["pe_trailing"].
-    Endast sektorer med ≥2 peers tas med (försumbara grupper → global fallback).
+    Kedja:
+      1. (segment, sektor)-grupp >= 5 peers -> percentil inom gruppen
+      2. Annars: sektor-grupp >= 15 peers -> percentil inom sektorn
+      3. Annars: global percentil / råvärde
+    Inverterad för P/E (lågt P/E = billig -> hög z).
     """
+    if value is None:
+        return None
+    val_f = float(value)
+    if segment and sector:
+        group_key = (segment, sector)
+        group_peers = seg_sector_maps.get(field, {}).get(group_key, [])
+        if len(group_peers) >= min_group_peers:
+            peers = [float(x) for x in group_peers if x is not None]
+            if peers:
+                pct = float(np.mean([1.0 if val_f > p else 0.0 for p in peers]) * 100.0)
+                return _clip100(100.0 - pct)
+
+    if sector:
+        sec_peers = sector_maps.get(field, {}).get(sector, [])
+        if len(sec_peers) >= min_sector_peers:
+            peers = [float(x) for x in sec_peers if x is not None]
+            if peers:
+                pct = float(np.mean([1.0 if val_f > p else 0.0 for p in peers]) * 100.0)
+                return _clip100(100.0 - pct)
+
+    return _clip100(val_f)
+
+
+def build_sector_z_maps(scan: dict, fields: list[str]) -> dict[str, dict[str, list[float]]]:
+    """Bygg sektor→[värde] map per fält för sektor-neutralisering."""
     maps: dict[str, dict[str, list[float]]] = {f: {} for f in fields}
     for t, row in scan.items():
         sec = row.get("sector")
@@ -258,6 +315,25 @@ def build_sector_z_maps(scan: dict, fields: list[str]) -> dict[str, dict[str, li
             if v is not None:
                 try:
                     maps[f].setdefault(sec, []).append(float(v))
+                except (TypeError, ValueError):
+                    continue
+    return maps
+
+
+def build_seg_sector_z_maps(scan: dict, fields: list[str]) -> dict[str, dict[tuple[str, str], list[float]]]:
+    """Bygg (segment, sektor)→[värde] map per fält för D3-normalisering."""
+    maps: dict[str, dict[tuple[str, str], list[float]]] = {f: {} for f in fields}
+    for t, row in scan.items():
+        seg = row.get("segment")
+        sec = row.get("sector")
+        if not seg or not sec:
+            continue
+        key = (seg, sec)
+        for f in fields:
+            v = row.get(f)
+            if v is not None:
+                try:
+                    maps[f].setdefault(key, []).append(float(v))
                 except (TypeError, ValueError):
                     continue
     return maps
@@ -344,7 +420,9 @@ def fuse(row: dict, weights: dict) -> dict:
     total_w = 0.0
     acc = 0.0
     missing: list[str] = []
-    w = weights.get("weights", weights) if isinstance(weights, dict) else {}
+    seg = row.get("segment") or ""
+    is_small = seg in ("small_cap", "micro_cap")
+    w = resolve_weights(weights, seg)
     full_w = sum(float(w.get(b, 0.0)) for b in blocks)
 
     # Compounder Payout Protection:
@@ -462,22 +540,6 @@ def fuse(row: dict, weights: dict) -> dict:
             rank = 69.499
             missing.append("soe_governance_risk")
 
-    # Smallcap Runway & Dilution Shield:
-    # Olönsamma småbolag med kort kassa (< 12 månader) och svagt kassaflöde/kvalitet
-    # cappas till Tier 4 (EJ_AKTUELL, max 48.0) för att skydda mot emissioner och utspädning.
-    runway = row.get("cash_runway_months")
-    seg = row.get("segment") or ""
-    is_small = seg in ("small_cap", "micro_cap")
-    if is_small and runway is not None:
-        try:
-            runway_f = float(runway)
-            if runway_f > 0 and runway_f < 12.0 and (qz is None or float(qz) < 60.0):
-                if rank is not None and rank >= 50.0:
-                    rank = min(rank, 48.0)
-                missing.append("cash_runway_risk")
-        except (TypeError, ValueError):
-            pass
-
     # Smallcap Compounder & MEWS Synergy (Harvia, ATOSS, Bouvet):
     # Exceptionellt kapitaleffektiva småbolag (Quality >= 75) med insiderköp eller
     # stark MEWS-accelerering belönas med nisch-vallgravsbonus.
@@ -502,12 +564,38 @@ def fuse(row: dict, weights: dict) -> dict:
             rank = min(rank, 58.0)
             missing.append("earnings_volatility_cap")
 
+    # Smallcap Runway & Dilution Shield:
+    # Olönsamma småbolag med kort kassa (< 12 månader) och svagt kassaflöde/kvalitet
+    # cappas till Tier 4 (EJ_AKTUELL, max 48.0) för att skydda mot emissioner och utspädning.
+    runway = row.get("cash_runway_months")
+    if is_small and runway is not None:
+        try:
+            runway_f = float(runway)
+            if runway_f > 0 and runway_f < 12.0 and (qz is None or float(qz) < 60.0):
+                if rank is not None and rank >= 50.0:
+                    rank = min(rank, 48.0)
+                missing.append("cash_runway_risk")
+        except (TypeError, ValueError):
+            pass
+
+    # D2: Kvalitets-junk-gate i small/micro (quality_z < 55 kan aldrig nå T1)
+    if is_small and qz is not None and float(qz) < 55.0:
+        if rank is not None and rank >= 62.0:
+            rank = min(rank, 61.999)
+            missing.append("junk_gate")
+
+    # D5: Likviditetsgate i small/micro (grade E/F kan max nå T3, < 50.0)
+    grade = row.get("liquidity_grade")
+    if is_small and grade in ("E", "F"):
+        if rank is not None and rank >= 50.0:
+            rank = min(rank, 49.999)
+            missing.append("liquidity_gate")
+
     # Datatäthet: T1/T2 kräver ≥4/8 kärnblock (Kvalitet, Värde, Tillväxt, Momentum etc. som utgör >70% av fundamenta).
     # Endast när bolaget har färre än 4 giltiga block sätts thin_data-taket (max T3).
     # PENDING hämmas (kvalitetsdata väntar).
     n_valid = len([b for b in blocks if row.get(f"{b}_z") is not None])
     pit = row.get("pit_status", "READY")
-    is_small = row.get("segment") in ("small_cap", "micro_cap")
     min_blocks = 3 if is_small else 4
     if n_valid < min_blocks or (pit == "PENDING"):
         if rank is not None and rank >= TIER_T3:
@@ -548,8 +636,32 @@ def signal_from_tier(tier: str | None) -> str:
 
 def compute_table(values: list[dict], weights: dict) -> list[dict]:
     """Hela master_rank-tabellen från per-ticker inputs. Ren, testbar."""
-    rows: list[dict] = []
+    # D3: Momentum segment-percentil (två-pass före fuse)
+    # Pass 1: Samla momentum_z per segment
+    seg_mom_map: dict[str, list[float]] = {}
     for v in values:
+        seg = v.get("segment") or "unknown"
+        mz = v.get("momentum_z")
+        if mz is not None:
+            try:
+                seg_mom_map.setdefault(seg, []).append(float(mz))
+            except (TypeError, ValueError):
+                pass
+
+    # Pass 2: Ersätt momentum_z med inom-segment-percentil om segmentet har >= 10 icke-null värden
+    values_proc: list[dict] = []
+    for v in values:
+        row_v = dict(v)
+        seg = row_v.get("segment") or "unknown"
+        peers = seg_mom_map.get(seg, [])
+        mz = row_v.get("momentum_z")
+        if mz is not None and len(peers) >= 10:
+            pct = float(np.mean([1.0 if float(mz) >= x else 0.0 for x in peers]) * 100.0)
+            row_v["momentum_z"] = _clip100(round(pct, 1))
+        values_proc.append(row_v)
+
+    rows: list[dict] = []
+    for v in values_proc:
         fused = fuse(v, weights)
         row = dict(v)
         row.update({
@@ -751,10 +863,21 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         if sec and pe and pe > 0:
             peers_by_sector.setdefault(sec, []).append(float(pe))
 
-    # ROND 9: sektor-neutral z-score-maps (kvalitet/värde inom sektor).
-    # Bygg maps för de raw-fält som ska sektor-justeras. Om en sektor saknar
-    # ≥15 peers → global fallback (sector_neutral_z hanterar det).
+    # ROND 9 + ROND 14: sektor-neutral & segment×sektor z-score-maps (D3)
     sector_maps = build_sector_z_maps(scan, ["pe_trailing"])
+    seg_sector_maps = build_seg_sector_z_maps(scan, ["pe_trailing"])
+
+    # Smallcap Runway & Dilution Shield data wiring (F8)
+    smallcap_data: dict[str, dict] = {}
+    try:
+        cur.execute("SELECT ticker, cash_runway_months, insider_buying FROM smallcap_results")
+        for sc_row in cur.fetchall():
+            smallcap_data[sc_row[0]] = {
+                "cash_runway_months": sc_row[1],
+                "insider_buying": sc_row[2],
+            }
+    except Exception as sc_err:
+        logger.debug("smallcap_results data fetch skipped: %s", sc_err)
 
     from backend_worker.technical_snapshot import compute_technical, _read_history, fetch_price_history
 
@@ -788,10 +911,11 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         pe_f = s["pe_forward"]
         rev_g = s["revenue_growth"]
         sector = s["sector"]
+        segment = s.get("segment")
 
         val_h = val_hist_z(pe_t, pe_hist.get(t, []))
-        # ROND 9: sektor-neutral P/E-z (inom sektor, ej global — JP Morgan/MSCI)
-        val_p = sector_neutral_z(pe_t, sector, sector_maps["pe_trailing"])
+        # ROND 14 (D3): segment×sektor-normalisering med fallback-kedja
+        val_p = group_percentile_z(pe_t, segment, sector, seg_sector_maps, sector_maps, "pe_trailing")
         peg = compute_peg(pe_f, rev_g)
         val_a = val_abs_z(pe_f, rev_g, None, q.get("value_z"), pe_trailing=pe_t, sector=sector)
         pe_hist_pctl = None
@@ -843,6 +967,17 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         from backend_worker.analyst_fetcher import analyst_z as _az
         az = _az({"upside_pct": a.get("upside_pct"), "recommendation_mean": a.get("recommendation_mean"),
                   "target_count": a.get("target_count")})
+        
+        # D6: Coverage-skalning (1–2 analytiker shrunkas mot neutral 50)
+        tc = a.get("target_count")
+        if az is not None and tc is not None:
+            try:
+                tc_int = int(tc)
+                if 1 <= tc_int <= 2:
+                    az = 50.0 + (float(az) - 50.0) * (tc_int / 3.0)
+            except (TypeError, ValueError):
+                pass
+
         disp = a.get("target_dispersion")
         if az is not None and disp is not None:
             disp = float(disp)
@@ -858,9 +993,10 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         for e in evs:
             if e.get("days_until") is not None and e["days_until"] >= 0:
                 if next_ev is None or e["days_until"] < next_ev[1]:
-                    next_ev = (e.get("event_date", "").isoformat() if hasattr(e.get("event_date"), "isoformat") else str(e.get("event_date", ""))[:10],
-                               e["days_until"])
-        catalyst_next = f"{next_ev[0]}:earnings" if next_ev else None
+                    ed_str = e.get("event_date", "").isoformat() if hasattr(e.get("event_date"), "isoformat") else str(e.get("event_date", ""))[:10]
+                    etype = e.get("event_type", "earnings")
+                    next_ev = (ed_str, e["days_until"], etype)
+        catalyst_next = f"{next_ev[0]}:{next_ev[2]}" if next_ev else None
         catalyst_days = next_ev[1] if next_ev else None
 
         # Insider / payout / growth — QMJ-pelare med scan_results-fallback
@@ -886,9 +1022,10 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
         if pz is None:
             pz = s["score_dividend"]   # utdelningsscore som payout-proxy
 
+        sc_info = smallcap_data.get(t, {})
         values.append({
             "ticker": t,
-            "segment": s.get("segment"),
+            "segment": segment,
             "quality_z": quality_z,
             "value_z": value_z,
             "momentum_z": momentum_z,
@@ -918,6 +1055,9 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             "catalyst_days": catalyst_days,
             "pit_status": pit,
             "pit_reason": pit_reason,
+            "cash_runway_months": sc_info.get("cash_runway_months") or s.get("cash_runway_months"),
+            "insider_buying": sc_info.get("insider_buying") or s.get("insider_buying"),
+            "liquidity_grade": s.get("liquidity_grade"),
             # ROND 11: valutafallback — analyst-currency saknas för många tickers
             # (PETR4/2914.T/7733.T); suffix-map ger korrekt BRL/JPY/... istället för USD.
             "currency": currency_for(t, a.get("currency")),
@@ -1073,8 +1213,9 @@ def main() -> None:
             WHERE computed_date = (SELECT MAX(computed_date) FROM factor_metrics)
               AND horizon_days = 180
         """)
-        ic_map = {r[0]: float(r[1]) for r in cur.fetchall() if r[1] is not None}
-        n_map = {r[0]: int(r[2]) for r in cur.fetchall() if r[2] is not None}
+        rows = cur.fetchall()
+        ic_map = {r[0]: float(r[1]) for r in rows if r[1] is not None}
+        n_map = {r[0]: int(r[2]) for r in rows if len(r) > 2 and r[2] is not None}
         weights = reweight_from_ic(ic_map, load_weights(), n_map=n_map)
         WEIGHTS_PATH.write_text(json.dumps(weights, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.info("Vikter uppdaterade: %s", weights["weights"])

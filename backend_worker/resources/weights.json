@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "comment": "MasterRank weights v1 (ROND 8). Data-driven refresh: var 60:e dag laeser master_rank.py factor_metrics och skriver om vikterna (IC > 0.03 uppvikt, IC < -0.02 nedvikt).",
+  "version": 2,
+  "comment": "MasterRank weights v2 (ROND 14). segment_overrides slås samman med basvikter per rad i compute_table; regime-merge (macro_regime) appliceras endast på 'weights' och bevarar segment_overrides.",
   "weights": {
     "quality": 0.25,
     "value": 0.15,
@@ -10,6 +10,16 @@
     "catalyst": 0.10,
     "payout": 0.05,
     "growth": 0.05
+  },
+  "segment_overrides": {
+    "small_cap": {
+      "value": 0.18,
+      "growth": 0.02
+    },
+    "micro_cap": {
+      "value": 0.18,
+      "growth": 0.02
+    }
   },
   "caps": {
     "analyst_max_share": 0.15,

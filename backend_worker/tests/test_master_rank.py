@@ -525,6 +525,98 @@ class TestMasterRank2Upgrades(unittest.TestCase):
         self.assertIn("earnings_volatility_cap", f["data_missing"])
 
 
+    def test_segment_sector_normalization_fallback_chain(self):
+        """D3: Normalisering inom (segment, sektor) >= 5, annars sektor >= 15, annars global."""
+        seg_sec_maps = {
+            "pe_trailing": {
+                ("small_cap", "Tech"): [10.0, 20.0, 30.0, 40.0, 50.0],  # 5 peers -> group
+                ("small_cap", "Bio"): [10.0, 20.0],                      # 2 peers (<5) -> fallback
+            }
+        }
+        sec_maps = {
+            "pe_trailing": {
+                "Bio": [float(x) for x in range(1, 16)],                 # 15 peers -> sector
+                "TinySec": [10.0, 20.0],                                  # 2 peers (<15) -> global
+            }
+        }
+        # 1. (small_cap, Tech): 5 peers, val=10.0 (cheapest) -> z=100.0
+        z_group = mr.group_percentile_z(10.0, "small_cap", "Tech", seg_sec_maps, sec_maps, "pe_trailing")
+        self.assertEqual(z_group, 100.0)
+
+        # 2. (small_cap, Bio): 2 peers -> fallback to Bio sector (15 peers)
+        z_sec = mr.group_percentile_z(1.0, "small_cap", "Bio", seg_sec_maps, sec_maps, "pe_trailing")
+        self.assertEqual(z_sec, 100.0)
+
+        # 3. (micro_cap, TinySec): fallback to global
+        z_global = mr.group_percentile_z(75.0, "micro_cap", "TinySec", seg_sec_maps, sec_maps, "pe_trailing")
+        self.assertEqual(z_global, 75.0)
+
+    def test_momentum_segment_percentile_compute_table(self):
+        """D3: Momentum percentileras inom segment om >= 10 medlemmar."""
+        # 10 large caps med olika momentum_z
+        large_rows = [
+            {"ticker": f"L{i}", "segment": "large_cap", "momentum_z": float(i * 10),
+             "quality_z": 70.0, "value_z": 70.0, "pit_status": "READY"}
+            for i in range(1, 11)
+        ]
+        res = mr.compute_table(large_rows, WEIGHTS)
+        # Högsta råvärdet L10 (100) ska få percentil 100.0
+        l10 = next(r for r in res if r["ticker"] == "L10")
+        self.assertEqual(l10["momentum_z"], 100.0)
+        # L1 (10) ska få 10.0 percentil
+        l1 = next(r for r in res if r["ticker"] == "L1")
+        self.assertEqual(l1["momentum_z"], 10.0)
+
+    def test_weights_v2_and_segment_overrides(self):
+        """D1: resolve_weights applicerar 0.18 value / 0.02 growth för small/micro."""
+        w_small = mr.resolve_weights(WEIGHTS, "small_cap")
+        w_micro = mr.resolve_weights(WEIGHTS, "micro_cap")
+        w_large = mr.resolve_weights(WEIGHTS, "large_cap")
+
+        self.assertAlmostEqual(w_small["value"], 0.18, places=3)
+        self.assertAlmostEqual(w_small["growth"], 0.02, places=3)
+        self.assertAlmostEqual(sum(w_small.values()), 1.0, places=3)
+
+        self.assertAlmostEqual(w_micro["value"], 0.18, places=3)
+        self.assertAlmostEqual(w_micro["growth"], 0.02, places=3)
+
+        self.assertAlmostEqual(w_large["value"], 0.15, places=3)
+        self.assertAlmostEqual(w_large["growth"], 0.05, places=3)
+
+    def test_junk_gate_small_micro(self):
+        """D2: small/micro med quality_z < 55 kan aldrig nå T1 (cap 61.999, junk_gate)."""
+        junk_smallcap = {
+            "segment": "small_cap", "quality_z": 45.0, "value_z": 95.0, "momentum_z": 95.0,
+            "analyst_z": 80.0, "insider_z": 80.0, "catalyst_z": 80.0, "payout_z": 70.0, "growth_z": 70.0,
+            "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(junk_smallcap, WEIGHTS)
+        self.assertLessEqual(f["master_rank"], 61.999)
+        self.assertIn("junk_gate", f["data_missing"])
+        self.assertNotEqual(f["tier"], "T1")
+
+    def test_liquidity_gate_small_micro(self):
+        """D5: small/micro med grade E/F cappas vid max T3 (<50.0)."""
+        illiquid_smallcap = {
+            "segment": "small_cap", "liquidity_grade": "E",
+            "quality_z": 85.0, "value_z": 75.0, "momentum_z": 80.0,
+            "analyst_z": 70.0, "insider_z": 70.0, "catalyst_z": 70.0, "payout_z": 70.0, "growth_z": 70.0,
+            "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(illiquid_smallcap, WEIGHTS)
+        self.assertLessEqual(f["master_rank"], 49.999)
+        self.assertIn("liquidity_gate", f["data_missing"])
+        self.assertEqual(f["tier"], "T3")  # max T3 (38.0 <= 49.999 < 50.0)
+
+    def test_regime_merge_preserves_segment_overrides(self):
+        """Regime-merge bevarar segment_overrides och v2 metadata."""
+        from backend_worker.macro_regime import compute_smoothed_regime_weights
+        merged = compute_smoothed_regime_weights("EXPANSION_RISK_ON", WEIGHTS)
+        self.assertIn("segment_overrides", merged)
+        self.assertIn("small_cap", merged["segment_overrides"])
+        self.assertIn("weights", merged)
+
+
 if __name__ == "__main__":
     unittest.main()
 

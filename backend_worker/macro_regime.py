@@ -189,27 +189,36 @@ def classify_macro_regime(
 
 def compute_smoothed_regime_weights(
     current_regime: str,
-    previous_weights: Optional[dict[str, float]] = None,
+    previous_weights: Optional[dict] = None,
     smoothing_alpha: float = 0.15,
-) -> dict[str, float]:
+) -> dict:
     """Beräknar utjämnade faktorvikter med 60-dagars EMA-tröghet (alpha=0.15).
 
     Undviker att faktorvikter hoppar abrupt över en natt (anti-whipsaw).
     Formel: w_t = (1 - alpha) * w_{t-1} + alpha * w_target
+    Bevarar v2-schema och segment_overrides intakta om en hel config skickas in.
     """
     target_weights = REGIME_WEIGHT_TILTS.get(current_regime, BASE_WEIGHTS)
     if not previous_weights:
         return dict(target_weights)
 
+    is_v2 = isinstance(previous_weights, dict) and "weights" in previous_weights and isinstance(previous_weights["weights"], dict)
+    prev_factor_weights = previous_weights["weights"] if is_v2 else previous_weights
+
     smoothed: dict[str, float] = {}
     for factor in BASE_WEIGHTS:
-        prev_w = float(previous_weights.get(factor, BASE_WEIGHTS[factor]))
+        prev_w = float(prev_factor_weights.get(factor, BASE_WEIGHTS[factor]))
         tgt_w = float(target_weights.get(factor, BASE_WEIGHTS[factor]))
         smoothed[factor] = round((1.0 - smoothing_alpha) * prev_w + smoothing_alpha * tgt_w, 4)
 
     total = sum(smoothed.values())
     if total > 0:
         smoothed = {k: round(v / total, 4) for k, v in smoothed.items()}
+
+    if is_v2:
+        out = dict(previous_weights)
+        out["weights"] = smoothed
+        return out
 
     return smoothed
 
