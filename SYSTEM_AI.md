@@ -8,11 +8,10 @@
 
 ## 1. Kritiska regler — ALDRIG bryta
 
-1. **ackend_worker/ får ALDRIG importeras av pps/api/.** Vercel 500MB-gräns. pandas, xgboost, yfinance är förbjudna i API.
+1. **`backend_worker/` får ALDRIG importeras av `apps/api/`.** Vercel 500MB-gräns. pandas, xgboost, yfinance är förbjudna i API.
 2. **React 18.3 — uppgradera INTE till 19.** Radix UI kräver 18.
-3. **def (inte sync def)** för synkrona Supabase DB-handlers i FastAPI för att inte blockera event-loopen.
-4. **Supabase service key** (get_supabase_admin) används BARA bakom 
-equire_admin i API samt i ackend_worker/. Exponeras ALDRIG i frontend.
+3. **def (inte async def)** för synkrona Supabase DB-handlers i FastAPI för att inte blockera event-loopen.
+4. **Supabase service key** (`get_supabase_admin`) används BARA bakom `require_admin` i API samt i `backend_worker/`. Exponeras ALDRIG i frontend.
 5. **Inga emojis i UI** — alltid Lucide-linjeikoner.
 6. **DATABASE_URL måste vara Session Pooler** (port 6543), INTE Direct (port 5432).
 7. **InfoTooltip (i-bubbla)** används överallt bredvid finansiella värden.
@@ -24,21 +23,21 @@ equire_admin i API samt i ackend_worker/. Exponeras ALDRIG i frontend.
 
 | Uppgift | Kommando |
 |---|---|
-| Starta API lokalt | python -m uvicorn apps.api.main:app --reload --port 8000 |
-| Starta frontend lokalt | cd apps/web && npm run dev |
-| Validera Codex | python scripts/verify_codex.py |
-| Smoke test | python scripts/smoke_test.py |
-| Bygg frontend (type-check) | cd apps/web && npx tsc --noEmit |
-| Köra enhetstester | PYTHONPATH=. pytest apps/api/tests backend_worker/tests -v |
+| Starta API lokalt | `python -m uvicorn apps.api.main:app --reload --port 8000` |
+| Starta frontend lokalt | `cd apps/web && npm run dev` |
+| Validera Codex | `python scripts/verify_codex.py` |
+| Smoke test | `python scripts/smoke_test.py` |
+| Bygg frontend (type-check) | `cd apps/web && npx tsc --noEmit` |
+| Köra enhetstester | `PYTHONPATH=. pytest apps/api/tests backend_worker/tests -v` |
 
 ---
 
 ## 3. Arkitekturöversikt
 
-- **Frontend (pps/web):** Next.js 15.5, React 18.3, Tailwind v4, Radix UI, TanStack Query v5.
-- **Backend (pps/api):** FastAPI, PyJWT (HS256 lokal), Supabase-klienter (dependencies.py).
-- **Worker (ackend_worker):** yfinance, pandas, XGBoost, beräkning av MasterRank, RAG-extraktion.
-- **Databas:** Supabase Postgres med RLS-policies per tabell (supabase/migrations/).
+- **Frontend (`apps/web`):** Next.js 15.5, React 18.3, Tailwind v4, Radix UI, TanStack Query v5.
+- **Backend (`apps/api`):** FastAPI, PyJWT (HS256 lokal), Supabase-klienter (`dependencies.py`).
+- **Worker (`backend_worker`):** yfinance, pandas, XGBoost, beräkning av MasterRank, RAG-extraktion.
+- **Databas:** Supabase Postgres med RLS-policies per tabell (`supabase/migrations/`).
 
 ---
 

@@ -1,14 +1,10 @@
 # MarketScan — AI-operatörsmanual
 
 > **Du som läser detta är en AI som ska arbeta i MarketScan.** Den här filen är
-> din enda obligatoriska startpunkt. Den lär dig *hur du ska tänka*, hur hela
-> systemet hänger ihop, exakt vilka verktyg som finns och hur du använder dem,
-> samt vilka misstag som redan gjorts så att du slipper göra om dem.
+> din operativa manual för felsökning, arkitektur och verktyg.
 >
-> `SYSTEM_AI.md` är referens-uppslagsverket (varje fil/funktion). Den här filen
-> är *operativ doktrin*. Läs den här FÖRST, slå upp detaljer i `SYSTEM_AI.md`.
->
-> Senast reviderad: 2026-06-09.
+> Systemets auktoritativa specifikation och Ground Truth finns i `SYSTEM_INDEX.md`
+> och underliggande kapitel i `docs/codex/`. Använd denna guide för operativ doktrin.
 
 ---
 
@@ -28,24 +24,22 @@
    göra nästa likadana fel lättare att hitta (bättre felmeddelande, diagnostik,
    test).
 6. **Håll dokumentationen levande.** Ändrar du arkitektur eller hittar en bugg —
-   uppdatera `SYSTEM_AI.md` (changelog överst) och, om mönstret är nytt, den här
-   filen och `CONTRIBUTING.md`.
+   uppdatera motsvarande kapitel i `docs/codex/` in-place och kör `python scripts/verify_codex.py`.
 
 ---
 
 ## 1. Vad MarketScan är (60 sekunder)
 
-En svensk aktieanalys-plattform: en daglig pipeline scorar aktier (teknisk +
-fundamental + sentiment), och en webbapp låter användare screena, bygga
-portfölj, få AI-analys, sätta alarm och backtesta strategier.
+En svensk aktieanalys-plattform: en daglig pipeline scorar aktier med MasterRank (8 delblock + anti-bubbla-grind),
+och en webbapp låter användare screena, bygga portfölj, få AI-analys, sätta larm och hantera risk.
 
 **Stack:**
-- **Frontend:** Next.js 14 (App Router, TypeScript) — `apps/web/`
-- **API:** FastAPI (Python) — `apps/api/`
-- **Pipeline/jobb:** Python på GitHub Actions — `backend_worker/`
-- **Databas/Auth:** Supabase (Postgres + Auth + RLS)
+- **Frontend:** Next.js 15.5 (App Router, React 18.3, TypeScript, Tailwind v4) — `apps/web/`
+- **API:** FastAPI (Python 3.12, FastAPI 0.115) — `apps/api/`
+- **Pipeline/jobb:** Python på GitHub Actions (30 workflows) — `backend_worker/`
+- **Databas/Auth:** Supabase Postgres (Stockholm, Session Pooler port 6543 + Auth + RLS)
 - **Lagring:** Cloudflare R2 (parquet-filer)
-- **AI:** DeepSeek (LLM)
+- **AI:** DeepSeek-V3 / OpenRouter (LLM, narrativ, grounding)
 - **Hosting:** två separata Vercel-projekt (frontend + API)
 
 ---

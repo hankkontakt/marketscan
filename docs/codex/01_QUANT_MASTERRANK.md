@@ -61,26 +61,34 @@ Vikterna definieras i `backend_worker/resources/weights.json`:
 
 ## 4. Anti-Bubbla-Grinden ("Bubbla-Triage")
 
-För att förhindra att aktier med fantastisk historisk kvalitet men extremt överhettad kurs rankas i topp tillämpas Anti-Bubbla-filtret:
+För att förhindra att aktier med fantastisk historisk kvalitet men extremt överhettad kurs rankas i topp tillämpas Anti-Bubbla-filtret med progressiv dämpning:
 
-$$\text{Om } (PEG > 2.5 \lor PE > PE_{p90}) \land (RSI > 75) \implies \begin{cases} MasterRank = \min(MasterRank, 60) \\ Tier = T3 \\ \text{Flagga} = \text{"Bubbla-triage"} \end{cases}$$
+- **Progressiv Dämpning (RSI 70–75):** När en aktie uppvisar extrem värdering ($PEG > 2.5 \lor PE > PE_{p90}$) och RSI närmar sig överköpt (RSI > 70) dämpas ranken mjukt och proportionellt mot överhettningen:
+  $$Dämpning = \min(10.0, 1.5 \cdot (RSI - 70))$$
+- **Bubbla-Triage Cap (RSI > 75):** Om aktien bekräftas överköpt ($RSI > 75$) cappas ranken strikt till max $60.0$ (Tier 3) med flaggan `bubble_triage`.
+- **Cyklisk & Noll-Tillväxt Guard:** Vid negativ eller nära-noll tillväxt ($\le 0.5\%$) är PEG matematiskt odefinierat och ignoreras helt. Grinden förlitar sig då uteslutande på historisk percentil ($PE_{p90}$) och sektorpeers så att cykliska bolag inte slinker förbi.
 
-### Regler för Datatäthet (Thin Data) och PIT (Point-in-Time)
-- **T1-Krav:** Kräver giltiga värden för **minst 6 av 8 block**. Aktier med glesa data (t.ex. nynoterade globala bolag) begränsas automatiskt till max Tier 3 med flaggan `thin_data`.
-- **Analytiker-Tak:** Analytikerblocket skalas ned om antalet analytiker är $< 3$, så att en enstaka överoptimistisk riktkurs inte kan driva ranken.
+### Regler för Datatäthet (Thin Data), Analytikerspridning och PIT
+- **T1-Krav:** Kräver giltiga värden för **minst 6 av 8 block**. Aktier med glesa data begränsas automatiskt till max Tier 3 med flaggan `thin_data`.
+- **Analytiker-Tak & Spridning (Dispersion):** Analytikerblocket skalas ned om antalet analytiker är $< 3$. Dessutom appliceras ett avdrag på upp till 35% om riktkursspridningen ($IQR/Median > 0.4$) är hög, så att extrem oenighet mellan banker straffar konfidensen.
+- **Segment-Normalisering (`master_rank_pctl`):** Vid sidan av rå MasterRank beräknas en segment-relativ percentil (0–100) för att möjliggöra rättvis jämförelse mellan småbolag ($T1 \ge 62$) och storbolag ($T1 \ge 75$).
 - **PIT Soft-Block:** Bolag med fördröjd bokslutsdata (PENDING) tillåts delta på tekniska/analytiska signaler men kan aldrig uppnå Tier 1 förrän bokslutet verifierats.
 
 ---
 
-## 5. Alpha Discovery Engine
+## 5. Alpha Discovery & Forensiska Skyddsmotorer
 
-Specialiserade signalmoduler som körs i `backend_worker/alpha_discovery/`:
+Specialiserade signal- och skyddsmoduler som körs i `backend_worker/alpha_discovery/` och `backend_worker/`:
 
 | Modul | Fil | Strategi |
 |---|---|---|
+| **Makroregim & EMA-tröghet** | `backend_worker/macro_regime.py` | 60-dagars EMA-utjämning (`compute_smoothed_regime_weights`) för flimmerfri regimstyrning |
+| **Forensisk Sköld & Tillväxt-Sloan** | `backend_worker/forensic_shield.py` | Tillväxtjusterad Sloan Accrual $\Delta \text{Accruals} / \Delta \text{Sales}$ + utspädningsskydd |
+| **Warrant Detector (TO-Radar)** | `backend_worker/alpha_discovery/warrant_detector.py` | Identifierar teckningsoptioner (TO1-TO9), utspädningsandel och lösenfönster |
+| **Offentliga Upphandlingar** | `backend_worker/alpha_discovery/tenders_tracker.py` | Spårar offentliga ramavtal (TED/Doffin) för IT- och försvarskonsulter (`score_public_tenders`) |
+| **Smart Money & Free Float** | `backend_worker/smart_money.py` | Opportunistiska insiderkluster vs optionslösen samt `compute_free_float_quality` |
 | **Wyckoff Divergence** | `backend_worker/alpha_discovery/wyckoff_divergence.py` | Upptäcker ackumulations- och distributionsfaser baserat på volym/pris-divergenser |
 | **FCF Inflection** | `backend_worker/alpha_discovery/fcf_inflection_scanner.py` | Hittar bolag där fritt kassaflöde svänger från negativt till kraftigt positivt |
-| **Warrant Detector** | `backend_worker/alpha_discovery/warrant_detector.py` | Identifierar potentiell utspädning från teckningsoptioner i småbolag |
 | **Fund Shadowing** | `backend_worker/alpha_discovery/fund_shadowing.py` | Spårar toppfondernas ökade ägarandelar i nordiska aktier |
 | **Analyst Credibility** | `backend_worker/alpha_discovery/analyst_credibility.py` | Vikter analytiker baserat på deras historiska träffsäkerhet |
 
@@ -90,12 +98,13 @@ Specialiserade signalmoduler som körs i `backend_worker/alpha_discovery/`:
 
 | Komponent | Fil | Kärnmetoder |
 |---|---|---|
-| MasterRank Beräkning | `backend_worker/master_rank.py` | `fuse()`, `tier_of()`, `master_rank_run()`, `compute_peg()` |
+| MasterRank Beräkning | `backend_worker/master_rank.py` | `fuse()`, `tier_of()`, `master_rank_run()`, `compute_peg()`, `load_weights()` |
+| Forensisk Revision | `backend_worker/forensic_shield.py` | `audit_company_forensics()`, `SLOAN_ACCRUAL_THRESHOLD` |
+| Makro & Faktorregimer | `backend_worker/macro_regime.py` | `classify_macro_regime()`, `compute_smoothed_regime_weights()`, `derive_regime_from_scan()` |
 | QMJ & Kvalitet | `backend_worker/qmj_scores.py` | `extract_metrics()`, `composite()`, `compute_sector_value()`, `stratum_of()` |
-| Faktorregimer | `backend_worker/factor_regime.py` | `compute_regime()`, `classify_regime()`, `compute_nordic_composite()` |
+| Smart Money & Float | `backend_worker/smart_money.py` | `analyze_insider_transactions()`, `compute_free_float_quality()` |
+| Upphandlingar | `backend_worker/alpha_discovery/tenders_tracker.py` | `score_public_tenders()` |
 | Teknisk Snapshot | `backend_worker/technical_snapshot.py` | `compute_technical()`, `snapshot_technicals()`, `rsi_14()` |
-| Insynskluster | `backend_worker/insider_cluster.py` | `calculate_clusters()`, `calculate_sell_clusters()`, `dedupe_trades()` |
-| Earnings Surprises | `backend_worker/earnings_surprise.py` | `compute_sue()`, `process_earnings_frame()`, `fetch_earnings_dates()` |
 
 ---
 
@@ -111,8 +120,10 @@ Specialiserade signalmoduler som körs i `backend_worker/alpha_discovery/`:
 
 ## 8. Småbolag & Kända Begränsningar
 
-1. **Segment-relativ kalibrering:** Småbolag (`small_cap`, `micro_cap`) har glesare data och lägre analytikertäckning. MasterRank anpassar tier-trösklarna (T1 $\ge 62.0$, T2 $\ge 50.0$, T3 $\ge 38.0$) så att köpvärda småbolag inte utestängs.
-2. **Datatäthet & Thin-Data Tak:** Vid färre än 3 giltiga kärnblock begränsas ranken automatiskt (`thin_cap = 61.999` för småbolag resp $64.999$ för stora bolag).
-3. **Koncentrationsrisk (NAV):** Modellen mäter ej portfölj-/NAV-koncentration i investmentbolag (t.ex. 3i Group / Action). Detta är en känd begränsning i universumet.
-4. **Likviditetsflagga (`low_liquidity`):** Graderas av extern scanner baserat på omsättning; visas med varningstriangel i UI.
-5. **ROE Kontrakt (Rå vs Residual):** UI och screener-filter använder uteslutande `roe_raw` (yfinance råvärde). Den neutraliserade sektorresidualen `roe` är strikt intern för faktorberäkning.
+1. **Segment-relativ kalibrering & Percentiler:** Småbolag (`small_cap`, `micro_cap`) har glesare data och lägre analytikertäckning. MasterRank anpassar tier-trösklarna (T1 $\ge 62.0$, T2 $\ge 50.0$, T3 $\ge 38.0$) och beräknar `master_rank_pctl` inom segmentet.
+2. **Smallcap Runway & Nyemissions-sköld:** Olönsamma småbolag med kort kassa ($< 12$ månader) och svagt kassaflöde/kvalitet ($< 60$) cappas till max $48.0$ (Tier 4 / EJ_AKTUELL).
+3. **Compounder & MEWS-synergi:** Kapitaleffektiva småbolag ($Quality \ge 75$) med insiderköp eller stark MEWS-accelerering erhåller nisch-vallgravsbonus (Harvia, ATOSS, Bouvet).
+4. **Vinstvolatilitet & Leasing-rabatt:** Finansiella aktörer med hög intäktsvolatilitet eller engångsavgifter (t.ex. FPG 7148.T) cappas vid max 58.0 för att inte förväxlas med stabila compounders.
+5. **Datatäthet & Thin-Data Tak:** Vid färre än 3 giltiga kärnblock begränsas ranken automatiskt (`thin_cap = 61.999` för småbolag resp $64.999$ för stora bolag).
+6. **Likviditetsflagga (`low_liquidity`):** Graderas av extern scanner baserat på omsättning; visas med varningstriangel i UI.
+7. **ROE Kontrakt (Rå vs Residual):** UI och screener-filter använder uteslutande `roe_raw`. Den neutraliserade sektorresidualen `roe` är strikt intern för faktorberäkning.

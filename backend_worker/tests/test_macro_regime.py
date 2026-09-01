@@ -63,6 +63,16 @@ class TestMacroRegime(unittest.TestCase):
         regime, res = derive_regime_from_scan(rows)
         self.assertIn(regime, REGIME_WEIGHT_TILTS)
 
+    def test_smoothed_regime_weights(self):
+        """Verifiera att 60-dagars EMA-utjämning dämpar plötsliga viktskiften."""
+        from backend_worker.macro_regime import compute_smoothed_regime_weights
+        prev = dict(BASE_WEIGHTS)
+        smoothed = compute_smoothed_regime_weights("CONTRACTION_CRISIS", previous_weights=prev, smoothing_alpha=0.15)
+        # Quality borde stiga mjukt (inte hoppa direkt till 0.35 från 0.25)
+        self.assertGreater(smoothed["quality"], 0.25)
+        self.assertLess(smoothed["quality"], 0.35)
+        self.assertAlmostEqual(sum(smoothed.values()), 1.0, places=2)
+
 
 if __name__ == "__main__":
     unittest.main()

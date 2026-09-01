@@ -117,8 +117,8 @@ def check_api_route_coverage():
         active_routes = set()
         for route in app.routes:
             if hasattr(route, "path") and hasattr(route, "methods"):
-                # Filter out standard docs
-                if route.path in ["/docs", "/redoc", "/openapi.json"]:
+                # Filter out standard docs & swagger redirects
+                if route.path in ["/docs", "/redoc", "/openapi.json", "/api/docs", "/docs/oauth2-redirect"]:
                     continue
                 for method in route.methods:
                     if method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:

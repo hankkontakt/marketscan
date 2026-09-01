@@ -100,6 +100,9 @@ class CommitteeSynthesis(BaseModel):
     verdict: str
     confidence: int
     summary: str
+    bull_case: str | None = None
+    bear_case: str | None = None
+    scenario_probabilities: dict[str, int] | None = None  # e.g. {"bull_pct": 30, "base_pct": 50, "bear_pct": 20}
     disagreement: bool
     disagreement_note: str | None = None
 
@@ -126,17 +129,32 @@ Analysera marknadssentiment och strukturella drivkrafter: sektortrender, institu
 nyhetsflöde och säsongsmönster.
 Ge ett tydligt omdöme (KÖPLÄGE STARKT/BRA/AVVAKTA/EJ AKTUELLT) med fokus på marknadens förväntansbild.""",
 
+    "bull": """Du är Lead Bull Investerare i kommittén.
+Formulera de 3 starkaste faktabaserade skälen till kursdubbling/uppsida: organisk tillväxt, vallgrav (moat), prissättningskraft och marginalexpansion.
+Du MÅSTE citera konkreta siffror och nyckeltal från bolagets data. Förbjudet att använda generiska klyschor.""",
+
+    "bear": """Du är Short Seller / Forensisk Blankare i kommittén.
+Formulera de 3 farligaste sårbarheterna för aktien: ansträngd värderingsmultipel, skuldsättning, kundkoncentration, lageruppbyggnad eller marginalerosion.
+Du MÅSTE citera konkreta siffror och riskfaktorer från bolagets data. Förbjudet att använda generiska klyschor.""",
+
     "ordforande": """Du är Ordförande i Analyskommittén och ska sammanställa ett institutionellt investeringsmemo.
-Du väger samman de tekniska, fundamentala och sentimentmässiga analyserna.
+Du väger samman de tekniska, fundamentala, sentimentmässiga, Bull- och Bear-inlagorna mot bolagets faktiska rapportdata.
 Returnera JSON:
 {
   "verdict": "STARK"|"BRA"|"AVVAKTA"|"EJ_AKTUELLT",
   "confidence": 0-100,
-  "summary": "Fullständigt institutionellt investeringsmemo med kärntes, Bull/Base/Bear-scenario och värderingsbedömning på flytande svenska",
+  "summary": "Fullständigt institutionellt investeringsmemo med kärntes, värderingsbedömning och slutsats på flytande svenska",
+  "bull_case": "Sammanfattning av de 3 starkaste tjur-argumenten",
+  "bear_case": "Sammanfattning av de 3 allvarligaste björn-riskerna",
+  "scenario_probabilities": {
+    "bull_pct": 0-100,
+    "base_pct": 0-100,
+    "bear_pct": 0-100
+  },
   "disagreement": true|false,
   "disagreement_note": "om oenighet: förklara vad analytikerna är oeniga om"|null
 }
-Inga generella disclaimers. Var konkret, datadriven och skarp.""",
+Sannolikheterna måste summera till 100%. Inga generella disclaimers. Var konkret, datadriven och skarp.""",
 }
 
 
@@ -164,6 +182,8 @@ async def get_committee_analysis(
         _call_ai(ANALYST_PROMPTS["teknisk"], context),
         _call_ai(ANALYST_PROMPTS["fundamental"], context),
         _call_ai(ANALYST_PROMPTS["sentiment"], context),
+        _call_ai(ANALYST_PROMPTS["bull"], context),
+        _call_ai(ANALYST_PROMPTS["bear"], context),
         return_exceptions=True,
     )
 
@@ -172,9 +192,11 @@ async def get_committee_analysis(
     tech_analysis = results[0] if not isinstance(results[0], Exception) else _FALLBACK
     fund_analysis = results[1] if not isinstance(results[1], Exception) else _FALLBACK
     sent_analysis = results[2] if not isinstance(results[2], Exception) else _FALLBACK
+    bull_analysis = results[3] if not isinstance(results[3], Exception) else _FALLBACK
+    bear_analysis = results[4] if not isinstance(results[4], Exception) else _FALLBACK
 
     # Chair synthesis — only if at least one analyst succeeded
-    if all(r == _FALLBACK for r in [tech_analysis, fund_analysis, sent_analysis]):
+    if all(r == _FALLBACK for r in [tech_analysis, fund_analysis, sent_analysis, bull_analysis, bear_analysis]):
         raise HTTPException(status_code=503, detail="Analyskommittén är tillfälligt otillgänglig")
 
     chair_input = f"""
@@ -188,6 +210,12 @@ FUNDAMENTAL ANALYTIKER:
 
 SENTIMENTANALYTIKER:
 {sent_analysis}
+
+BULL INVESTOR (TILLVÄXT & VALLGRAV):
+{bull_analysis}
+
+SHORT SELLER (FORENSIK & RISK):
+{bear_analysis}
 """
     # L4 — Self-consistency: kör synthesis 2 ggr för att detektera oenighet
     syn_results = await asyncio.gather(
@@ -238,12 +266,16 @@ SENTIMENTANALYTIKER:
             "teknisk": {"name": "Teknisk analytiker", "analysis": tech_analysis},
             "fundamental": {"name": "Fundamental analytiker", "analysis": fund_analysis},
             "sentiment": {"name": "Sentimentanalytiker", "analysis": sent_analysis},
+            "bull": {"name": "Bull Case (Tillväxt & Vallgrav)", "analysis": bull_analysis},
+            "bear": {"name": "Bear Case (Short-Seller & Risk)", "analysis": bear_analysis},
         },
         "synthesis": synthesis,
         "cached_date": date.today().isoformat(),
     }
 
-    set_cache(cache_key, response, sb)
+    usable = bool(synthesis.get("summary")) and synthesis.get("summary") != "Analys ej tillgänglig" and not synthesis.get("summary", "").startswith("(")
+    if usable:
+        set_cache(cache_key, response, sb)
 
     # Save to AI journal for transparency
     try:
@@ -330,7 +362,9 @@ async def ai_compare(body: AICompareRequest, sb=Depends(get_user_supabase), user
         "cached_date": date.today().isoformat(),
     }
 
-    set_cache(key, response, sb)
+    usable = bool(result.get("summary")) and result.get("summary") != "AI-jämförelse ej tillgänglig."
+    if usable:
+        set_cache(key, response, sb)
     return response
 
 
@@ -462,12 +496,16 @@ async def daily_coach(
         from apps.api.core.llm_client import llm_complete
         prompt = (DAILY_COACH_SYSTEM + "\n\nPORTFÖLJDATA (JSON):\n"
                   + json.dumps(facts, ensure_ascii=False))
-        # prefer="quality" → DeepSeek först (bevisat fungerande routing, samma
-        # som committee/explain), Gemini som fallback när nyckeln finns.
+        # prefer="quality" → DeepSeek först, Gemini som fallback.
         # cache=False — vi cachar själva nedan, men ENDAST lyckade svar.
         result = await llm_complete(
             prompt, task="daily_coach", prefer="quality", max_tokens=700, cache=False
         )
+        if (result or {}).get("finish_reason") == "length":
+            # Omförsök med utökat tak vid avklippt svar (samma mönster som /explain)
+            result = await llm_complete(
+                prompt, task="daily_coach", prefer="quality", max_tokens=1500, cache=False
+            )
         briefing = _clean_coach_text((result or {}).get("text"))
     except Exception as e:
         logger.warning("daily-coach LLM failed: %s", e)

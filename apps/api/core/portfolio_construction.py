@@ -209,13 +209,14 @@ def build_barbell_portfolio(
     for c in candidates:
         seg = c.get("segment", "large_cap")
         rank = float(c.get("master_rank") or 0.0)
-        if seg in ("large_cap", "mid_cap") and rank >= 65.0:
+        pctl = float(c.get("master_rank_pctl") or rank)
+        if seg in ("large_cap", "mid_cap") and (rank >= 65.0 or pctl >= 60.0):
             core_pool.append(c)
         else:
             satellite_pool.append(c)
 
-    core_pool.sort(key=lambda x: float(x.get("master_rank") or 0.0), reverse=True)
-    satellite_pool.sort(key=lambda x: float(x.get("master_rank") or 0.0), reverse=True)
+    core_pool.sort(key=lambda x: float(x.get("master_rank_pctl") or x.get("master_rank") or 0.0), reverse=True)
+    satellite_pool.sort(key=lambda x: float(x.get("master_rank_pctl") or x.get("master_rank") or 0.0), reverse=True)
 
     chosen_core = []
     chosen_satellite = []

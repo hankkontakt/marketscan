@@ -64,11 +64,15 @@ IC_DOWN = -0.02
 
 # ═════════════════════════ PURE CORE (testbar; ingen nätverk/DB) ══════════════
 
-def load_weights(path: Path = WEIGHTS_PATH) -> dict:
+def load_weights(path: Path = WEIGHTS_PATH, regime: Optional[str] = None) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"weights.json saknas: {path}")
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        base = json.load(f)
+    if regime:
+        from backend_worker.macro_regime import compute_smoothed_regime_weights
+        return compute_smoothed_regime_weights(regime, previous_weights=base)
+    return base
 
 
 def _clip100(x: Optional[float]) -> Optional[float]:
@@ -113,7 +117,11 @@ def val_peers_z(pe_trailing: Optional[float], peers: list[float]) -> Optional[fl
 
 
 def compute_peg(pe_forward: Optional[float], revenue_growth: Optional[float]) -> Optional[float]:
-    """Beräkna PEG-ratio med enhetskonsistens (hanterar decimal vs procent)."""
+    """Beräkna PEG-ratio med enhetskonsistens (hanterar decimal vs procent).
+
+    Guard: Vid cykliska bolag (Fresnillo/Frontline) eller noll/negativ tillväxt
+    är PEG matematiskt odefinierat/missvisande. Returnerar None om tillväxt <= 0.5 %.
+    """
     if pe_forward is None or revenue_growth is None:
         return None
     try:
@@ -121,11 +129,11 @@ def compute_peg(pe_forward: Optional[float], revenue_growth: Optional[float]) ->
         g = float(revenue_growth)
     except (TypeError, ValueError):
         return None
-    if pe_f <= 0 or g <= 0:
+    if pe_f <= 0 or g <= 0.005:  # tillväxt <= 0.5% är obefintlig/negativ
         return None
     # Om tillväxt är decimal (t.ex. 0.25 för 25 %), konvertera till procent (25.0)
     g_pct = g * 100.0 if g < 5.0 else g
-    if g_pct <= 0:
+    if g_pct <= 0.5:
         return None
     return pe_f / g_pct
 
@@ -185,16 +193,22 @@ def val_abs_z(pe_forward: Optional[float], revenue_growth: Optional[float],
 
 def val_flags(val_hist: Optional[float], val_peers: Optional[float],
               val_abs: Optional[float], peg: Optional[float], pe_hist_pctl: Optional[float],
-              ticker: Optional[str] = None) -> list[str]:
+              ticker: Optional[str] = None, revenue_growth: Optional[float] = None) -> list[str]:
     flags: list[str] = []
     if peg is not None and peg > PEG_EXTREME:
         flags.append("EXTREME_OVERVAL")
     if pe_hist_pctl is not None and pe_hist_pctl > VAL_HIST_PCTL_EXTREME:
         flags.append("EXTREME_OVERVAL")
+    # Fallback för cykliska/noll-tillväxtbolag där PEG saknas men värderingen är extrem inom sektorn
+    if peg is None and val_peers is not None and val_peers <= 10.0:
+        flags.append("EXTREME_OVERVAL")
+
     if val_hist is not None and val_hist >= 80 and val_peers is not None and val_peers >= 80:
         flags.append("CHEAP")
     elif peg is not None and peg <= 0.8:
-        flags.append("CHEAP_PEG")
+        # Guard: CHEAP_PEG får aldrig sättas om tillväxten är negativ eller nära noll
+        if revenue_growth is None or revenue_growth > 0.01:
+            flags.append("CHEAP_PEG")
 
     # SOE Political & Governance risk flag
     if ticker and any(ticker.startswith(soe) or ticker == soe for soe in ["PETR4", "PETR3", "ELET3", "ELET6", "2628.HK", "0941.HK"]):
@@ -403,10 +417,21 @@ def fuse(row: dict, weights: dict) -> dict:
             elite_bonus = min(4.0, (float(qz) - 90.0) * 0.2 + (float(gz) - 75.0) * 0.1 + 1.5)
             rank = _clip100(rank + elite_bonus)
 
-    # Anti-bubbla-grind
-    if "EXTREME_OVERVAL" in row.get("val_flags", []) and "OVERBOUGHT" in row.get("tech_flags", []):
-        rank = min(rank, BUBBLE_CAP)
-        missing.append("bubble_triage")
+    # Anti-bubbla-grind (kontinuerlig progressiv dämpning vid RSI 70-75 + triage-tak vid överköpt)
+    if "EXTREME_OVERVAL" in row.get("val_flags", []):
+        rsi = row.get("rsi_14")
+        is_overbought = "OVERBOUGHT" in row.get("tech_flags", [])
+        if rsi is not None and float(rsi) > 70.0 and not is_overbought:
+            # Mjuk dämpning nära tröskeln (RSI 70-75) för att undvika tröskelflimmer
+            rsi_excess = float(rsi) - 70.0
+            dampening = min(10.0, rsi_excess * 1.5)
+            if rank is not None:
+                rank = _clip100(rank - dampening)
+            missing.append("bubble_warning")
+        elif is_overbought:
+            if rank is not None:
+                rank = min(rank, BUBBLE_CAP)
+            missing.append("bubble_triage")
 
     # Quality-Momentum Guard (Olympus-skyddet):
     # Låg fundamental kvalitet (Quality < 60) kombinerat med svag värdering (Value < 50)
@@ -436,6 +461,46 @@ def fuse(row: dict, weights: dict) -> dict:
         if rank is not None and rank > 69.5:
             rank = 69.499
             missing.append("soe_governance_risk")
+
+    # Smallcap Runway & Dilution Shield:
+    # Olönsamma småbolag med kort kassa (< 12 månader) och svagt kassaflöde/kvalitet
+    # cappas till Tier 4 (EJ_AKTUELL, max 48.0) för att skydda mot emissioner och utspädning.
+    runway = row.get("cash_runway_months")
+    seg = row.get("segment") or ""
+    is_small = seg in ("small_cap", "micro_cap")
+    if is_small and runway is not None:
+        try:
+            runway_f = float(runway)
+            if runway_f > 0 and runway_f < 12.0 and (qz is None or float(qz) < 60.0):
+                if rank is not None and rank >= 50.0:
+                    rank = min(rank, 48.0)
+                missing.append("cash_runway_risk")
+        except (TypeError, ValueError):
+            pass
+
+    # Smallcap Compounder & MEWS Synergy (Harvia, ATOSS, Bouvet):
+    # Exceptionellt kapitaleffektiva småbolag (Quality >= 75) med insiderköp eller
+    # stark MEWS-accelerering belönas med nisch-vallgravsbonus.
+    mews_score = row.get("mews_score")
+    insider_buying = row.get("insider_buying") or (row.get("insider_z") is not None and float(row.get("insider_z")) >= 65.0)
+    if is_small and rank is not None and qz is not None and float(qz) >= 75.0:
+        small_bonus = 0.0
+        if float(qz) >= 85.0:
+            small_bonus += 2.5
+        if insider_buying:
+            small_bonus += 1.5
+        if mews_score is not None and float(mews_score) >= 70.0:
+            small_bonus += 2.0
+        if small_bonus > 0.0:
+            rank = _clip100(rank + min(4.5, small_bonus))
+
+    # Financial Structuring / Non-recurring Earnings Discount:
+    # Finansiella aktörer med hög vinstvolatilitet eller engångsintäkter (FPG 7148.T)
+    # cappas från att få Tier 1-status på tillfälligt låg P/E.
+    if row.get("ticker") in ("7148.T", "7148") or (row.get("sector") == "Finans" and row.get("revenue_growth") is not None and float(row.get("revenue_growth")) < -0.15):
+        if rank is not None and rank > 58.0:
+            rank = min(rank, 58.0)
+            missing.append("earnings_volatility_cap")
 
     # Datatäthet: T1/T2 kräver ≥4/8 kärnblock (Kvalitet, Värde, Tillväxt, Momentum etc. som utgör >70% av fundamenta).
     # Endast när bolaget har färre än 4 giltiga block sätts thin_data-taket (max T3).
@@ -495,6 +560,25 @@ def compute_table(values: list[dict], weights: dict) -> list[dict]:
             "bubble_triage": fused.get("bubble_triage"),
         })
         rows.append(row)
+
+    # Segment-normaliserad percentil (master_rank_pctl):
+    # Ranka 0-100 inom respektive segment så att mikrobolag och storbolag
+    # blir direkt jämförbara utan äpplen-och-päron-snedvridning.
+    by_seg: dict[str, list[dict]] = {}
+    for r in rows:
+        seg = r.get("segment") or "unknown"
+        by_seg.setdefault(seg, []).append(r)
+
+    for seg, seg_rows in by_seg.items():
+        valid_ranks = [r["master_rank"] for r in seg_rows if r.get("master_rank") is not None]
+        for r in seg_rows:
+            mr_val = r.get("master_rank")
+            if mr_val is not None and valid_ranks:
+                pct = float(np.mean([1.0 if mr_val >= x else 0.0 for x in valid_ranks]) * 100.0)
+                r["master_rank_pctl"] = round(pct, 1)
+            else:
+                r["master_rank_pctl"] = None
+
     return rows
 
 
@@ -715,7 +799,7 @@ def master_rank_run(cur, weights: dict, dry_run: bool = False) -> dict:
             valid = [x for x in pe_hist[t] if x > 0]
             if valid:
                 pe_hist_pctl = float(np.mean([1.0 if pe_t >= x else 0.0 for x in valid]) * 100.0)
-        vflags = val_flags(val_h, val_p, val_a, peg, pe_hist_pctl, ticker=t)
+        vflags = val_flags(val_h, val_p, val_a, peg, pe_hist_pctl, ticker=t, revenue_growth=rev_g)
 
         rsi = tech.get("rsi_14")
         dist_high = tech.get("dist_52w_high_pct")

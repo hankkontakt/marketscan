@@ -187,6 +187,33 @@ def classify_macro_regime(
     return best_regime, result
 
 
+def compute_smoothed_regime_weights(
+    current_regime: str,
+    previous_weights: Optional[dict[str, float]] = None,
+    smoothing_alpha: float = 0.15,
+) -> dict[str, float]:
+    """Beräknar utjämnade faktorvikter med 60-dagars EMA-tröghet (alpha=0.15).
+
+    Undviker att faktorvikter hoppar abrupt över en natt (anti-whipsaw).
+    Formel: w_t = (1 - alpha) * w_{t-1} + alpha * w_target
+    """
+    target_weights = REGIME_WEIGHT_TILTS.get(current_regime, BASE_WEIGHTS)
+    if not previous_weights:
+        return dict(target_weights)
+
+    smoothed: dict[str, float] = {}
+    for factor in BASE_WEIGHTS:
+        prev_w = float(previous_weights.get(factor, BASE_WEIGHTS[factor]))
+        tgt_w = float(target_weights.get(factor, BASE_WEIGHTS[factor]))
+        smoothed[factor] = round((1.0 - smoothing_alpha) * prev_w + smoothing_alpha * tgt_w, 4)
+
+    total = sum(smoothed.values())
+    if total > 0:
+        smoothed = {k: round(v / total, 4) for k, v in smoothed.items()}
+
+    return smoothed
+
+
 def derive_regime_from_scan(scan_rows: list[dict]) -> tuple[str, dict]:
     """Härleder marknadsregim direkt ur den interna scan-databasen (aggregat)."""
     if not scan_rows:

@@ -1,7 +1,7 @@
 # 🗄️ Kapitel 5: Database Schema & RLS Security
 
 > **Domän:** Supabase Postgres databas, relationella modeller, RLS-säkerhetspolicyer, anslutningspooler och behörigheter.  
-> **Status:** Aktiv produktion (76 migrationer).
+> **Status:** Aktiv produktion (79 migrationer).
 
 ---
 
@@ -91,8 +91,10 @@ MarketScan använder Supabase Postgres i region `eu-north-1` (Stockholm). Databa
 
 | Resurs | Sökväg | Syfte |
 |---|---|---|
-| Migrationer | `supabase/migrations/` | 76 inkrementella DDL-skript |
+| Migrationer | `supabase/migrations/` | 79 inkrementella DDL-skript |
 | Initialt Schema | `supabase/migrations/001_initial_schema.sql` | Kärntabeller för portfölj och aktier |
 | RLS Härdning | `supabase/migrations/018_rls_hardening.sql` | Strikt isolering per användar-ID |
 | Table Grants | `supabase/migrations/023_grant_table_privileges.sql` | Behörighetstilldelning till roller |
 | MasterRank DDL | `supabase/migrations/068_master_rank.sql` | Kolumner för Rond 8 poängsystem |
+| Forensik & Alpha | `supabase/migrations/075_fundamentals_and_forensics.sql` | Forensiska mått och fundamentalia |
+| RLS Säkerhet & Index | `supabase/migrations/077_rls_security_hardening.sql` | Härdning av RLS och saknade index |

@@ -45,8 +45,8 @@ def extract_warrant_mentions_from_text(text: str) -> list[dict]:
         
     results = []
     
-    # Pattern for series name
-    series_pattern = re.compile(r'\b(?:serie\s+)?(TO\s*\d+|TO\d+[A-Z]?)\b', re.IGNORECASE)
+    # Pattern for series name (e.g., TO 1, TO2B, 2024/2026:1)
+    series_pattern = re.compile(r'\b(?:serie\s+)?(TO\s*\d+\s*[A-Z]?|TO\d+[A-Z]?|20\d\d/\d\d\d\d(?::\d+)?)\b', re.IGNORECASE)
     series_matches = series_pattern.findall(text)
     
     # Pattern for strike price

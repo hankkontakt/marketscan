@@ -90,12 +90,13 @@ def analyze_insider_transactions(
         weight = ROLE_WEIGHTS.get(role, 1.0)
         person_id = tx.get("insider_name") or f"{role}_{days_ago}"
 
-        if tx_type in ("BUY", "PURCHASE", "KÖP") and days_ago <= 90:
+        if tx_type in ("BUY", "PURCHASE", "KÖP", "KOP", "FORVÄRV", "ACQUISITION") and days_ago <= 90:
             buyers.add(person_id)
             res["total_buy_amount"] += amount
             weighted_buy_score += weight * min(10.0, math.log10(max(1000.0, amount)) - 3.0)
 
-            if "CEO" in role.upper() or "CFO" in role.upper() or "VD" in role.upper():
+            r_up = role.upper()
+            if "CEO" in r_up or "CFO" in r_up or "VD" in r_up or "FINANSCHEF" in r_up:
                 res["ceo_cfo_bought"] = True
 
         elif tx_type in ("SELL", "SALE", "SÄLJ") and days_ago <= 30:
@@ -140,6 +141,41 @@ def analyze_insider_transactions(
             res["flags"].append("SIGNIFICANT_STAKE_PURCHASE")
 
     res["smart_money_z"] = float(np.clip(base_z, 0.0, 100.0))
+    return res
+
+
+def compute_free_float_quality(
+    free_float_pct: Optional[float],
+    insider_ownership_pct: Optional[float] = None,
+    institution_ownership_pct: Optional[float] = None
+) -> dict:
+    """Beräknar Free Float Quality Score och flaggar illikviditets- och ägarkoncentrationsrisker.
+
+    Optimal float för småbolag: 35% - 75% (god likviditet + engagerade storägare).
+    Risk: Free float < 20% innebär hög illikviditetsrisk / inlåsningseffekter.
+    """
+    res = {
+        "float_quality_score": 70.0,
+        "is_tight_float": False,
+        "is_overdiluted_float": False,
+        "float_flags": [],
+    }
+    if free_float_pct is None:
+        return res
+
+    ff = float(free_float_pct)
+    if ff < 0.20:
+        res["is_tight_float"] = True
+        res["float_quality_score"] = 40.0
+        res["float_flags"].append("TIGHT_FREE_FLOAT_ILLIQUID")
+    elif 0.35 <= ff <= 0.75:
+        res["float_quality_score"] = 90.0
+        res["float_flags"].append("BALANCED_INSTITUTIONAL_FLOAT")
+    elif ff > 0.85 and (insider_ownership_pct is not None and insider_ownership_pct < 0.03):
+        res["is_overdiluted_float"] = True
+        res["float_quality_score"] = 55.0
+        res["float_flags"].append("NO_INSIDER_SKIN_IN_GAME")
+
     return res
 
 

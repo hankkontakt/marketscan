@@ -1,50 +1,29 @@
 # MarketScan 2.0 — Projektstatus
 
-> **Senast uppdaterad:** 2026-06-07
-> **Stack:** Next.js 15.5 + FastAPI 3.12 + Supabase + GitHub Actions
-> **Frontend:** https://marketscan.vercel.app
-> **API:** https://marketscan-api.vercel.app
+> **Senast uppdaterad:** 2026-09-01 (Aktiv produktion)  
+> **Stack:** Next.js 15.5 (React 18.3, Tailwind v4) + FastAPI 0.115 (Python 3.12) + Supabase Postgres (Stockholm, Port 6543) + GitHub Actions (30 workflows)  
+> **Frontend:** https://marketscan.vercel.app  
+> **API:** https://marketscan-api.vercel.app  
+> **Ground Truth:** se `SYSTEM_INDEX.md` och `docs/codex/`
 
-## Status
+## Statusöversikt
 
-Alla kärnfunktioner är byggda och deployade. Systemet är användbart men har tekniska skulder som måste lösas för att vara självgående.
+Hela systemets kärna är i aktiv produktion med hög testtäckning (412 godkända enhetstester) och fullständig typintegritet.
 
-### ✅ Klart
+### ✅ Klart & i produktion
 
-- **Alla sidor:** Översikt, Aktier (screener), Aktiekort (5 flikar), Portfölj, Bevakningar, Kalender, Jämför, Marknad, Guide, Kontrollpanel, Inställningar, Landing, Login, Register
-- **Alla API-routes:** ~60+ endpoints — screener, stocks, portfolio, watchlist, alerts, AI, admin, markets, calendar, prediction, options, backtests, sector rotation, paper trading
-- **AI-analys:** Analyskommittén (3 analytiker + ordförande) med DeepSeek, cachas i Supabase
-- **Finnhub-integration:** Nyheter, earnings, prishistorik, insider, kalender — alla fungerar
-- **Designsystem:** Ljust + mörkt tema, Inter + Geist Mono, InfoTooltips överallt
-- **Auth:** Inloggning, registrering, lösenordsåterställning, JWT-validering
-- **Säkerhet:** CSP, rate limiting, admin-auth, .gitignore, Finnhub key i header
-- **Deployat:** Både frontend (marketscan.vercel.app) och API (marketscan-api.vercel.app)
+- **Frontend (Next.js 15.5):** Översikt, Screener (MasterRank, filter, segment-percentiler), Aktiekort (Analyskommitté, radar, nyckeltal, AI-förklaring), Portfölj (innehav, Avanza CSV-import, risk, ombalansering), Insider-Radar (FI klusterköp), Bevakningar & Smarta larm, Kalender, Jämför, Marknad, Guide, Kontrollpanel (Admin), Landing, Login/Register.
+- **Backend API (153 routes):** 29 feature-routers i `apps/api/routers/` (screener, stocks, portfolio, risk, ai, smart-alerts, insider, market-intel, markets, calendar, strategy-lab, rebalancer, forensic-audit, admin m.fl.).
+- **Kvant & Scoring (MasterRank):** 8 fuserade delblock (kvalitet 25%, värde 15%, momentum 15%, analytiker 15%, insider 10%, katalysator 10%, utdelning 5%, tillväxt 5%), Anti-Bubbla-grind, datatäthetsregler och segment-normalisering.
+- **AI & RAG:** Analyskommitté (Adversarial Bull/Bear/Chair), portföljcoach, aktieförklaring och filtertolk drivna av DeepSeek-V3 med strikt JSON-validering, grounding och cache-skydd ("cacha aldrig fel").
+- **Databas & Säkerhet:** 79 Supabase-migrationer, Row Level Security (RLS) på alla användardata, Session Pooler (port 6543), lokal JWT-validering (PyJWT), `require_admin` på admin- och diagnostik-endpoints.
+- **Data Pipeline:** GitHub Actions batch-jobb för priser (yfinance/Finnhub), FI Insynsregister, FI Blankningsregister och Cision nyhetsströmmar.
 
-### ⬜ Kvar att göra
+### 🧭 Navigering & Dokumentation
 
-#### Hög prioritet
-1. **Koppla GitHub Actions pipeline** — workflow-filer finns, GitHub Secrets måste konfigureras
-2. **Fixa DATABASE_URL pooler-port** — port 6543 svarar inte, krävs för pipeline
-3. **Automatisk frontend-deploy** — frontend-projektet i Vercel deployas inte vid git push
-
-#### Medel prioritet
-4. **Cloudflare R2** — prishistorik, score-historik, parquet-lagring (betalningsproblem)
-5. **E-postnotiser för prislarm** — checker finns, notiser saknas
-6. **Pappershandel i UI** — backend finns, frontend saknas
-
-#### Låg prioritet
-7. **Tema sparas i Supabase**
-8. **Mobil-PWA**
-9. **Sektoröversikt heatmap**
-
-### Kända problem
-
-| Problem | Orsak |
-|---|---|
-| "Aktie hittades inte" när man klickar från vissa vyer | API_BASE kan peka på gammal deployment. Redeploya frontend. |
-| AI-analys tar 10-15s | Tre parallella DeepSeek-anrop. Inget timeout i frontend. |
-| Admin-panelen är öppen för alla | Använder `get_current_user` istället för `require_admin` |
-| Pipeline kör inte automatiskt | GitHub Secrets saknas |
-
-Detaljerad systemdokumentation: `SYSTEM_AI.md`
-Användarens design-filosofi & historik: `HANDOFF.md`
+- Huvudindex: [`SYSTEM_INDEX.md`](SYSTEM_INDEX.md)
+- Living AI Codex: [`docs/codex/`](docs/codex/)
+- Felsökningsguide: [`DEBUGGING.md`](DEBUGGING.md)
+- Systemvaliderare: `python scripts/verify_codex.py`
+- Testkörning: `python -m pytest apps/api/tests backend_worker/tests -v`
+- Frontend type-check: `cd apps/web && npm run type-check`

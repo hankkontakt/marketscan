@@ -95,8 +95,8 @@ SUPABASE_ANON_KEY=eyJhbGc...
 SUPABASE_SERVICE_KEY=eyJhbGc...
 SUPABASE_JWT_SECRET=[JWT-SECRET]
 
-# Postgres direct URL (för pipeline/backend_worker)
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT_REF].supabase.co:5432/postgres
+# Postgres Session Pooler URL (för produktion/pipeline)
+DATABASE_URL=postgresql://postgres.[PROJECT_REF]:[PASSWORD]@[REGION].pooler.supabase.com:6543/postgres
 
 # === Cloudflare R2 (från steg 2) ===
 R2_KEY_ID=[din-key-id]
@@ -104,10 +104,10 @@ R2_SECRET=[din-secret]
 R2_ENDPOINT=https://[account-id].r2.cloudflarestorage.com
 R2_BUCKET=marketscan-data
 
-# === AI providers (minst en krävs för AI-funktioner) ===
-ANTHROPIC_API_KEY=sk-ant-...   # Claude — för Analyskommittén, NL-screener
+# === AI providers (DeepSeek rekommenderas primärt) ===
+DEEPSEEK_API_KEY=sk-...           # DeepSeek (direkt eller via OpenRouter sk-or-...)
+# OPENROUTER_API_KEY=             # Alternativ routing
 # GEMINI_API_KEY=                # Alternativ AI
-# DEEPSEEK_API_KEY=              # Alternativ AI
 
 # === Next.js (kopiera samma Supabase-värden) ===
 NEXT_PUBLIC_API_URL=http://localhost:8000

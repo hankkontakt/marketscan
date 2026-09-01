@@ -59,7 +59,7 @@ Klienten använder `apps/web/lib/api.ts` för alla API-anrop med automatisk JWT-
    - Verdict + analytikernas "OMDÖME" renderas som färgkodade chips (STARK → `--color-up`, BRA → `--color-accent`, AVVAKTA → `--color-warn`, EJ AKTUELL → muted) med matchande soft-bakgrund.
    - Ordförandens syntes parsas i intro + Bull/Base/Bear-scenarier (`splitScenarios`) som renderas som tre färgkodade minikort (grön/accent/röd med TrendingUp/Minus/TrendingDown); parsning är best-effort — faller tillbaka till hel text om inte alla tre hittas.
 7. **AI-feltillstånd med retry (`PortfolioCoachCard.tsx`):** Tom briefing från backend → feltillstånd (ikon + text + "Försök igen" via `invalidateQueries`); backend cachar aldrig fel, så retry kan faktiskt lyckas.
-8. **Likviditets- & ROE-visningskontrakt:** `low_liquidity` renderas med varningstriangel och förklarande tooltip. ROE visar endast `roe_raw` (aldrig neutraliserad residual); saknat råvärde visar `"—"` med tooltip.
+8. **Varningsindikatorer & ROE-visningskontrakt:** Varningsikoner differentieras tydligt (`low_liquidity` med likviditetstooltip, `bubble_triage` med överhettningstooltip, `soe_political_risk` med statsrisketikett). ROE visar verkligt råvärde `roe_raw` (inklusive negativa värden som t.ex. `-12%` i rött); endast genuint saknat råvärde visar `"—"` med tooltip.
 
 ---
 

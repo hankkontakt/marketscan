@@ -33,7 +33,7 @@ MarketScan är en modern analys- och screeningplattform för aktier (med primär
 | **Frontend** | Vercel Project | `https://marketscan.vercel.app` | Next.js 15.5 App Router, React 18.3, Tailwind v4. Anropar API direkt. |
 | **API** | Vercel Serverless | `https://marketscan-api.vercel.app` | Python 3.12, FastAPI. Max 500MB serverless bundle (inga tunga ML-libbar). |
 | **Databas** | Supabase Postgres | `eu-north-1` (Stockholm) | **Session Pooler (port 6543)** används i produktion. RLS på alla användartabeller. |
-| **Worker / Batch** | GitHub Actions | 13 schemalagda workflows | Kör kvant-pipelines, scrapers, ML-träning och larm. Använder `service_role`-nyckel. |
+| **Worker / Batch** | GitHub Actions | 30 workflows | Kör kvant-pipelines, scrapers, ML-träning och larm. Använder `service_role`-nyckel. |
 
 ---
 
@@ -43,7 +43,7 @@ MarketScan är en modern analys- och screeningplattform för aktier (med primär
 2. **Kvant & Poängsättning:** `backend_worker/master_rank.py` fuserar 8 delblock, applicerar Anti-Bubbla-grinden och beräknar MasterRank.
 3. **Persistens:** `backend_worker/db_loader.py` skriver normaliserad data till Supabase-tabellen `scan_results`.
 4. **API Servning:** FastAPI i `apps/api/routers/` läser från Supabase via `apps/api/dependencies.py` och levererar JSON till frontend med lokal JWT-auth.
-5. **Frontend Presentation:** TanStack React Query v5 i `apps/web/` cを受ar data och renderar vyer med progressiv disclosure och `InfoTooltip`.
+5. **Frontend Presentation:** TanStack React Query v5 i `apps/web/` cachar data och renderar vyer med progressiv disclosure och `InfoTooltip`.
 
 ---
 
@@ -53,8 +53,8 @@ MarketScan är en modern analys- och screeningplattform för aktier (med primär
 2. **React 18.3 Låsning:** Uppgradera inte till React 19 eftersom Radix UI-primitiv kräver React 18.
 3. **Synkrona DB-handlers i FastAPI:** Använd vanliga `def`-funktioner för FastAPI-endpoints som gör synkrona Supabase-anrop, så att trådpoolen sköter I/O och inte blockerar FastAPIs async loop.
 4. **Supabase Client Scopes:**
-   - `get_supabase_anon`: För publika oinloggade anrop.
-   - `get_supabase_user`: För inloggade användare med RLS-isolering.
+   - `get_supabase`: För publika oinloggade anrop.
+   - `get_user_supabase`: För inloggade användare med RLS-isolering.
    - `get_supabase_admin`: Används ENDAST internt i endpoints skyddade av `require_admin`.
 5. **Designsystem:** Inga emojis i användargränssnittet (använd Lucide React-ikoner). Alla finansiella mått ska ha en `InfoTooltip`.
 

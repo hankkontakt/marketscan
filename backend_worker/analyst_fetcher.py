@@ -163,12 +163,15 @@ def analyst_z(rec: dict) -> Optional[float]:
     if rec_mean is not None and rec_mean >= 2.8 and cnt >= 8:
         base_z = max(0.0, min(base_z, 45.0))
 
-    # Earnings Revision Velocity integration (om tillgängligt):
-    if rec.get("revision_velocity_z") is not None:
+    # Target Dispersion Penalty: Hög oenighet mellan analytiker dämpar konfidensen (Fresnillo/PETR4-fallen)
+    disp = rec.get("target_dispersion")
+    if disp is not None:
         try:
-            rev_z = float(rec["revision_velocity_z"])
-            rev_tilt = (rev_z - 50.0) * 0.10
-            base_z = base_z + rev_tilt
+            disp_f = float(disp)
+            if disp_f > 0.4:
+                # 0.4 -> 0% avdrag, 1.0 -> 21% avdrag, >= 1.5 -> max 35% avdrag
+                penalty = min(0.35, (disp_f - 0.4) * 0.35)
+                base_z = base_z * (1.0 - penalty)
         except (TypeError, ValueError):
             pass
 

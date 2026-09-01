@@ -235,15 +235,22 @@ export function ResultTable({ data, loading, onReset }: Props) {
                   })()}
                 </td>
 
-                {/* ROE — visar endast RÅ värde (neutraliserad residual är intern) */}
+                {/* ROE — visar endast RÅ värde, inklusive negativa tal */}
                 <td className="px-4 py-3 text-right tabular">
                   {(() => {
                     const v = row.roe_raw;
-                    return v != null && v > 0.0005 ? (
-                      `${(v * 100).toFixed(0)}%`
-                    ) : (
-                      <span className="text-[var(--color-text-muted)] inline-flex items-center justify-end gap-1" title="Rå ROE saknas">
-                        —
+                    if (v == null || !Number.isFinite(v)) {
+                      return (
+                        <span className="text-[var(--color-text-muted)] inline-flex items-center justify-end gap-1" title="Rå ROE saknas">
+                          —
+                        </span>
+                      );
+                    }
+                    const isNeg = v < 0;
+                    return (
+                      <span className={cn(isNeg ? "text-[var(--color-down)]" : "text-[var(--color-text-secondary)]")}
+                            title={isNeg ? "Negativt ROE (förlustperiod/nedskrivning)" : "Rå ROE"}>
+                        {(v * 100).toFixed(0)}%
                       </span>
                     );
                   })()}
@@ -355,6 +362,7 @@ function MasterRankCell({ row }: { row: ScanRow }) {
       : "score-chip-low";
 
   const details = [
+    row.master_tier ? `Tier: ${row.master_tier}` : null,
     row.quality_z != null ? `Kvalitet: ${Math.round(row.quality_z)}` : null,
     row.value_z != null ? `Värde: ${Math.round(row.value_z)}` : null,
     row.momentum_z != null ? `Momentum: ${Math.round(row.momentum_z)}` : null,

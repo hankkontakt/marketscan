@@ -11,7 +11,7 @@
 - **Design:** Lysa-lugn bas, Avanza-handlingsbar touch, inga emojis (Lucide), InfoTooltips överallt.
 
 ## Kritiska Invarianter
-1. ackend_worker/ importeras ALDRIG av pps/api/ (Vercel 500MB gräns).
+1. `backend_worker/` importeras ALDRIG av `apps/api/` (Vercel 500MB gräns).
 2. React 18.3 — uppgradera inte till React 19.
-3. Koden vinner över gamla dokument — verifiera mot docs/codex/ och kör scripts/verify_codex.py.
+3. Koden vinner över gamla dokument — verifiera mot `docs/codex/` och kör `python scripts/verify_codex.py`.
 4. Git äger ändringshistoriken.

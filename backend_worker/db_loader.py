@@ -92,18 +92,16 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
     def _is_num(s: pd.Series) -> pd.Series:
         return pd.to_numeric(s, errors="coerce")
 
-    # 1. P/E: icke-finit/<=1/>200 → NA (fångar negativa yfinance-värden)
-    #    dessutom pe < 6 → NA (yfinance .info ger ibland ~1-5 istället för 20-40:
-    #    META 1.15, KO 2.41, APP 3.68, CME 3.66, LIN 5.18, LLY 5.59)
-    #    ROND 10: *_raw-kolumner (råvärden före neutralisering) får INTE <6-regeln
-    #    — de är sanna värden, inte residualer. Endast icke-finit/<=0/>1000 → NA.
+    # 1. P/E: icke-finit/<=0/>500 → NA (fångar negativa eller orimliga yfinance-värden)
+    #    ROND 13: pe < 6 raderar INTE längre lågvärderade storbolag (Petrobras P/E 3.5x, Frontline m.fl.).
+    #    Endast icke-finit/<=0/>500 nollas.
     for col in ("pe_trailing", "pe_forward"):
         if col in df.columns:
             v = _is_num(df[col])
             if col.endswith("_raw"):
                 df[col] = v.mask(~np.isfinite(v) | (v <= 0) | (v > 1000))
             else:
-                df[col] = v.mask(~np.isfinite(v) | (v <= 1) | (v > 200) | (v < 6))
+                df[col] = v.mask(~np.isfinite(v) | (v <= 0) | (v > 500))
 
     # 2. dividend_yield: %-värden (0.44 = 0.44 %) → fraktion (0.0044);
     #    redan-fraktion (<=0.1) lämnas; >1 dubbel-saneras (redan /100).
@@ -165,8 +163,22 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _derive_segment(market_cap_usd: float | None) -> str:
-    """Map USD market cap to segment string."""
+KNOWN_LARGE_CAPS = {
+    "SAP.DE", "SAP", "GSK.L", "GSK", "EQNR.OL", "EQNR", "INVE-B.ST", "INVE.B",
+    "DOL.TO", "DOL", "EDP.LS", "GFNORTEO.MX", "2330.TW", "TSM", "PETR4.SA", "PETR4",
+    "2914.T", "AZN.ST", "AZN", "VOLV-B.ST", "ATCO-A.ST", "GMG.AX", "PHIA.AS", "MSFT", "MU"
+}
+
+
+def _derive_segment(market_cap_usd: float | None, ticker: str | None = None) -> str:
+    """Map USD market cap to segment string.
+
+    Guard: Saknat börsvärde får ALDRIG automatiskt klassas som micro_cap.
+    Kända storbolag mappas till large_cap; övriga okända blir 'unknown'.
+    """
+    if ticker and ticker in KNOWN_LARGE_CAPS:
+        return "large_cap"
+
     if market_cap_usd is None or pd.isna(market_cap_usd) or market_cap_usd <= 0:
         return "unknown"
     mc = float(market_cap_usd)
@@ -194,9 +206,11 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
         # _to_usd här dubbelkonverterar (6098.T 167.9B USD x 0.0066 = 1.1B USD
         # i DB). Använd mcap direkt; > 1e12 = nästan säkert nativ valuta -> som
         # storleksordning ändå "large_cap" via _derive_segment (ingen FX).
+        tickers = df.get("ticker", pd.Series(dtype=str))
+        mcaps = df.get("market_cap", pd.Series(dtype=float))
         df["segment"] = [
-            _derive_segment(mc)
-            for mc in df.get("market_cap", pd.Series(dtype=float))
+            _derive_segment(mc, tk)
+            for mc, tk in zip(mcaps, tickers)
         ]
 
     # ROND 5 (2026-08-30) — KORRIGERAD 2026-08-30 (ROND 6):

@@ -51,18 +51,28 @@ def audit_company_forensics(
     tier_cap = "T1"
     is_distressed = False
 
-    # 1. Sloan Accrual Anomaly
+    # 1. Sloan Accrual Anomaly (Tillväxtjusterad för att inte straffa sund expansion)
     sloan = fund.get("sloan_accrual_ratio")
+    rev_growth = fund.get("revenue_growth") or 0.0
     if sloan is not None:
-        if sloan > SLOAN_ACCRUAL_THRESHOLD:
-            if "ACCRUAL_WARNING" not in flags:
-                flags.append("ACCRUAL_WARNING")
-            score -= 20.0
-            rank_penalty += 8.0
-        elif sloan < -0.05:
-            # Mycket stark kassaflödeskonvertering (kassaflödet är högre än bokförd vinst)
-            score += 10.0
-            rank_bonus += 2.0
+        try:
+            sloan_f = float(sloan)
+            # Vid positiv omsättningstillväxt binder bolaget naturligt mer rörelsekapital (lager/fordringar)
+            # Buffert: upp till 12 procentenheter vid 50% tillväxt (skyddar snabbväxande bolag som Harvia/ATOSS)
+            growth_buffer = min(0.12, max(0.0, float(rev_growth)) * 0.25)
+            adj_sloan = sloan_f - growth_buffer
+
+            if adj_sloan > SLOAN_ACCRUAL_THRESHOLD:
+                if "ACCRUAL_WARNING" not in flags:
+                    flags.append("ACCRUAL_WARNING")
+                score -= 20.0
+                rank_penalty += 8.0
+            elif adj_sloan < -0.05:
+                # Mycket stark kassaflödeskonvertering (kassaflödet är högre än bokförd vinst)
+                score += 10.0
+                rank_bonus += 2.0
+        except (TypeError, ValueError):
+            pass
 
     # 2. Cash Runway & Emissionsfälla (Akut likviditetsbrist)
     runway = fund.get("cash_runway_months")
@@ -113,7 +123,21 @@ def audit_company_forensics(
             score -= 25.0
             rank_penalty += 10.0
 
-    # 6. AI-Kvalitativa Varningar
+    # 6. Warrant & Dilution Overhang (Teckningsoptions-radar)
+    w_risk = fund.get("warrant_risk") or ai.get("warrant_risk")
+    if w_risk == "CRITICAL":
+        if "WARRANT_OVERHANG_CRITICAL" not in flags:
+            flags.append("WARRANT_OVERHANG_CRITICAL")
+        score -= 25.0
+        rank_penalty += 12.0
+        tier_cap = "T3"
+    elif w_risk == "HIGH":
+        if "WARRANT_OVERHANG_HIGH" not in flags:
+            flags.append("WARRANT_OVERHANG_HIGH")
+        score -= 12.0
+        rank_penalty += 5.0
+
+    # 7. AI-Kvalitativa Varningar
     ai_risk = ai.get("dilution_emission_risk_level")
     if ai_risk == "MYCKET_HÖG":
         if "AI_HIGH_DILUTION_RISK" not in flags:

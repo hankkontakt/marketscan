@@ -13,14 +13,18 @@ import backend_worker.db_loader as db_loader
 
 # Verkliga ROE/P/E (källa: granskning 2026-08-31 + stockanalysis.com/Gurufocus)
 FIXTURES = {
-    "MSFT":   {"roe": 0.32,  "pe": 35.0},
-    "UNP":    {"roe": 0.44,  "pe": 22.0},
-    "7733.T": {"roe": 0.087, "pe": 26.7},
-    "O39.SI": {"roe": 0.13,  "pe": 15.0},
-    "2914.T": {"roe": 0.35,  "pe": 15.0},
-    "MU":     {"roe": 0.50,  "pe": 25.0},
-    "NVDA":   {"roe": 1.01,  "pe": 50.0},
-}  # TODO: konfirmera exakta reportvärden mot källor (användarna har givit startpunkt)
+    "MSFT":     {"roe": 0.32,  "pe": 35.0},
+    "UNP":      {"roe": 0.44,  "pe": 22.0},
+    "7733.T":   {"roe": 0.087, "pe": 26.7},
+    "O39.SI":   {"roe": 0.13,  "pe": 15.0},
+    "2914.T":   {"roe": 0.35,  "pe": 15.0},
+    "MU":       {"roe": 0.50,  "pe": 25.0},
+    "NVDA":     {"roe": 1.01,  "pe": 50.0},
+    "PETR4.SA": {"roe": 0.28,  "pe": 3.5},
+    "BMY":      {"roe": -0.05, "pe": 9.2},
+    "GSK.L":    {"roe": 0.22,  "pe": 11.5},
+    "SAP.DE":   {"roe": 0.18,  "pe": 28.0},
+}
 
 
 def _raw_df() -> pd.DataFrame:
@@ -84,6 +88,22 @@ class TestRawPreservation(unittest.TestCase):
         self.assertAlmostEqual(out[out["ticker"] == "EQNR.OL"].iloc[0]["roe_raw"], 0.220)
 
 
+    def test_petrobras_low_pe_preserved(self):
+        """Petrobras P/E 3.5 ska inte raderas av sanitetsfilter (pe < 6 är borttaget)."""
+        df = pd.DataFrame({
+            "ticker": ["PETR4.SA"],
+            "pe_trailing": [3.5],
+            "pe_forward": [4.1],
+        })
+        out = db_loader._apply_sanity(df.copy())
+        self.assertAlmostEqual(out.iloc[0]["pe_trailing"], 3.5)
+
+    def test_large_cap_segments(self):
+        """GSK och SAP med stora börsvärden ska klassas som large_cap, aldrig micro_cap."""
+        self.assertEqual(db_loader._derive_segment(65_000_000_000), "large_cap")   # GSK.L $65B
+        self.assertEqual(db_loader._derive_segment(220_000_000_000), "large_cap")  # SAP.DE $220B
+
+
 class TestBackfillRoeModule(unittest.TestCase):
     def test_import_backfill_module(self):
         import backend_worker.backfill_roe_raw as bfill
@@ -98,3 +118,4 @@ class TestDbLoaderRoundtrip(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

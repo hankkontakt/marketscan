@@ -442,6 +442,90 @@ class TestMasterRank2Upgrades(unittest.TestCase):
         self.assertIsNotNone(az_strong)
         self.assertGreater(az_strong, 75.0)
 
+    def test_peg_negative_growth_guard(self):
+        """Negativ eller nära-noll tillväxt returnerar None för PEG och förbjuder CHEAP_PEG."""
+        self.assertIsNone(mr.compute_peg(15.0, -0.05))
+        self.assertIsNone(mr.compute_peg(15.0, 0.001))
+        flags = mr.val_flags(85.0, 85.0, 85.0, peg=None, pe_hist_pctl=40.0, revenue_growth=-0.10)
+        self.assertNotIn("CHEAP_PEG", flags)
+
+    def test_analyst_dispersion_penalty(self):
+        """Bred riktkursspridning (high-low/med > 0.5) dämpar analyst_z delbetyget."""
+        consensus_tight = {"upside_pct": 25.0, "recommendation_mean": 1.8, "target_count": 12, "target_dispersion": 0.2}
+        consensus_wide = {"upside_pct": 25.0, "recommendation_mean": 1.8, "target_count": 12, "target_dispersion": 1.2}
+        z_tight = an.analyst_z(consensus_tight)
+        z_wide = an.analyst_z(consensus_wide)
+        self.assertIsNotNone(z_tight)
+        self.assertIsNotNone(z_wide)
+        self.assertGreater(z_tight, z_wide)
+
+    def test_segment_percentile_computation(self):
+        """compute_table beräknar segment-normaliserad master_rank_pctl inom varje segment."""
+        table_input = [
+            {"ticker": "L1", "segment": "large_cap", "quality_z": 90.0, "value_z": 70.0, "momentum_z": 80.0,
+             "analyst_z": 70.0, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 50.0, "growth_z": 70.0,
+             "val_flags": [], "tech_flags": [], "pit_status": "READY"},
+            {"ticker": "L2", "segment": "large_cap", "quality_z": 60.0, "value_z": 40.0, "momentum_z": 50.0,
+             "analyst_z": 50.0, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 50.0, "growth_z": 50.0,
+             "val_flags": [], "tech_flags": [], "pit_status": "READY"},
+            {"ticker": "S1", "segment": "small_cap", "quality_z": 80.0, "value_z": 60.0, "momentum_z": 70.0,
+             "analyst_z": 50.0, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 50.0, "growth_z": 60.0,
+             "val_flags": [], "tech_flags": [], "pit_status": "READY"},
+        ]
+        result = mr.compute_table(table_input, WEIGHTS)
+        l1 = next(r for r in result if r["ticker"] == "L1")
+        l2 = next(r for r in result if r["ticker"] == "L2")
+        s1 = next(r for r in result if r["ticker"] == "S1")
+        self.assertEqual(l1["master_rank_pctl"], 100.0)
+        self.assertEqual(l2["master_rank_pctl"], 50.0)
+        self.assertEqual(s1["master_rank_pctl"], 100.0)
+
+    def test_bubble_pre_dampening_smooth(self):
+        """RSI 73 vid EXTREME_OVERVAL dämpar mjukt utan att krascha direkt till 60."""
+        row_73 = {"quality_z": 85.0, "value_z": 20.0, "momentum_z": 90.0,
+                  "analyst_z": 70.0, "insider_z": 60.0, "catalyst_z": 70.0,
+                  "payout_z": 50.0, "growth_z": 70.0, "rsi_14": 73.0,
+                  "val_flags": ["EXTREME_OVERVAL"], "tech_flags": [],
+                  "pit_status": "READY"}
+        f_73 = mr.fuse(row_73, WEIGHTS)
+        self.assertIn("bubble_warning", f_73["data_missing"])
+        self.assertGreater(f_73["master_rank"], 60.0)  # Inte hård-cappad vid 60 ännu
+
+    def test_smallcap_runway_dilution_shield(self):
+        """Olönsamt småbolag med kort kassa (<12 månader) cappas till T4 (<50) och flaggas."""
+        burning_smallcap = {
+            "segment": "small_cap", "quality_z": 30.0, "value_z": 40.0, "momentum_z": 80.0,
+            "analyst_z": 50.0, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 30.0, "growth_z": 40.0,
+            "cash_runway_months": 5.0, "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(burning_smallcap, WEIGHTS)
+        self.assertLess(f["master_rank"], 50.0)
+        self.assertIn("cash_runway_risk", f["data_missing"])
+
+    def test_smallcap_compounder_mews_synergy(self):
+        """Kvalitets-småbolag (Quality >= 85) med insiderköp och MEWS-score erhåller vallgravsbonus."""
+        harvia_like = {
+            "segment": "small_cap", "quality_z": 88.0, "value_z": 60.0, "momentum_z": 70.0,
+            "analyst_z": 65.0, "insider_z": 70.0, "catalyst_z": 60.0, "payout_z": 60.0, "growth_z": 70.0,
+            "mews_score": 75.0, "insider_buying": True, "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(harvia_like, WEIGHTS)
+        self.assertGreaterEqual(f["master_rank"], 65.0)
+
+    def test_financial_structuring_volatility_cap(self):
+        """Finansiell leasing/skattestrukturerare (FPG 7148.T) cappas vid max 58."""
+        fpg = {
+            "ticker": "7148.T", "segment": "small_cap", "sector": "Finans",
+            "quality_z": 70.0, "value_z": 90.0, "momentum_z": 60.0,
+            "analyst_z": 60.0, "insider_z": 50.0, "catalyst_z": 50.0, "payout_z": 85.0, "growth_z": 40.0,
+            "val_flags": [], "tech_flags": [], "pit_status": "READY"
+        }
+        f = mr.fuse(fpg, WEIGHTS)
+        self.assertLessEqual(f["master_rank"], 58.0)
+        self.assertIn("earnings_volatility_cap", f["data_missing"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

@@ -95,5 +95,5 @@ python backend_worker/strategy_backtester.py --strategy momentum_quality --start
 
 ### Validera portföljberäkningar isolerat:
 ```bash
-PYTHONPATH=. python -c "from apps.api.core.risk_calc import compute_portfolio_risk; print('Risk module OK')"
+PYTHONPATH=. python -c "from apps.api.core.risk_calc import compute_live_risk; print('Risk module OK')"
 ```

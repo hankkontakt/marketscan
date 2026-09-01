@@ -65,6 +65,30 @@ class TestForensicShield(unittest.TestCase):
         self.assertIn("AI_HIGH_DILUTION_RISK", res["forensic_flags"])
         self.assertIn(res["tier_cap"], ["T3", "DISQUALIFIED"])
 
+    def test_growth_adjusted_sloan_protects_fast_growers(self):
+        """Snabbväxande bolag (t.ex. Harvia/ATOSS) straffas inte för naturlig lageruppbyggnad."""
+        fund = {
+            "sloan_accrual_ratio": 0.12,   # Straffas normalt (>0.10)
+            "revenue_growth": 0.35,        # 35% tillväxt ger 0.0875 buffert -> adj_sloan = 0.0325 < 0.10
+            "cash_runway_months": None,
+            "dilution_rate_pct": 0.0,
+            "gross_margin_trend_pct": 1.0,
+        }
+        res = fs.audit_company_forensics(fund, None, ticker="HARVIA.HE")
+        self.assertNotIn("ACCRUAL_WARNING", res["forensic_flags"])
+        self.assertEqual(res["tier_cap"], "T1")
+
+    def test_warrant_overhang_critical_caps_to_t3(self):
+        """Kritiska teckningsoptioner nära lösen utlöser varningsflagga och cappas."""
+        fund = {
+            "sloan_accrual_ratio": 0.01,
+            "warrant_risk": "CRITICAL",
+        }
+        res = fs.audit_company_forensics(fund, None, ticker="WARRANT.ST")
+        self.assertIn("WARRANT_OVERHANG_CRITICAL", res["forensic_flags"])
+        self.assertEqual(res["tier_cap"], "T3")
+        self.assertGreater(res["rank_penalty"], 10.0)
+
 
 if __name__ == "__main__":
     unittest.main()

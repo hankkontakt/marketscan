@@ -79,11 +79,20 @@ interface CommitteeResult {
     teknisk: { name: string; analysis: string };
     fundamental: { name: string; analysis: string };
     sentiment: { name: string; analysis: string };
+    bull?: { name: string; analysis: string };
+    bear?: { name: string; analysis: string };
   };
   synthesis: {
     verdict: "STARK" | "BRA" | "AVVAKTA" | "EJ_AKTUELLT";
     confidence: number;
     summary: string;
+    bull_case?: string | null;
+    bear_case?: string | null;
+    scenario_probabilities?: {
+      bull_pct?: number;
+      base_pct?: number;
+      bear_pct?: number;
+    } | null;
     disagreement: boolean;
     disagreement_note: string | null;
   };
@@ -165,6 +174,49 @@ export function AnalysCommittee({ stock }: Props) {
           </div>
         </div>
 
+        {/* Sannolikhetsfördelning (Bull / Base / Bear %) */}
+        {synthesis.scenario_probabilities && (
+          <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
+            <div className="flex items-center justify-between text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
+              <span>Scenarioprognos</span>
+              <div className="flex items-center gap-3 text-[11px] font-mono">
+                <span className="text-[var(--color-up)]">Bull: {synthesis.scenario_probabilities.bull_pct ?? 30}%</span>
+                <span className="text-[var(--color-accent)]">Base: {synthesis.scenario_probabilities.base_pct ?? 50}%</span>
+                <span className="text-[var(--color-down)]">Bear: {synthesis.scenario_probabilities.bear_pct ?? 20}%</span>
+              </div>
+            </div>
+            <div className="w-full h-2 rounded-full overflow-hidden flex bg-[var(--color-bg-base)]">
+              <div style={{ width: `${synthesis.scenario_probabilities.bull_pct ?? 30}%`, background: "var(--color-up)" }} />
+              <div style={{ width: `${synthesis.scenario_probabilities.base_pct ?? 50}%`, background: "var(--color-accent)" }} />
+              <div style={{ width: `${synthesis.scenario_probabilities.bear_pct ?? 20}%`, background: "var(--color-down)" }} />
+            </div>
+          </div>
+        )}
+
+        {/* Bull vs Bear Adversarial Debate Card */}
+        {(synthesis.bull_case || synthesis.bear_case || analysts.bull || analysts.bear) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 pt-3 border-t border-[var(--color-border)]">
+            <div className="rounded-lg p-3 border-l-2 bg-[var(--color-up-soft)] border-[var(--color-up)]">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <TrendingUp size={13} strokeWidth={2} className="text-[var(--color-up)]" />
+                <span className="text-xs font-bold text-[var(--color-up)]">Tjurens Case (Tillväxt & Vallgrav)</span>
+              </div>
+              <p className="text-xs text-[var(--color-text-primary)] leading-relaxed">
+                {stripMarkdown(synthesis.bull_case || analysts.bull?.analysis || "")}
+              </p>
+            </div>
+            <div className="rounded-lg p-3 border-l-2 bg-[var(--color-down-soft)] border-[var(--color-down)]">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <TrendingDown size={13} strokeWidth={2} className="text-[var(--color-down)]" />
+                <span className="text-xs font-bold text-[var(--color-down)]">Blankarens Varningar (Forensisk Risk)</span>
+              </div>
+              <p className="text-xs text-[var(--color-text-primary)] leading-relaxed">
+                {stripMarkdown(synthesis.bear_case || analysts.bear?.analysis || "")}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Bull/Base/Bear — färgkodade minikort i stället för väggtext */}
         {scenarios.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
@@ -201,7 +253,7 @@ export function AnalysCommittee({ stock }: Props) {
         )}
       </div>
 
-      {/* Three analyst cards */}
+      {/* Three detailed analyst cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <AnalystCard
           icon={TrendingUp}

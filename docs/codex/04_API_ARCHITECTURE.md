@@ -48,51 +48,54 @@ Alla endpoints måste välja rätt klient via FastAPI `Depends`:
 
 ```python
 # 1. Publik data (scan_results, marknadsöversikter)
-def get_public_data(db: Client = Depends(get_supabase_anon)):
+def get_public_data(db: Client = Depends(get_supabase)):
     return db.table("scan_results").select("*").execute()
 
 # 2. Användarisolerad data med RLS (portfölj, watchlist, larm)
-def get_user_portfolio(user_id: str = Depends(get_current_user), db: Client = Depends(get_supabase_user)):
+def get_user_portfolio(user: User = Depends(get_current_user), db: Client = Depends(get_user_supabase)):
     return db.table("portfolios").select("*").execute()
 
 # 3. Privilegierade admin-operationer
-def run_admin_action(admin: dict = Depends(require_admin), db: Client = Depends(get_supabase_admin)):
+def run_admin_action(admin: User = Depends(require_admin), db: Client = Depends(get_supabase_admin)):
     return db.table("pipeline_runs").select("*").execute()
 ```
 
 ---
 
-## 4. Fullständig Router-Katalog
+## 4. Fullständig Router-Katalog (153 routes över 29 routers)
 
 Alla endpoints är registrerade i `apps/api/main.py`:
 
-| Router-fil | Prefix / Område | Viktiga Endpoints | Skydd |
+| Router-fil | Prefix / Rutter | Viktiga Endpoints | Skydd |
 |---|---|---|---|
-| `admin.py` | `/api/admin` | `/health`, `/diagnostics/deep`, `/workflow/trigger` | `require_admin` |
-| `ai.py` | `/api/ai` | `/committee`, `/compare`, `/parse-filter` | `get_current_user` |
-| `alerts.py` | `/api/alerts` | `/`, `/{id}` (legacy prislarm) | `get_current_user` |
-| `smart_alerts.py` | `/api/smart-alerts` | `/rules`, `/events`, `/digest` | `get_current_user` |
-| `calendar.py` | `/api/calendar` | `/events`, `/earnings` | `get_optional_user` |
-| `feedback.py` | `/api/feedback` | `/submit` | `get_optional_user` |
-| `insider.py` | `/api/insider` | `/trades`, `/clusters`, `/radar` | `get_optional_user` |
-| `macro_regime.py` | `/api/macro-regime` | `/current`, `/history` | `get_supabase_anon` |
-| `market_intel.py` | `/api/market-intel` | `/news`, `/sentiment`, `/movers` | `get_supabase_anon` |
-| `markets.py` | `/api/markets` | `/indices`, `/commodities`, `/crypto` | `get_supabase_anon` |
-| `ml_performance.py` | `/api/ml-performance` | `/metrics`, `/drift`, `/confusion` | `require_admin` |
-| `notifications.py` | `/api/notifications`| `/list`, `/mark-read` | `get_current_user` |
-| `paper_trading_router.py` | `/api/paper-trading`| `/accounts`, `/orders`, `/positions`| `get_current_user` |
-| `portfolio.py` | `/api/portfolio` | `/`, `/import/avanza/preview`, `/construct` | `get_current_user` |
-| `profile.py` | `/api/profile` | `/me`, `/settings`, `/preferences` | `get_current_user` |
-| `risk.py` | `/api/risk` | `/analyze`, `/var`, `/stress-test` | `get_current_user` |
-| `saved_screens.py` | `/api/saved-screens` | `/`, `/{id}` | `get_current_user` |
-| `screener.py` | `/api/scan` | `/`, `/countries`, `/segments` | `get_supabase_anon` |
-| `smallcap.py` | `/api/smallcap` | `/mews`, `/discovery` | `get_supabase_anon` |
-| `snapshots.py` | `/api/snapshots` | `/history`, `/capture` | `get_current_user` |
-| `stocks.py` | `/api/stocks` | `/{ticker}`, `/{ticker}/similar`, `/{ticker}/financials` | `get_supabase_anon` |
-| `strategy_lab.py` | `/api/strategy-lab` | `/strategies`, `/backtest`, `/barbell-optimize` | `get_current_user` |
-| `tracking.py` | `/api/tracking` | `/click`, `/event` | `get_optional_user` |
-| `transactions.py`| `/api/transactions` | `/`, `/{id}` | `get_current_user` |
-| `watchlist.py` | `/api/watchlist` | `/`, `/{ticker}` | `get_current_user` |
+| `main.py` & `request_id.py` | `/api/health`, `/api/debug/health` | Systemhälsa och requestId-diagnostik | Publikt / `require_admin` |
+| `admin.py` | `/api/admin` | `/status`, `/pipeline-runs`, `/health`, `/diagnostics/deep`, `/workflow/trigger` | `require_admin` |
+| `ai.py` | `/api/ai` | `/committee/{ticker}`, `/compare`, `/parse-filter`, `/daily-coach`, `/explain/{ticker}` | `get_current_user` |
+| `alerts.py` | `/api/price-alerts` | `""`, `/{alert_id}`, `/check` (manuellt tröskellarm) | `get_current_user` |
+| `smart_alerts.py` | `/api/alerts`, `/api/score-history`, `/api/signal-transitions` | `GET/POST /api/alerts`, `/api/alerts/triggered`, `/api/score-history/movers` | `get_current_user` / `get_supabase` |
+| `calendar.py` | `/api/calendar` | `/earnings`, `/ipo`, `/dividends`, `/economic` | `get_supabase` |
+| `feedback.py` | `/api/feedback` | `""` | `get_optional_user` |
+| `forensic_audit.py` | `/api/ai` | `/forensic-audit/{ticker}` | `get_current_user` |
+| `insider.py` | `/api/stocks`, `/api/insider-radar` | `/{ticker}/insider`, `/api/insider-radar` | `get_supabase` |
+| `macro_regime.py` | `/api/macro-regime` | `/regime` | `get_supabase` |
+| `market_intel.py` | `/api/market-intel` | `/shorts/{ticker}`, `/qmj/rank`, `/master/rank`, `/master/{ticker}`, `/radar` | `get_supabase` |
+| `markets.py` | `/api/markets` | `/indices`, `/sectors`, `/top-movers`, `/sector-rotation` | `get_supabase` |
+| `ml_performance.py` | `/api/ml-performance` | `/status`, `/confusion`, `/drift`, `/metrics` | `require_admin` |
+| `notifications.py` | `/api/notifications`| `""`, `/unread-count`, `/mark-read`, `/{id}/read` | `get_current_user` |
+| `paper_trading_router.py` | `/api/paper-trading`, `/paper` | `/account`, `/positions`, `/orders`, `/trades`, `/performance` | `get_current_user` |
+| `portfolio.py` | `/api/portfolio` | `""`, `/{id}`, `/construct`, `/import/avanza/preview`, `/export/avanza` | `get_current_user` |
+| `profile.py` | `/api/profile` | `""`, `/preferences`, `/risk`, `/api-keys`, `/account` | `get_current_user` |
+| `rebalancer.py` | `/api/portfolio/rebalance` | `/plan`, `/execute` | `get_current_user` |
+| `risk.py` | `/api/portfolio` | `/analytics`, `/analytics/factor`, `/analytics/correlation`, `/optimize`, `/rebalance` | `get_current_user` |
+| `saved_screens.py` | `/api/screens` | `""`, `/{screen_id}` | `get_current_user` |
+| `screener.py` | `/api/scan` | `""`, `/sectors`, `/countries`, `/segments`, `/meta` | `get_supabase` |
+| `smallcap.py` | `/api/smallcap` | `""`, `/sectors` (MEWS- och småbolagsscreening) | `get_supabase` |
+| `snapshots.py` | `/api/snapshots` | `""`, `/capture`, `/latest` | `get_current_user` |
+| `stocks.py` | `/api/stocks` | `""`, `/search`, `/{ticker}`, `/{ticker}/similar`, `/{ticker}/financials` | `get_supabase` |
+| `strategy_lab.py` | `/api/strategies`, `/api/signal-analytics` | `/api/strategies`, `/api/strategies/{id}/run`, `/api/signal-analytics` | `get_current_user` |
+| `tracking.py` | `/api/tracking` | `/pageview`, `/event`, `/session` | `get_optional_user` |
+| `transactions.py`| `/api/transactions` | `""`, `/{transaction_id}` | `get_current_user` |
+| `watchlist.py` | `/api/watchlist` | `""`, `/{ticker}` | `get_current_user` |
 
 ---
 

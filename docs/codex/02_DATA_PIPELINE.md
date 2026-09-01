@@ -73,24 +73,22 @@ Data Pipeline ansvarar för att hämta, deduplicera, normalisera och ladda finan
 
 | Komponent | Fil | Kärnmetoder / Ansvar |
 |---|---|---|
-| Pipeline Entrypoint | `backend_worker/pipeline/entrypoint.py` | `main()`, `run_morning()`, `run_nightly()` |
+| Pipeline Entrypoint | `backend_worker/pipeline/entrypoint.py` | `run()`, `_fast_pipeline()`, `_full_pipeline_with_timeout()` |
 | DB Loader | `backend_worker/db_loader.py` | `load_scan()`, `log_pipeline_run()`, `_prepare_df()` |
 | FI Insyn Ingestion | `backend_worker/fi_insider_bulk.py` | `fetch_register()`, `parse_fi_csv()`, `upsert_trades()` |
-| FI Blanknings Ingestion | `backend_worker/fi_short_positions.py` | `fetch_short_positions()`, `upsert_positions()` |
-| Universumhantering | `backend_worker/universe_discovery.py` | `discover_universe()`, `resolve_ticker()` |
-| Utfallsloggning | `backend_worker/outcome_filler.py` | `fill_outcomes()`, `calculate_forward_returns()` |
+| FI Blanknings Ingestion | `backend_worker/fi_short_positions.py` | `fetch_register_html()`, `parse_register()`, `upsert_positions()` |
+| Universumhantering | `backend_worker/universe_discovery.py` | `run_discovery()` |
+| Utfallsloggning | `backend_worker/outcome_filler.py` | `fill_outcomes()`, `log_predictions()` |
 
 ---
 
 ## 6. Körning & Felsökning
 
-### Köra morgon-pipeline lokalt:
+### Köra pipeline lokalt:
 ```bash
 # Kör med begränsat universum för snabbtest
-python backend_worker/pipeline/entrypoint.py --mode targeted --tickers "INVE-B.ST,VOLV-B.ST,EVO.ST"
-```
+python -m backend_worker.pipeline.entrypoint --mode targeted --tickers "INVE-B.ST,VOLV-B.ST,EVO.ST"
 
-### Ladda rådata direkt:
-```bash
-python load_data.py
+# Kör full morgon-pipeline
+python -m backend_worker.pipeline.entrypoint --mode morning
 ```
