@@ -61,7 +61,7 @@ _MANIFEST_SQL = """
     FROM public.decision_manifests dm
     LEFT JOIN public.listings l
       ON l.listing_id = dm.listing_id AND l.valid_to IS NULL
-    WHERE dm.decision_snapshot_id = ANY(%s)
+    WHERE dm.decision_snapshot_id = ANY(%s::uuid[])
 """
 
 _INSERT_SQL = """
