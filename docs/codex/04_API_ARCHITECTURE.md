@@ -105,3 +105,4 @@ Alla endpoints är registrerade i `apps/api/main.py`:
 2. **CORS & Global Handler:** Kastade exceptions fångas av den globala exception-handlern i `apps/api/main.py` som alltid injicerar CORS-headers.
 3. **Mall för nya routes:** Använd alltid `apps/api/routers/_TEMPLATE.py` vid skapande av nya routers.
 4. **Felhantering med DB-översättning:** Använd `handle_db_error()` från `apps/api/core/db.py` för att mappa Postgres-felkoder (t.ex. `42501`) till informativa HTTP-svar.
+5. **V3 Decision API:** `apps/api/routers/decisions_v3.py` exponerar endast läsprojektioner av `current_decisions_v3` och publicerade manifests. Den är feature-flaggad (`decision_v3_api`) och returnerar 404 när den är avstängd. Den får inte importera `backend_worker`, räkna om faktorer, skapa UUID-fallbacks eller använda fixtures i produktion.

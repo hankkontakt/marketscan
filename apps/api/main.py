@@ -20,7 +20,7 @@ from apps.api.routers import (
     watchlist, alerts, saved_screens, snapshots, markets, calendar,
     smallcap, paper_trading_router,
     notifications, transactions, macro_regime, insider, market_intel,
-    forensic_audit, rebalancer, decisions_v2, ai_v2,
+    forensic_audit, rebalancer, decisions_v2, decisions_v3, ai_v2,
 )
 from apps.api.routers import risk, smart_alerts, strategy_lab, ml_performance
 from apps.api.routers import feedback as feedback_router
@@ -126,6 +126,7 @@ app.include_router(ml_performance.router, prefix="/api")  # /api/ml-performance/
 app.include_router(forensic_audit.router)  # /api/ai/forensic-audit/{ticker}
 app.include_router(rebalancer.router)      # /api/portfolio/rebalance/*
 app.include_router(decisions_v2.router, prefix="/api") # /api/v2/decisions/* (canonical decision contract)
+app.include_router(decisions_v3.router, prefix="/api") # /api/v3/decisions/* (published manifests only)
 app.include_router(ai_v2.router, prefix="/api")        # /api/v2/ai/* (grounded AI research)
 
 app.include_router(feedback_router.router)

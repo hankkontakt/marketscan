@@ -45,6 +45,8 @@ MarketScan är en modern analys- och screeningplattform för aktier (med primär
 4. **API Servning:** FastAPI i `apps/api/routers/` läser från Supabase via `apps/api/dependencies.py` och levererar JSON till frontend med lokal JWT-auth.
 5. **Frontend Presentation:** TanStack React Query v5 i `apps/web/` cachar data och renderar vyer med progressiv disclosure och `InfoTooltip`.
 
+V3-rebuilden är ett parallellt, avstängt flöde tills staging-validerad cutover finns: worker skapar immutabla `decision_manifests`, Postgres publicerar exakt en atomisk snapshotpekare och `/api/v3/decisions/*` läser enbart den publicerade projektionen. V3 får aldrig beräkna rankning i API:t eller falla tillbaka till syntetiska data.
+
 ---
 
 ## 4. Absoluta Invarianter (Systemlagar)
@@ -57,6 +59,7 @@ MarketScan är en modern analys- och screeningplattform för aktier (med primär
    - `get_user_supabase`: För inloggade användare med RLS-isolering.
    - `get_supabase_admin`: Används ENDAST internt i endpoints skyddade av `require_admin`.
 5. **Designsystem:** Inga emojis i användargränssnittet (använd Lucide React-ikoner). Alla finansiella mått ska ha en `InfoTooltip`.
+6. **Beslutssnapshots:** Ett publicerat V3-beslut har stabila `decision_id`, `listing_id`, data-/modell-/kodproveniens och skrivs aldrig om. Vid fel ska senaste godkända snapshot ligga kvar; en tom eller blandad körning får inte publiceras.
 
 ---
 

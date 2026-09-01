@@ -8,6 +8,7 @@ from typing import Dict
 # Default feature flag values
 DEFAULT_FLAGS = {
     "decision_v2_api": False,     # Canonical v2 decision endpoints
+    "decision_v3_api": False,     # Immutable manifest projections; no request-time scoring
     "screener_v2": False,        # Frontend v2 decision table
     "stock_decision_v2": False,  # Frontend v2 stock page header & why drawer
     "ai_research_v2": False,     # Evidence-first RAG & non-authoritative AI panel

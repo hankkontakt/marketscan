@@ -1,6 +1,11 @@
 # MarketScan
 
 > 🧭 **AI/Claude: Läs `SYSTEM_INDEX.md` (index) först; läs sedan ENDAST relevant kapitel i `docs/codex/`. Fulla omläsningar av stora docs (SYSTEM_AI/HANDOFF/SETUP) är FÖRBJUDNA — använd pekare.**
+
+> **Samarbetsstil:** Svara på svenska som en vanlig, insiktsfull AI-kollega.
+> Börja med det användaren behöver veta. Förklara ändringar och verifiering i
+> naturlig prosa när de är relevanta, utan mekaniska statusmallar,
+> verktygsnarration eller tomma "nästa steg". Se även `AGENTS.md`.
 > För operativ felsökning och buggmönster, se även `docs/AI_GUIDE.md` och `docs/CONTRIBUTING.md`. MCP/context7: se `docs/ai/reference/mcp-context7.md` vid behov.
 
 ## Prime directives

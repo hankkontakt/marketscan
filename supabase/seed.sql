@@ -58,3 +58,49 @@ ON CONFLICT (ticker) DO UPDATE SET
   price = EXCLUDED.price,
   scan_date = EXCLUDED.scan_date,
   updated_at = NOW();
+
+-- CPRX — Catalyst Pharmaceuticals. Deliberately seeded with its LEGACY state
+-- (strong-buy-looking row): the V3 Security Master must resolve it to a MERGED
+-- listing via the 084 corporate action and exclude it from any published
+-- decision. This row is the local regression proof for the CPRX gate.
+INSERT INTO scan_results (
+  ticker, name, segment, sector, country,
+  score_total, score_value, score_quality, score_momentum, score_growth,
+  score_risk, score_size, score_dividend, score_sentiment,
+  entry_signal, confidence_label, trend_signal,
+  predicted_return, ml_rank, piotroski_f,
+  price, change_pct, market_cap, pe_trailing, roe, dividend_yield, beta,
+  low_liquidity, scan_date
+) VALUES (
+  'CPRX','Catalyst Pharmaceuticals, Inc.','small_cap','Health Care','US',
+   78,60,80,72,65,55,70,0,68,
+   'STARK','Hög','Upptrend',0.031,2,7,
+   31.49,-0.002,4100000000,9.8,0.30,0,0.62,false,CURRENT_DATE
+) ON CONFLICT (ticker) DO UPDATE SET
+  score_total = EXCLUDED.score_total,
+  price = EXCLUDED.price,
+  scan_date = EXCLUDED.scan_date,
+  updated_at = NOW();
+
+-- Same-day MasterRank rows for every seeded scan_results ticker. The V3
+-- publication bridge requires same-day MasterRank for publishable rows.
+INSERT INTO master_rank (
+  ticker, scan_date, master_rank, master_rank_pctl, tier,
+  quality_z, value_z, momentum_z, analyst_z, tech_z, insider_z, catalyst_z,
+  growth_z, pit_status, trend_tech, warning_flags, data_missing,
+  analyst_upside, analyst_count
+) VALUES
+  ('VOLV-B.ST', CURRENT_DATE, 84.0, 97.0, 'T1', 88, 72, 79, 60, 70, 55, 50, 65, 'READY', 'Upptrend', '[]', '[]', 0.08, 12),
+  ('ERIC-B.ST', CURRENT_DATE, 71.0, 78.0, 'T2', 70, 65, 68, 55, 65, 50, 45, 55, 'READY', 'Upptrend', '[]', '[]', 0.06, 15),
+  ('SAND.ST',   CURRENT_DATE, 77.0, 88.0, 'T2', 80, 74, 73, 62, 68, 55, 50, 62, 'READY', 'Sidled',  '[]', '[]', 0.05, 14),
+  ('INVE-B.ST', CURRENT_DATE, 80.0, 91.0, 'T1', 85, 82, 70, 58, 75, 60, 55, 58, 'READY', 'Upptrend', '[]', '[]', 0.09, 10),
+  ('SEB-A.ST',  CURRENT_DATE, 68.0, 72.0, 'T2', 72, 70, 62, 50, 60, 55, 40, 50, 'READY', 'Sidled',  '[]', '[]', 0.04, 16),
+  ('ALFA.ST',   CURRENT_DATE, 75.0, 84.0, 'T2', 78, 68, 77, 70, 65, 50, 45, 70, 'READY', 'Upptrend', '[]', '[]', 0.07, 11),
+  ('NIBE-B.ST', CURRENT_DATE, 62.0, 55.0, 'T3', 65, 55, 58, 60, 55, 45, 40, 60, 'READY', 'Nedtrend', '[]', '["tech"]', 0.03, 9),
+  ('BALD-B.ST', CURRENT_DATE, 58.0, 42.0, 'T3', 60, 62, 52, 45, 50, 40, 35, 45, 'READY', 'Nedtrend', '["low_liquidity"]', '[]', -0.01, 8),
+  ('CPRX',      CURRENT_DATE, 76.85, 92.0, 'T1', 75, 60, 70, 55, 65, 50, 55, 62, 'READY', 'Upptrend', '[]', '[]', 0.05, 6)
+ON CONFLICT (ticker, scan_date) DO UPDATE SET
+  master_rank = EXCLUDED.master_rank,
+  master_rank_pctl = EXCLUDED.master_rank_pctl,
+  tier = EXCLUDED.tier,
+  pit_status = EXCLUDED.pit_status;

@@ -1,4 +1,4 @@
-﻿-- MarketScan — Migration 082: MasterRank segment percentile column
+-- MarketScan — Migration 082: MasterRank segment percentile column
 -- Persisterar inom-segment-percentilen (0-100) för att möjliggöra direkt
 -- jämförelse mellan mikro- och storbolag i Screener och API.
 

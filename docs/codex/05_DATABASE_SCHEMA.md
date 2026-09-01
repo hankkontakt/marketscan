@@ -100,3 +100,25 @@ MarketScan använder Supabase Postgres i region `eu-north-1` (Stockholm). Databa
 | RLS Säkerhet & Index | `supabase/migrations/077_rls_security_hardening.sql` | Härdning av RLS och saknade index |
 | Segmentintegritet | `supabase/migrations/080_segment_integrity.sql` | CHECK constraint och segment-backfill |
 | Likviditetskolumner | `supabase/migrations/081_liquidity_columns.sql` | Likviditetsgrader A–F och 20d medianomsättning |
+| V3 beslutskärna | `supabase/migrations/083_decision_manifest_foundation.sql` | Security Master, PIT-observationer, immutabla beslut och atomisk publiceringspekare |
+| Corporate actions & metric-kontrakt | `supabase/migrations/084_corporate_actions_metric_catalog.sql` | Corporate-action-lager (CPRX MERGED), enhetskontrakt i `metric_catalog`, listing-state-övergångar |
+
+## 7. V3 Decision Manifest Foundation
+
+Migration 083 skapar en separat, append-only beslutsväg utan att ändra `scan_results`, som fortfarande är legacy/kompatibilitet under migreringen. `decision_snapshots` startar i `STAGED`; worker persisterar en manifest per `listing_id` och anropar därefter `publish_decision_snapshot`. Funktionen avvisar tomma snapshots och handlingsbara beslut på inaktiva listningar innan den atomiskt ersätter den enda publiceringspekaren.
+
+Samtliga V3-tabeller har RLS. Anonyma och inloggade klienter får endast `SELECT` på publicerade beslut och begränsad evidens; råpayloads, karantänposter och alla skrivningar är service-only. Kör alltid migrationen i staging, kontrollera verkligt migreringshuvud och kör RLS-tester innan den appliceras i produktion.
+
+### 7.1 Corporate actions & tradability (migration 084)
+
+`corporate_actions` är det auktoritativa lagret för listningstillstånd (M&A, avnotering, halt, konkurs). Rader har `announced_at`/`known_at`/`effective_at` + `status` (ANNOUNCED/EFFECTIVE/CANCELLED); anon läser endast EFFECTIVE. `apply_effective_corporate_actions()` (SECURITY DEFINER, service_role-only) överför EFFECTIVE-åtgärder till `listings.state`/`valid_to`.
+
+**CPRX-regeln (regression-invariant):** Catalyst Pharmaceuticals är MERGED efter Angelini-förvärvet (stängt 2026-07-15, $31,50/aktie). Seeden ligger i 084; bootstrap skapar listningen direkt i MERGED-tillstånd och publications-bryggan exkluderar rader vars listing inte är ACTIVE som explicit karantän (`excluded_count` + reasons i quality_report). Att publicera ett handlingsbart manifest för en icke-ACTIVE listing avvisas alltid i DB.
+
+### 7.2 Metric Catalog & enhetskontrakt (migration 084)
+
+`metric_catalog` (083) är seedad med 14 kanoniska kontrakt där enhet/period/definition är entydig — `debt_to_equity_ratio` är ett **ratio** (1.0 = 100 %), inte procentenheter. Worker-sidan har `backend_worker/metric_contracts.py`: `normalize_debt_to_equity` omvandlar bara med explicitt `source_unit`, karantänar vid okänd enhet (UNIT_UNKNOWN), flaggar implausibla värden och negativt eget kapital, och gör aldrig tyst winsorize eller positiv default vid saknat värde. Transformen är ännu inte inkopplad i `master_rank.py` (kräver provider-verifiering mot live-data, se Known Unknowns i `docs/audit/ultimate-rebuild-v3-progress.md`).
+
+### 7.3 Venue-policy i Security Master bootstrap
+
+Legacy-data saknar venue-fält per ticker. `bootstrap_security_master.py` följer därför en dokumenterad policy: verifierade suffix (.ST/.DE/...) → specifik MIC + ACTIVE; suffixlösa tickers → US-default (XNAS/USD) med state **UNKNOWN** (= NO_SIGNAL enligt planen) tills venue-verifiering finns. EFFECTIVE corporate actions styr initial-state direkt. Körningen är idempotent (befintliga listings dupliceras aldrig).

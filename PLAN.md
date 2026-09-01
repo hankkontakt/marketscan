@@ -295,3 +295,21 @@ python -m backend_worker.master_rank --dry-run
 - [ ] Inga secrets/PII i committat material
 
 **Slutrapport:** skriv `.opencode/audit/r15-implementation-report.md` med: per task — vad som gjordes, faktisk gate-utdata, avvikelser från planen (Regel 0), kvarvarande punkter från §5.
+
+---
+
+## Tillägg 2026-09-01 — Ultimate Rebuild V3 utan betald stagingmiljö
+
+**Sammanfattning:** V3 byggs och provas med den lokala Supabase-stack som redan finns i projektet. Ingen Supabase-previewgren eller ny betald molnresurs ska skapas. Produktion ändras inte förrän lokala databastester, API-tester och en tydlig handoff är klara.
+
+**Kontext:** `083_decision_manifest_foundation.sql` har klarat en ren lokal återställning, säkerhetsgranskning och RLS-kontroller. V3-routen är avstängd via `decision_v3_api`; `DecisionManifestPublisher` finns, men är inte ännu inkopplad i en livekörning.
+
+**Systempåverkan:** Lokal Docker/Supabase är sanningskällan för schema- och policyverifiering. Källkod, migrationer och automatiska tester är det replikerbara beviset inför en framtida produktionsändring. Produktionsdatabasen förblir oförändrad under arbetet.
+
+**Arbetssätt:**
+1. Fortsätt V3-implementeringen lokalt: koppla workerflödet till manifestpublicering och bygg testdata/kontrakt för hela beslutsflödet.
+2. Kör en ren lokal databasåterställning följd av schema-, RLS-, API- och worker-tester. Spara exakt verifieringsresultat i `docs/audit/`.
+3. Gör en produktionsklar migrations- och driftrunbook: förkontroller, en enda manuellt kontrollerad migration, efterkontroller och återställningsgränser. Detta steg körs inte automatiskt.
+4. Först efter uttryckligt godkännande appliceras migrationen mot befintlig produktion via Supabase CLI/Dashboard. Det kräver ingen previewgren eller ny abonnemangskostnad, men ändrar då produktion och ska därför vara ett separat beslut.
+
+**Verifiering:** `supabase db reset --local`, `supabase db lint --local`, lokala säkerhetsråd, fokuserade Python-tester, API-svar med anon-roll och TypeScript-kontroll. Säkerställ särskilt att opublicerade beslut är osynliga och att en ogiltig/inaktiv listning inte kan publiceras.

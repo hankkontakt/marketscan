@@ -376,6 +376,14 @@ def run(mode: str, tickers: list[str] | None = None) -> None:
                 logger.info("Logged %d ML predictions to prediction_outcomes", n_logged)
             except Exception as po_exc:
                 logger.warning("ML prediction logging failed (non-fatal): %s", po_exc)
+
+            # V3 is deliberately opt-in until the Security Master is fully
+            # backfilled.  When enabled it fails closed: stale MasterRank or a
+            # missing canonical listing cannot move the public V3 pointer.
+            if os.environ.get("MARKETSCAN_PUBLISH_DECISIONS_V3", "").lower() in {"1", "true", "yes", "on"}:
+                from backend_worker.decision_publication import publish_from_environment
+                snapshot_id = publish_from_environment()
+                logger.info("Published V3 decision snapshot %s", snapshot_id)
         else:
             logger.warning("No scored data to load into scan_results")
 
