@@ -160,6 +160,13 @@ def _apply_sanity(df: pd.DataFrame) -> pd.DataFrame:
                 )
                 df[col] = df[col].mask((df[col] < 0) & non_fin)
 
+    # 6. R15 (D1): revenue_growth ska spegla totalintäkter (från revenue_growth_raw om tillgängligt och giltigt)
+    if "revenue_growth_raw" in df.columns and "revenue_growth" in df.columns:
+        rg_raw = _is_num(df["revenue_growth_raw"])
+        rg = _is_num(df["revenue_growth"])
+        use_raw = rg_raw.notna() & np.isfinite(rg_raw) & ((rg.isna()) | ((rg < 0) & (rg_raw > 0)))
+        df["revenue_growth"] = df["revenue_growth"].where(~use_raw, rg_raw)
+
     return df
 
 
@@ -208,6 +215,19 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
         _derive_segment(mc, tk)
         for mc, tk in zip(mcaps, tickers)
     ]
+
+    # R15 (D2): Namnkorrigeringar för kända felaktiga bolagsnamn från råkällor
+    name_overrides = {
+        "TXT.WA": "Text S.A.",
+        "7148.T": "Financial Products Group Co., Ltd.",
+        "AOF.DE": "ATOSS Software SE",
+        "PUILO.HE": "Puuilo Oyj",
+    }
+    if "ticker" in df.columns and "name" in df.columns:
+        for t_k, n_v in name_overrides.items():
+            mask = df["ticker"] == t_k
+            if mask.any():
+                df.loc[mask, "name"] = n_v
 
     # ROND 5 (2026-08-30) — KORRIGERAD 2026-08-30 (ROND 6):
     # market_cap är redan USD-normaliserad av stock-scanner data_fetcher._sanity_check

@@ -130,8 +130,41 @@ class TestBackfillRoeModule(unittest.TestCase):
 
 class TestDbLoaderRoundtrip(unittest.TestCase):
     def test_scan_columns_include_raw(self):
-        for col in ("roe_raw", "pe_trailing_raw", "pe_forward_raw", "roa_raw"):
+        for col in ("roe_raw", "pe_trailing_raw", "pe_forward_raw", "roa_raw", "revenue_growth_raw"):
             self.assertIn(col, db_loader.SCAN_COLUMNS, f"{col} saknas i SCAN_COLUMNS")
+
+    def test_revenue_growth_uses_raw_total_revenue(self):
+        """R15 (D1): revenue_growth ska spegla totalintäkter (från revenue_growth_raw) när sub-segment skiljer sig."""
+        df = pd.DataFrame({
+            "ticker": ["AOF.DE", "HARVIA.HE"],
+            "revenue_growth": [-0.0395, 0.12],
+            "revenue_growth_raw": [0.13, 0.12],
+        })
+        out = db_loader._apply_sanity(df.copy())
+        # AOF.DE had distorted -3.95% segment revenue, raw is +13% total revenue -> should be restored to 0.13
+        self.assertAlmostEqual(out.iloc[0]["revenue_growth"], 0.13)
+        self.assertAlmostEqual(out.iloc[1]["revenue_growth"], 0.12)
+
+    def test_name_overrides_in_prepare_df(self):
+        """R15 (D2): Namnkorrigeringar för Text S.A. och Financial Products Group."""
+        df = pd.DataFrame({
+            "ticker": ["TXT.WA", "7148.T", "AOF.DE"],
+            "name": ["E-kiosk", "Money Transfer Inc", "ATOSS"],
+            "market_cap": [100_000_000, 200_000_000, 300_000_000],
+        })
+        out = db_loader._prepare_df(df)
+        self.assertEqual(out.loc[out["ticker"] == "TXT.WA", "name"].iloc[0], "Text S.A.")
+        self.assertEqual(out.loc[out["ticker"] == "7148.T", "name"].iloc[0], "Financial Products Group Co., Ltd.")
+        self.assertEqual(out.loc[out["ticker"] == "AOF.DE", "name"].iloc[0], "ATOSS Software SE")
+
+
+class TestCompanyInfoFetcherOverrides(unittest.TestCase):
+    def test_company_overrides_exist_and_accurate(self):
+        from backend_worker.company_info_fetcher import COMPANY_OVERRIDES, _fetch_yfinance
+        self.assertIn("TXT.WA", COMPANY_OVERRIDES)
+        self.assertIn("7148.T", COMPANY_OVERRIDES)
+        self.assertIn("LiveChat", COMPANY_OVERRIDES["TXT.WA"]["description"])
+        self.assertIn("leasingfonder", COMPANY_OVERRIDES["7148.T"]["description"])
 
 
 if __name__ == "__main__":

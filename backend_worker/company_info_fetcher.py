@@ -38,6 +38,33 @@ _FINNHUB_DELAY = 1.1   # seconds between Finnhub calls
 # boilerplate like "N/A" or single-sentence placeholders).
 _MIN_DESCRIPTION_LENGTH = 80
 
+COMPANY_OVERRIDES: dict[str, dict] = {
+    "TXT.WA": {
+        "name": "Text S.A.",
+        "description": (
+            "Text S.A. (tidigare LiveChat Software) utvecklar och levererar kundtjänst- och kommunikations-SaaS "
+            "globalt via plattformarna LiveChat, ChatBot, HelpDesk, KnowledgeBase och OpenWidget."
+        ),
+        "industry": "Software - Infrastructure",
+    },
+    "7148.T": {
+        "name": "Financial Products Group Co., Ltd.",
+        "description": (
+            "Financial Products Group Co., Ltd. (FPG) strukturerar och förvaltar leasingfonder (flygplan, fartyg och "
+            "containrar), fastighetsfonder, försäkringar, private equity samt finansiella tjänster i Japan."
+        ),
+        "industry": "Financial Services",
+    },
+    "AOF.DE": {
+        "name": "ATOSS Software SE",
+        "industry": "Software - Application",
+    },
+    "PUILO.HE": {
+        "name": "Puuilo Oyj",
+        "industry": "Specialty Retail",
+    },
+}
+
 
 def _strip_exchange(ticker: str) -> str:
     """VOLV-B.ST → VOLV-B  (strip exchange suffix for Finnhub/FMP)."""
@@ -46,14 +73,17 @@ def _strip_exchange(ticker: str) -> str:
 
 def _fetch_yfinance(ticker: str) -> dict:
     """Fetch via yfinance. Returns partial dict (some fields may be None)."""
+    override = COMPANY_OVERRIDES.get(ticker, {})
     try:
         import yfinance as yf
-        info = yf.Ticker(ticker).info
+        lookup_ticker = "PUUILO.HE" if ticker == "PUILO.HE" else ticker
+        info = yf.Ticker(lookup_ticker).info
         return {
-            "description":  info.get("longBusinessSummary") or None,
+            "name":         override.get("name") or info.get("shortName") or info.get("longName") or None,
+            "description":  override.get("description") or info.get("longBusinessSummary") or None,
             "employees":    info.get("fullTimeEmployees") or None,
             "website":      info.get("website") or None,
-            "industry":     info.get("industry") or None,
+            "industry":     override.get("industry") or info.get("industry") or None,
             "country":      info.get("country") or None,
             "beta":         info.get("beta") or None,
             "week_52_high": info.get("fiftyTwoWeekHigh") or None,
@@ -61,6 +91,12 @@ def _fetch_yfinance(ticker: str) -> dict:
         }
     except Exception as exc:
         logger.debug("yfinance failed for %s: %s", ticker, exc)
+        if override:
+            return {
+                "name": override.get("name"),
+                "description": override.get("description"),
+                "industry": override.get("industry"),
+            }
         return {}
 
 
