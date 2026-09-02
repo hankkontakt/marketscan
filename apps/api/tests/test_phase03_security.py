@@ -38,13 +38,21 @@ def test_canonical_fact_server_precedence():
     assert "ROE: 99.0%" not in context
 
 def test_security_hardening_migration_sql():
-    sql_path = Path("supabase/migrations/012_security_hardening.sql")
-    assert sql_path.exists()
-    content = sql_path.read_text(encoding="utf-8")
-    assert "ENABLE ROW LEVEL SECURITY" in content
-    assert "SET search_path = ''" in content
-    assert "REVOKE EXECUTE ON FUNCTION public.clean_ai_cache() FROM PUBLIC" in content
-    assert "idx_holdings_portfolio_id" in content
+    # The V2 migration was archived when the V3 migration chain was rebased.
+    # Its security guarantees are now represented by the active migrations:
+    # 083 owns the public decision/RLS and function hardening, while 078 owns
+    # the foreign-key index audit.
+    foundation_path = Path("supabase/migrations/083_decision_manifest_foundation.sql")
+    indexes_path = Path("supabase/migrations/078_missing_indexes.sql")
+    assert foundation_path.exists()
+    assert indexes_path.exists()
+
+    foundation = foundation_path.read_text(encoding="utf-8")
+    indexes = indexes_path.read_text(encoding="utf-8")
+    assert "ENABLE ROW LEVEL SECURITY" in foundation
+    assert "SET search_path = ''" in foundation
+    assert "REVOKE ALL ON FUNCTION public.clean_ai_cache() FROM PUBLIC, anon, authenticated" in foundation
+    assert "idx_holdings_portfolio_id" in indexes
 
 def test_prompt_injection_sanitization():
     from apps.api.routers.ai import NL_FILTER_SYSTEM
